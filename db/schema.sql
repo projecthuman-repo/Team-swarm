@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   title         text,
   spec_ref      text,
   branch        text,
+  created_at    timestamptz NOT NULL DEFAULT now(), -- SLA tracking (runbook §17)
   updated_at    timestamptz NOT NULL DEFAULT now()
 );
 
@@ -40,3 +41,11 @@ CREATE TABLE IF NOT EXISTS lessons (
 
 CREATE INDEX IF NOT EXISTS lessons_embedding_idx
   ON lessons USING hnsw (embedding vector_cosine_ops);
+
+-- CDC relay option (runbook §7): logical-replication publication on outbox.
+-- wal_level=logical is set in deploy/compose.yaml; relay/relay_cdc.ts tails it.
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT FROM pg_publication WHERE pubname = 'outbox_pub') THEN
+    CREATE PUBLICATION outbox_pub FOR TABLE outbox;
+  END IF;
+END $$;

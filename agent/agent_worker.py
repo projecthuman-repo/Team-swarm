@@ -39,6 +39,7 @@ from agent.budget import BudgetExceeded, ValkeyBudget, valkey_lock  # noqa: E402
 from agent.health import serve_health  # noqa: E402
 from agent.openbao import lease_secret  # noqa: E402
 from agent.sandbox import PoisonError, run_sandboxed_aider  # noqa: E402
+from agent.tracing import emit_trace  # noqa: E402
 
 log = logging.getLogger("agent")
 
@@ -97,8 +98,9 @@ async def emit(
             )
 
 
-async def handle_task(pool: asyncpg.Pool, task: task_pb2.Task) -> None:
-    budget = ValkeyBudget(agent=ROLE, task_id=task.task_id, limit=task.budget_tokens)
+async def handle_task(
+    pool: asyncpg.Pool, task: task_pb2.Task, budget: ValkeyBudget
+) -> None:
     ttl = max(60, int(task.deadline_unix - time.time())) if task.deadline_unix else 3600
     async with valkey_lock(f"task:{task.task_id}", ttl=ttl):
         secret = lease_secret("forgejo")  # leased, short TTL, never persisted
@@ -141,12 +143,24 @@ async def main() -> None:
                 continue
 
             log.info("claimed task %s (%s)", task.task_id, task.title)
+            emit_trace("claimed", task.task_id, ROLE, detail=task.title)
+            budget = ValkeyBudget(
+                agent=ROLE, task_id=task.task_id, limit=task.budget_tokens
+            )
             try:
-                await handle_task(pool, task)
+                await handle_task(pool, task, budget)
                 await m.ack()
+                emit_trace(
+                    "done",
+                    task.task_id,
+                    ROLE,
+                    detail=task.title,
+                    tokens_spent=await budget.spent(),
+                )
                 log.info("task %s done", task.task_id)
             except (BudgetExceeded, TimeoutError) as err:
                 log.warning("task %s transient failure: %s", task.task_id, err)
+                emit_trace("retry", task.task_id, ROLE, detail=str(err))
                 await pool.execute(
                     "UPDATE tasks SET status='pending', attempt=attempt+1, "
                     "claimed_by=NULL, updated_at=now() WHERE task_id=$1",
@@ -155,6 +169,7 @@ async def main() -> None:
                 await m.nak(delay=30)  # retry with backoff
             except PoisonError as err:
                 log.error("task %s poisoned: %s", task.task_id, err)
+                emit_trace("failed", task.task_id, ROLE, detail=str(err))
                 await emit(
                     pool,
                     task.task_id,

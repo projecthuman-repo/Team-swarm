@@ -12,6 +12,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY agent/ agent/
+COPY ingest/ ingest/
+COPY scripts/ scripts/
 COPY skills/ skills/
 COPY AGENTS.md identity.md user.md guardrails.md .aider.conf.yml ./
 COPY conventions/ conventions/

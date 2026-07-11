@@ -18,6 +18,7 @@ import asyncio
 import logging
 import os
 import re
+import shlex
 import shutil
 import tempfile
 
@@ -34,12 +35,41 @@ EDITOR_MODEL = os.environ.get("AIDER_EDITOR_MODEL", MODEL)
 OLLAMA_API_BASE = os.environ.get("OLLAMA_API_BASE", "http://localhost:11434")
 TASK_TIMEOUT_S = int(os.environ.get("TASK_TIMEOUT_S", "1800"))
 
+# Execution engine (both are locked-in v3.0 tools): aider (baseline,
+# architect/editor two-model mode) or nano-claude-code (the lightweight
+# agent runtime used alongside it). AGENT_ENGINE_CMD overrides with a
+# custom template; "{message}" is replaced by the task message.
+ENGINE = os.environ.get("AGENT_ENGINE", "aider")  # aider|nano-claude-code
+ENGINE_CMD = os.environ.get("AGENT_ENGINE_CMD", "")
+
 # aider prints e.g. "Tokens: 4.2k sent, 1.1k received."
 _TOKENS_RE = re.compile(r"Tokens:\s*([\d.]+)(k?)\s*sent,\s*([\d.]+)(k?)\s*received")
 
 
 class PoisonError(Exception):
     """Non-transient task failure: terminate -> MAX_DELIVERIES -> DLQ."""
+
+
+def engine_cmd(message: str) -> list[str]:
+    """Build the agent-engine command for this task's message."""
+    if ENGINE_CMD:
+        return [
+            message if part == "{message}" else part
+            for part in shlex.split(ENGINE_CMD)
+        ]
+    if ENGINE == "nano-claude-code":
+        return ["nano-claude-code", "--prompt", message]
+    if ENGINE == "aider":
+        return [
+            "aider",
+            "--yes-always",
+            "--no-analytics",
+            "--architect",
+            "--model", MODEL,
+            "--editor-model", EDITOR_MODEL,
+            "--message", message,
+        ]
+    raise PoisonError(f"unknown AGENT_ENGINE {ENGINE!r}")
 
 
 def _parse_tokens(output: str) -> int:
@@ -96,20 +126,7 @@ async def run_sandboxed_aider(task, secret: str, budget: ValkeyBudget) -> None:
         repo = os.path.join(workdir, "repo")
         await _run(["git", "checkout", "-b", branch], repo, env, 60)
 
-        out = await _run(
-            [
-                "aider",
-                "--yes-always",
-                "--no-analytics",
-                "--architect",
-                "--model", MODEL,
-                "--editor-model", EDITOR_MODEL,
-                "--message", message,
-            ],
-            repo,
-            env,
-            TASK_TIMEOUT_S,
-        )
+        out = await _run(engine_cmd(message), repo, env, TASK_TIMEOUT_S)
         await budget.spend(max(_parse_tokens(out), 1))
 
         # Bot pushes ONLY to feature/* (Hard Rule 4); auto-merge to

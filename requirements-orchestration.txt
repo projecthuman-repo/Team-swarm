@@ -1,0 +1,7 @@
+# Optional orchestration upgrades (runbook §18) — both MIT:
+#   LangGraph: durable graph state, checkpointing, human-in-the-loop pauses
+#     (agent/orchestrator_langgraph.py)
+#   CrewAI: declarative role-based crews, weaker built-in observability
+#     (agent/crew_roles.py)
+langgraph>=0.2
+crewai>=0.80

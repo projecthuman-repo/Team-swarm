@@ -22,7 +22,9 @@ async def serve_health(worker_id: str, role: str) -> None:
     port = int(os.environ.get("HEALTH_PORT", "8080"))
     config = uvicorn.Config(
         build_app(worker_id, role),
-        host="0.0.0.0",
+        # bind-all is required for the k8s readiness probe; the pod network
+        # is internal-only (default-deny egress, ambient mTLS)
+        host="0.0.0.0",  # nosec B104
         port=port,
         log_level="warning",
     )

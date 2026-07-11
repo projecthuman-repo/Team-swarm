@@ -17,6 +17,12 @@ for _ in $(seq 1 60); do
   sleep 2
 done
 
+echo "==> ensuring langfuse database exists (observability profile)"
+"$RUNTIME" exec "$("$RUNTIME" ps -qf name=postgres | head -1)" \
+  psql -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='langfuse'" \
+  | grep -q 1 || "$RUNTIME" exec "$("$RUNTIME" ps -qf name=postgres | head -1)" \
+  psql -U postgres -c "CREATE DATABASE langfuse"
+
 echo "==> applying db/schema.sql (idempotent)"
 if command -v psql >/dev/null 2>&1; then
   psql "$DATABASE_URL" -f db/schema.sql
@@ -32,9 +38,11 @@ echo "==> seeding OpenBao dev secrets (placeholders — replace with real tokens
 curl -sf -X POST "$OPENBAO_ADDR/v1/secret/data/swarm/forgejo" \
   -H "X-Vault-Token: $OPENBAO_TOKEN" \
   -d '{"data":{"token":"REPLACE_WITH_FORGEJO_BOT_TOKEN"}}' >/dev/null
-curl -sf -X POST "$OPENBAO_ADDR/v1/secret/data/swarm/telegram" \
-  -H "X-Vault-Token: $OPENBAO_TOKEN" \
-  -d '{"data":{"token":"REPLACE_WITH_TELEGRAM_BOT_TOKEN"}}' >/dev/null
+for chat in telegram slack discord; do
+  curl -sf -X POST "$OPENBAO_ADDR/v1/secret/data/swarm/$chat" \
+    -H "X-Vault-Token: $OPENBAO_TOKEN" \
+    -d "{\"data\":{\"token\":\"REPLACE_WITH_${chat^^}_BOT_TOKEN\"}}" >/dev/null
+done
 
 echo "==> registering Protobuf schemas with Apicurio (compatibility-gated)"
 ./scripts/register_schemas.sh || echo "    (apicurio not ready yet — rerun scripts/register_schemas.sh)"

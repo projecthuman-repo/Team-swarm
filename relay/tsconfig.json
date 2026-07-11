@@ -8,5 +8,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["relay.ts", "gen/**/*.ts"]
+  "include": ["relay.ts", "relay_cdc.ts", "gen/**/*.ts"]
 }

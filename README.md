@@ -124,9 +124,41 @@ vLLM needs the model's parsers: `--tool-call-parser qwen3_xml
 --reasoning-parser qwen3`. Cutover rule: switch Ollama → vLLM past ~5
 concurrent agents.
 
-> **License note:** Ornith-1.0 is plain MIT and passes the gate, but it is
-> post-trained on Gemma 4, whose upstream terms are not OSI — confirm with
-> counsel before production use.
+> **License note:** Ornith-1.0 is plain MIT and passes the gate. It is
+> post-trained on Gemma 4 (non-OSI upstream terms); counsel has reviewed
+> and cleared the MIT release for production use under the fail-closed
+> policy. Pin the exact release — the 2026 model field is full of non-OSI
+> "community"/"modified MIT" look-alikes the gate will (correctly) block.
+
+## Every documented option is executable
+
+The baseline is always on; each optional swap/enhancement from the design
+docs ships runnable:
+
+| Option (docs) | Baseline | Run the option |
+|---|---|---|
+| vLLM inference (>5 agents) | Ollama | `make vllm`, then `AIDER_MODEL=openai/Ornith-1.0-9B OPENAI_API_BASE=http://localhost:8000/v1` (Tier B: `deploy/k8s/vllm.yaml`) |
+| Ornith-1.0-35B (24 GB+) | 9B | `make models-35b` + `AIDER_MODEL=ollama/maxwell1500/ornith-35b:Q4_K_M` |
+| Fallback models | Ornith-1.0 | `AIDER_MODEL=ollama/gpt-oss:20b` or `ollama/qwen2.5-coder:7b` |
+| nano-claude-code engine | aider | `AGENT_ENGINE=nano-claude-code` (custom: `AGENT_ENGINE_CMD="tool {message}"`) |
+| Qdrant vector store (>5–10M vectors) | pgvector | `make qdrant` + `VECTOR_BACKEND=qdrant` (`pip install -r requirements-vector.txt`) |
+| Chroma local-tier retrieval (retained v3.0 option) | pgvector | `VECTOR_BACKEND=chroma` |
+| bge-m3 embeddings (quality > speed) | all-MiniLM-L6-v2 | apply `db/migrations/001_bge_m3_embeddings.sql`, set `EMBEDDING_MODEL=BAAI/bge-m3 EMBEDDING_DIM=1024`, `scripts/seed_knowledge.py --reembed` |
+| LangGraph orchestration (durable graphs, HIL) | bespoke loop | `make graph` (`HIL=1` pauses before work; `requirements-orchestration.txt`) |
+| CrewAI declarative crews | bespoke roles | `make crew TITLE="..."` |
+| CDC outbox relay (higher throughput) | 250ms poll | `make relay-cdc` (publication ships in `db/schema.sql`) |
+| Langfuse + OpenSearch (baseline observability) | log lines | `make observability` + `LANGFUSE_*`/`OPENSEARCH_URL` envs (`agent/tracing.py` fans out) |
+| OpenObserve single-binary swap | OpenSearch+Langfuse | `make openobserve` + `OTEL_EXPORTER_OTLP_ENDPOINT` |
+| OTel tracing (Laminar/OpenLLMetry-style) | Langfuse | `OTEL_EXPORTER_OTLP_ENDPOINT` towards any collector |
+| Kata/Firecracker sandbox (dedicated kernel) | gVisor | `runtimeClassName: kata` (`deploy/k8s/runtimeclass-gvisor.yaml` ships both) |
+| Slack / Discord ingress | Telegram | `make chat` with `CHAT_SOURCES=telegram,slack,discord` + channel ids |
+| More agent roles | 4 roles | all four run under `make swarm` / `deploy/k8s/agent-roles.yaml`; add a fifth per Appendix B |
+| Forgejo self-hosted git | external git | `make forgejo`, then `scripts/forgejo_setup.sh` + `scripts/forgejo_automerge.sh <pr>` |
+| iOS build container | Linux CI only | `deploy/ios-build/` (macOS runner workflow) |
+| Confluent ccompat SerDes | direct Protobuf | `agent/ccompat.py` (`requirements-ccompat.txt`) |
+| DLQ → human triage (Stage 4) | — | `make dlq` (opens `needs-human` Forgejo issues) |
+| SLA tracking (≥70% / <10 min) | — | `make sla` |
+| Knowledge-pack seeding (Appendix C) | — | `make seed` after dropping docs in `knowledge/` |
 
 ## Tier B (production: k3s + Istio ambient)
 

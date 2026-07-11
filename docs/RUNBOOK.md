@@ -159,17 +159,33 @@ single-binary swap: OpenObserve.
 **Verify:** for any merged diff you can reconstruct the originating
 prompt, token spend, and check results from the trace.
 
-## 12. Optional upgrade triggers
+## 12. Optional upgrade triggers (all runnable — see README options matrix)
 
-| Layer | Baseline | Swap to | When |
-|---|---|---|---|
-| Inference | Ollama | vLLM | >5 concurrent agents |
-| Vector store | pgvector | Qdrant | >5–10M vectors / heavy filtered search |
-| Orchestration | bespoke loop | LangGraph | durable resumable graphs / HIL |
-| Roles | bespoke | CrewAI | declarative crews (weaker observability) |
-| Sandbox | gVisor | Kata/Firecracker | dedicated-kernel threat model |
-| Observability | OpenSearch+Langfuse | OpenObserve | storage cost / tool sprawl |
-| Embeddings | all-MiniLM-L6-v2 | bge-m3 | retrieval quality > speed |
+| Layer | Baseline | Swap to | When | How |
+|---|---|---|---|---|
+| Inference | Ollama | vLLM | >5 concurrent agents | `make vllm` / `deploy/k8s/vllm.yaml` |
+| Vector store | pgvector | Qdrant | >5–10M vectors / heavy filtered search | `make qdrant` + `VECTOR_BACKEND=qdrant` |
+| Local retrieval | pgvector | Chroma (retained v3.0 option) | laptop-only runs | `VECTOR_BACKEND=chroma` |
+| Orchestration | bespoke loop | LangGraph | durable resumable graphs / HIL | `make graph` (`HIL=1`) |
+| Roles | bespoke | CrewAI | declarative crews (weaker observability) | `make crew` |
+| Sandbox | gVisor | Kata/Firecracker | dedicated-kernel threat model | `runtimeClassName: kata` |
+| Observability | OpenSearch+Langfuse | OpenObserve | storage cost / tool sprawl | `make openobserve` + OTLP env |
+| Tracing | Langfuse | OTel (Laminar/OpenLLMetry-style) | vendor-neutral instrumentation | `OTEL_EXPORTER_OTLP_ENDPOINT` |
+| Embeddings | all-MiniLM-L6-v2 | bge-m3 | retrieval quality > speed | migration 001 + `EMBEDDING_MODEL` |
+| Relay | 250ms poll | logical-replication CDC | outbox throughput | `make relay-cdc` |
+| Engine | aider | nano-claude-code | lightweight runtime | `AGENT_ENGINE=nano-claude-code` |
+| Chat ingress | Telegram | +Slack/Discord | team-channel task initiation | `CHAT_SOURCES=telegram,slack,discord` |
+
+Stage-4 operational tooling: `make dlq` (DLQ → `needs-human` Forgejo
+issues), `make sla` (completion rate, publish→claim latency, p95 pickup),
+`make seed` (Appendix C knowledge packs into vector memory).
+
+## Model licensing status
+
+Ornith-1.0 is plain MIT and passes the gate. Its Gemma 4 upstream terms
+(non-OSI) have been **reviewed and cleared by counsel** for production use
+under the fail-closed policy. Keep the exact release pinned; the gate
+still blocks non-OSI look-alike releases.
 
 ## Known gotchas
 

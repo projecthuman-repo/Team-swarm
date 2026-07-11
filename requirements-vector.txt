@@ -1,0 +1,5 @@
+# Optional vector-store backends (agent/lessons.py, VECTOR_BACKEND=...):
+#   qdrant — the >5-10M-vectors / heavy-filtered-search upgrade (Apache-2.0)
+#   chroma — the retained v3.0 local-tier retrieval option (Apache-2.0)
+qdrant-client>=1.12
+chromadb>=0.5

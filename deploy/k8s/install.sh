@@ -44,6 +44,7 @@ kubectl apply -f networkpolicy-default-deny.yaml
 kubectl apply -f relay.yaml
 kubectl apply -f vllm.yaml
 kubectl apply -f agent-backend.yaml
+kubectl apply -f agent-roles.yaml # frontend / review / triage
 
 echo "Verify:  istioctl ztunnel-config workloads   # agents in ambient, mTLS"
 echo "Verify:  kubectl exec deploy/agent-backend -n swarm -- curl -m5 https://example.com  # must time out"
