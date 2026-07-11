@@ -67,6 +67,16 @@ def build_crew(task_title: str):
         "Review the combined plan; flag risks, missing tests, and diff-size "
         "concerns before any code is written.",
     )
+    # v4.1 T2.3 — independent verifier template: reviews ONLY the diff +
+    # task spec (via SharedContext), never the author's conversation, so
+    # author biases don't leak into verification.
+    verifier = role_agent(
+        "verifier",
+        "Independently verify a finished diff against its task spec with "
+        "no knowledge of how it was produced. Flag any seeded defect, "
+        "missing test, or scope creep. End with VERDICT: PASS or BLOCK.",
+    )
+    _ = verifier  # exposed for swarm-hard fan-out (agent/verifier.py runs it)
 
     tasks = [
         Task(

@@ -1,0 +1,21 @@
+# Headroom token-compression proxy (v4.1 T1.2) — chopratejas/headroom,
+# PyPI headroom-ai, Apache-2.0. Runs on swarm-internal with NO egress:
+# runtime assets (ONNX runtime, Kompress model) are pre-provisioned into
+# the read-only /assets volume by scripts/seed_headroom_assets.sh (T1.4).
+FROM python:3.12-slim
+
+RUN pip install --no-cache-dir --only-binary headroom-ai headroom-ai
+
+RUN useradd --create-home --uid 10001 headroom
+USER headroom
+
+# No-egress posture (DR-3): never phone PyPI/HF/CDN at runtime.
+ENV HEADROOM_UPDATE_CHECK=off \
+    HF_HUB_OFFLINE=1 \
+    ORT_STRATEGY=system \
+    ORT_LIB_LOCATION=/assets/ort \
+    HF_HOME=/assets/hf \
+    HEADROOM_HOST=0.0.0.0 \
+    HEADROOM_PORT=8787
+
+CMD ["headroom", "proxy"]

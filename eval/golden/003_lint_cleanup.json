@@ -1,0 +1,5 @@
+{
+  "title": "Make ruff check pass on the utils module without changing behavior",
+  "role": "backend",
+  "verify_cmd": "ruff check ."
+}

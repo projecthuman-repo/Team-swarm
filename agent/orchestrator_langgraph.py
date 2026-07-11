@@ -46,13 +46,36 @@ HIL = os.environ.get("HIL", "") == "1"  # human-in-the-loop pause before work
 class TaskState(TypedDict, total=False):
     task_bytes: bytes
     claimed: bool
+    decomposed: bool
     done: bool
     error: str
 
 
+def make_checkpointer():
+    """v4.1 T3.3 — durable graph checkpoints. GRAPH_CHECKPOINT=postgres
+    survives restarts (kill/restart mid-graph resumes from checkpoint);
+    the default MemorySaver keeps the zero-dependency dev path."""
+    if os.environ.get("GRAPH_CHECKPOINT", "") == "postgres":
+        try:
+            from langgraph.checkpoint.postgres import PostgresSaver
+
+            saver_cm = PostgresSaver.from_conn_string(DATABASE_URL)
+            saver = saver_cm.__enter__()  # keep open for process lifetime
+            saver.setup()
+            log.info("durable Postgres checkpointing enabled")
+            return saver
+        except ImportError:
+            log.warning(
+                "GRAPH_CHECKPOINT=postgres needs langgraph-checkpoint-postgres "
+                "(requirements-orchestration.txt); using MemorySaver"
+            )
+    from langgraph.checkpoint.memory import MemorySaver
+
+    return MemorySaver()
+
+
 def build_graph(pool: asyncpg.Pool):
     try:
-        from langgraph.checkpoint.memory import MemorySaver
         from langgraph.graph import END, START, StateGraph
     except ImportError as err:
         raise SystemExit(
@@ -60,9 +83,48 @@ def build_graph(pool: asyncpg.Pool):
             "pip install -r requirements-orchestration.txt"
         ) from err
 
+    from agent.planner import (
+        emit_subtasks,
+        plan_subtasks,
+        should_decompose,
+        subtask_states,
+    )
+
     async def claim(state: TaskState) -> TaskState:
         task = task_pb2.Task.FromString(state["task_bytes"])
         return {"claimed": await pg_claim(pool, task.task_id)}
+
+    async def plan(state: TaskState) -> TaskState:
+        """v4.1 T3.1 — verification-aware DAG. Decomposable (swarm-hard)
+        tasks become subtasks each paired with a verify_cmd, scheduled
+        through the existing outbox -> JetStream path. On verify-fail the
+        coordinator replans (re-emits) the failed subtask once."""
+        task = task_pb2.Task.FromString(state["task_bytes"])
+        if not should_decompose(task.title):
+            return {"decomposed": False}
+        subtasks = plan_subtasks(task.title)
+        ids = await emit_subtasks(pool, task.task_id, subtasks)
+        # coordinator: poll subtask states; replan failed ones once
+        replanned: set[str] = set()
+        while True:
+            states = await subtask_states(pool, ids)
+            failed = [t for t, s in states.items() if s == "failed"]
+            for tid in failed:
+                if tid not in replanned:
+                    replanned.add(tid)
+                    idx = ids.index(tid)
+                    log.warning("subtask %s verify-failed; replanning", tid)
+                    new_ids = await emit_subtasks(
+                        pool, task.task_id, [subtasks[idx]]
+                    )
+                    ids[idx] = new_ids[0]
+            if all(states.get(t) == "done" for t in ids):
+                return {"decomposed": True, "done": True}
+            if any(
+                states.get(t) == "failed" and t in replanned for t in ids
+            ):
+                return {"decomposed": True, "error": "subtask failed after replan"}
+            await asyncio.sleep(15)
 
     async def work(state: TaskState) -> TaskState:
         task = task_pb2.Task.FromString(state["task_bytes"])
@@ -87,16 +149,23 @@ def build_graph(pool: asyncpg.Pool):
 
     g = StateGraph(TaskState)
     g.add_node("claim", claim)
+    g.add_node("plan", plan)
     g.add_node("work", work)
     g.add_node("report", report)
     g.add_edge(START, "claim")
     g.add_conditional_edges(
-        "claim", lambda s: "work" if s.get("claimed") else END, ["work", END]
+        "claim", lambda s: "plan" if s.get("claimed") else END, ["plan", END]
+    )
+    # decomposed tasks complete via their subtasks; single tasks do the work
+    g.add_conditional_edges(
+        "plan",
+        lambda s: "report" if s.get("decomposed") else "work",
+        ["work", "report"],
     )
     g.add_edge("work", "report")
     g.add_edge("report", END)
     return g.compile(
-        checkpointer=MemorySaver(),
+        checkpointer=make_checkpointer(),
         interrupt_before=["work"] if HIL else [],
     )
 

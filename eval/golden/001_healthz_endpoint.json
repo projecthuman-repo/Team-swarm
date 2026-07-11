@@ -1,0 +1,5 @@
+{
+  "title": "Add a /healthz endpoint returning {\"ok\": true} with a test",
+  "role": "backend",
+  "verify_cmd": "pytest -q"
+}

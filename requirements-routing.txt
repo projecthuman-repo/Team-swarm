@@ -1,0 +1,5 @@
+# Optional RouteLLM tiering (v4.1 T4.4, Apache-2.0). The router proposes
+# 9B vs 35B vs API per task. Adopt as default ONLY after it beats the
+# baseline on the T6.1 shadow eval (`make shadow-eval`) — the plan's own
+# threshold.
+routellm>=0.2

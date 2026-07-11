@@ -45,6 +45,12 @@ kubectl apply -f relay.yaml
 kubectl apply -f vllm.yaml
 kubectl apply -f agent-backend.yaml
 kubectl apply -f agent-roles.yaml # frontend / review / triage
+kubectl create configmap litellm-config -n swarm \
+  --from-file=config.yaml=../litellm/config.yaml \
+  --from-file=entrypoint.sh=../litellm/entrypoint.sh \
+  --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f litellm.yaml  # v4.1 T4.3 (local-primary gateway)
+kubectl apply -f headroom.yaml # v4.1 T1.2 (seed the assets PVC first)
 
 echo "Verify:  istioctl ztunnel-config workloads   # agents in ambient, mTLS"
 echo "Verify:  kubectl exec deploy/agent-backend -n swarm -- curl -m5 https://example.com  # must time out"

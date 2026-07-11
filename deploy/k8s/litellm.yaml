@@ -1,0 +1,59 @@
+# LiteLLM gateway (v4.1 T4.3) — Tier B. Local models primary; hosted API
+# fallback is an explicit opt-in (ROUTE_API_FALLBACK=1) whose key is an
+# OpenBao lease (Hard Rule 7). Flag off => the pod needs no egress at all.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm
+  namespace: swarm
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: litellm }
+  template:
+    metadata:
+      labels: { app: litellm }
+      annotations:
+        openbao.org/agent-inject: "true"
+        openbao.org/role: "swarm-agent"
+        openbao.org/agent-inject-secret-fallback-api: "secret/data/swarm/fallback-api"
+    spec:
+      serviceAccountName: swarm-agent
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: litellm
+          image: ghcr.io/berriai/litellm:main-latest # MIT core; enterprise/ unused
+          command: ["/bin/sh", "/config/entrypoint.sh"]
+          env:
+            - { name: OLLAMA_OPENAI_BASE, value: http://ollama:11434/v1 }
+            - { name: VLLM_OPENAI_BASE, value: http://vllm:8000/v1 }
+            - { name: ROUTE_API_FALLBACK, value: "0" }
+            - { name: FALLBACK_API_BASE, value: "" }
+            - { name: FALLBACK_API_MODEL, value: "" }
+          ports:
+            - containerPort: 4000
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: config, mountPath: /config, readOnly: true }
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: "1", memory: 1Gi }
+      volumes:
+        - name: config
+          configMap: { name: litellm-config, defaultMode: 0555 }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm
+  namespace: swarm
+spec:
+  selector: { app: litellm }
+  ports:
+    - port: 4000
+      targetPort: 4000

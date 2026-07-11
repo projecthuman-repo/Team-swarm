@@ -1,4 +1,4 @@
-# Team-swarm — Overnight Agent Swarm v4.0
+# Team-swarm — Overnight Agent Swarm v4.1 "Elevation"
 
 A self-hosted, licence-clean multi-agent coding swarm: autonomous agents
 (backend / frontend / review / triage) pick up tasks overnight, write code
@@ -73,6 +73,7 @@ etc.), and schedule `make ingest`. See [docs/RUNBOOK.md](docs/RUNBOOK.md).
 
 ```
 AGENTS.md identity.md user.md guardrails.md   # agent context (+ conventions/)
+karpathy-guidelines.md # vendored coding guidelines (Appendix D; scripts/update_karpathy.sh)
 proto/swarm/v1/        # Protobuf contracts (Task, AgentEvent) + buf config
 agent/                 # Python 3.12 worker: claim -> aider -> outbox emit
 agent/gen/             # checked-in generated protobuf code (make gen to refresh)
@@ -83,7 +84,7 @@ db/schema.sql          # tasks · outbox · lessons (pgvector, writable memory)
 deploy/compose.yaml    # Tier A stack;  deploy/k8s/ = Tier B (k3s + Istio ambient)
 deploy/ios-build/      # optional macOS iOS-build runner (Appendix A)
 .forgejo/              # CI gates: ruff, pytest+cov, bandit, diff-size,
-                       #   headroom, fail-closed license gate
+                       #   headroom-ai compression gate, license gate
 scripts/               # bootstrap, schema registration, task injection, qualification
 ```
 
@@ -112,15 +113,21 @@ scripts/               # bootstrap, schema registration, task injection, qualifi
 | Leaked secret | short-TTL OpenBao lease, auto-revoked |
 | AGPL/SSPL dep sneaks in | license gate blocks the PR |
 
-## Models
+## Models (lineup by hardware tier — v4.1 T4.5)
 
-| Hardware | Model | Serving |
+| Hardware | Model / tier | Serving |
 |---|---|---|
-| 6–12 GB GPU | Ornith-1.0-9B (Dense, MIT) | `ollama pull maxwell1500/ornith-9b:Q4_K_M` |
-| 24 GB+ | Ornith-1.0-35B (MoE, ~3B active — faster *and* better) | Ollama Q4 / vLLM (`deploy/k8s/vllm.yaml`) |
+| 8–12 GB GPU | Ornith-1.0-9B Q4 (`9b-q4`) | `make models` |
+| 24 GB | Ornith-1.0-35B Q4_K_M (`35b-q4` — MoE ~3B active: faster *and* better) | `make models-35b` / vLLM |
+| 48–80 GB | Ornith-1.0-9B bf16 (`9b-bf16`) / 35B FP8 | `make models-bf16` / vLLM |
+| 8×80 GB or API | Ornith-1.0-397B | vLLM multi-GPU, or hosted via the LiteLLM opt-in fallback |
 | Fallback | gpt-oss:20b or qwen2.5-coder (Apache-2.0) | Ollama |
 
-vLLM needs the model's parsers: `--tool-call-parser qwen3_xml
+KV-cache headroom matters at 256K context: the tier thresholds in
+`agent/capacity.py` (`9b-q4` ≈8 GB, `35b-q4` ≈24 GB, `9b-bf16` ≈22 GB
+free VRAM) include it — a node never advertises a tier it would spill on
+(Ollama CPU spill is detected and demotes the node; spill is 5–30×
+slower). vLLM needs the model's parsers: `--tool-call-parser qwen3_xml
 --reasoning-parser qwen3`. Cutover rule: switch Ollama → vLLM past ~5
 concurrent agents.
 
@@ -159,6 +166,31 @@ docs ships runnable:
 | DLQ → human triage (Stage 4) | — | `make dlq` (opens `needs-human` Forgejo issues) |
 | SLA tracking (≥70% / <10 min) | — | `make sla` |
 | Knowledge-pack seeding (Appendix C) | — | `make seed` after dropping docs in `knowledge/` |
+| Karpathy coding guidelines (Appendix D) | — | vendored as `karpathy-guidelines.md`, imported by `AGENTS.md` + aider; refresh with `scripts/update_karpathy.sh` |
+
+## v4.1 "Elevation" — best code as output
+
+Every item of the v4.1 development plan is implemented (26/26 coverage
+matrix). The north-star metrics: first-pass green rate (`make sla`),
+reviewer catch rate (`make morning`), tokens per merged PR (Headroom),
+and the protected SLAs (dashboard: `deploy/observability/grafana-sla.json`).
+
+| Workstream | What runs |
+|---|---|
+| Headroom compression (T1.1–T1.9) | CI gate on fixtures (`.forgejo/scripts/headroom_gate.py`), proxy sidecar (`make headroom`, offline assets via `scripts/seed_headroom_assets.sh`), agent wiring (`HEADROOM_ENABLED=1`), `headroom learn` → PR (`scripts/morning_headroom_learn.py`), output shaper + measured savings in `make sla`, SharedContext hand-off (`agent/shared_context.py`), ingest compression with SeaweedFS originals (`ingest/compress_util.py`), compression attrs in traces |
+| Code quality (T2.1–T2.6) | green-build gate + grounded repair loop in `agent/sandbox.py` (`MAX_REPAIR_CYCLES`, red never pushes), repro-test-first policy (`conventions/repro-tests.md`), independent verifier (`agent/verifier.py`, Architect/Security/QA lenses), bounded repo RAG (`make index-repo`, `CONTEXT_PACK=1`), speculative patches (`make speculative TASK=<id>`), repair-cap → DLQ |
+| Planner–executor–verifier (T3.1–T3.3) | verification-aware DAG in `make graph` (subtasks carry `parent_task_id`+`verify_cmd`; replans on verify-fail), single-agent-default policy (`conventions/orchestration.md`), Postgres checkpoints (`GRAPH_CHECKPOINT=postgres`) |
+| Capacity + routing (T4.1–T4.5) | node capacity probe (`agent/capacity.py`, `WORKER_TIERS=auto`), tier subjects `swarm.tasks.<role>.<tier>` (backward-compatible default), LiteLLM gateway with structural local-primary (`make litellm`, `ROUTE_API_FALLBACK` opt-in), RouteLLM proposal (`ROUTER_ENABLED=1`), hardware lineup above |
+| Hardening + observability (T5.1–T5.3) | backoff ladder 1s→10m + `UNIQUE(msg_id)` + DLQ replay (`make dlq-replay SEQ=<n>`), OTel GenAI spans + Grafana SLA dashboard, expensive-failure circuit breaker (`reason=snowball`) |
+| Evaluation + ops (T6.1–T6.4) | shadow-eval harness gates every default flip (`make shadow-eval CANDIDATE=KEY=VAL`), morning verifier audit (`make morning`), skills as MIT modules (`skills/*/skill.yaml` + LICENSE), context-management policy (`conventions/context.md`) |
+
+Honest caveats (from the plan): Headroom saves 15–20% on coding-agent
+workloads — the 60–95% headline is for JSON tool outputs; judge on the
+`make sla` measured numbers. The proxy adds a hop — watch p95 latency and
+bypass per-role with `HEADROOM_ENABLED=0`. Existing deployments: run
+`make migrate` (migrations 002–005) and re-run `make bootstrap`
+(tier consumers + backoff ladder; the stream subject widens to
+`swarm.tasks.>`).
 
 ## Tier B (production: k3s + Istio ambient)
 

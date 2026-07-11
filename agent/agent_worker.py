@@ -35,7 +35,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "gen"))
 
 from swarm.v1 import event_pb2, task_pb2  # noqa: E402
 
-from agent.budget import BudgetExceeded, ValkeyBudget, valkey_lock  # noqa: E402
+from agent.budget import (  # noqa: E402
+    BudgetExceeded,
+    CircuitBreaker,
+    SnowballError,
+    ValkeyBudget,
+    valkey_lock,
+)
 from agent.health import serve_health  # noqa: E402
 from agent.openbao import lease_secret  # noqa: E402
 from agent.sandbox import PoisonError, run_sandboxed_aider  # noqa: E402
@@ -49,6 +55,10 @@ DATABASE_URL = os.environ.get(
     "DATABASE_URL", "postgres://postgres:dev@localhost:5432/swarm"
 )
 FETCH_TIMEOUT_S = int(os.environ.get("FETCH_TIMEOUT_S", "30"))
+# v4.1 T4.2 — tier-aware scheduling. "default" keeps the v4.0 subject
+# swarm.tasks.<role>; extra tiers subscribe to swarm.tasks.<role>.<tier>.
+# WORKER_TIERS=auto derives serveable tiers from the capacity probe.
+WORKER_TIERS = os.environ.get("WORKER_TIERS", "default")
 WORKER_ID = f"{ROLE}-{uuid.uuid4().hex[:8]}"
 
 
@@ -102,9 +112,21 @@ async def handle_task(
     pool: asyncpg.Pool, task: task_pb2.Task, budget: ValkeyBudget
 ) -> None:
     ttl = max(60, int(task.deadline_unix - time.time())) if task.deadline_unix else 3600
+    if os.environ.get("CONTEXT_PACK", "") == "1":  # v4.1 T2.4 bounded RAG
+        from agent.context_pack import build_context
+
+        task.title += await build_context(pool, task.title, ROLE)
     async with valkey_lock(f"task:{task.task_id}", ttl=ttl):
         secret = lease_secret("forgejo")  # leased, short TTL, never persisted
-        await run_sandboxed_aider(task, secret, budget=budget)
+        result = await run_sandboxed_aider(task, secret, budget=budget)
+        async with pool.acquire() as conn:  # v4.1 T2.1 quality metrics
+            await conn.execute(
+                "UPDATE tasks SET first_pass_green=$2, repair_cycles=$3 "
+                "WHERE task_id=$1",
+                uuid.UUID(task.task_id),
+                result.first_pass_green,
+                result.repair_cycles,
+            )
         await emit(
             pool,
             task.task_id,
@@ -112,6 +134,14 @@ async def handle_task(
             status="done",
             detail=f"branch={task.branch or f'feature/{task.task_id}'}",
         )
+
+
+async def task_created_at(pool: asyncpg.Pool, task_id: str) -> float:
+    row = await pool.fetchrow(
+        "SELECT extract(epoch FROM created_at) AS ts FROM tasks WHERE task_id=$1",
+        uuid.UUID(task_id),
+    )
+    return float(row["ts"]) if row else time.time()
 
 
 async def main() -> None:
@@ -124,15 +154,41 @@ async def main() -> None:
     pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=4)
     nc = await nats.connect(NATS_URL)
     js = nc.jetstream()
-    sub = await js.pull_subscribe(f"swarm.tasks.{ROLE}", durable=ROLE)
+
+    # v4.1 T4.1 — register this node's capacity for tier-aware routing.
+    from agent.capacity import register_node, serveable_tiers
+
+    caps = await register_node(pool, WORKER_ID)
+    tiers = (
+        serveable_tiers(caps)
+        if WORKER_TIERS == "auto"
+        else [t.strip() for t in WORKER_TIERS.split(",") if t.strip()]
+    )
+
+    # One durable consumer per tier; "default" keeps the v4.0 subject.
+    subs = []
+    for tier in tiers:
+        if tier == "default":
+            subs.append(await js.pull_subscribe(f"swarm.tasks.{ROLE}", durable=ROLE))
+        else:
+            subs.append(
+                await js.pull_subscribe(
+                    f"swarm.tasks.{ROLE}.{tier}", durable=f"{ROLE}-{tier}"
+                )
+            )
+    log.info("subscribed tiers: %s", tiers)
 
     health = asyncio.create_task(serve_health(WORKER_ID, ROLE))
 
     while True:  # event-driven pull, not fixed-interval poll
-        try:
-            msgs = await sub.fetch(1, timeout=FETCH_TIMEOUT_S)
-        except NatsTimeoutError:
-            continue  # nothing pending; fetch again
+        msgs = []
+        for sub in subs:
+            try:
+                msgs = await sub.fetch(1, timeout=FETCH_TIMEOUT_S // len(subs) or 1)
+                if msgs:
+                    break
+            except NatsTimeoutError:
+                continue  # nothing pending on this tier; try the next
 
         for m in msgs:
             task = task_pb2.Task.FromString(m.data)
@@ -147,7 +203,11 @@ async def main() -> None:
             budget = ValkeyBudget(
                 agent=ROLE, task_id=task.task_id, limit=task.budget_tokens
             )
+            breaker = CircuitBreaker(
+                task.task_id, await task_created_at(pool, task.task_id)
+            )
             try:
+                await breaker.check(time.time())  # T5.3: trip before spending
                 await handle_task(pool, task, budget)
                 await m.ack()
                 emit_trace(
@@ -167,6 +227,19 @@ async def main() -> None:
                     uuid.UUID(task.task_id),
                 )
                 await m.nak(delay=30)  # retry with backoff
+            except SnowballError as err:
+                # T5.3: expensive-failure circuit breaker -> DLQ, reason
+                # recorded so morning triage sees the snowball explicitly.
+                log.error("task %s snowballed: %s", task.task_id, err)
+                emit_trace("failed", task.task_id, ROLE, detail=f"reason=snowball {err}")
+                await emit(
+                    pool,
+                    task.task_id,
+                    event_pb2.AgentEvent.FAILED,
+                    status="failed",
+                    detail=f"reason=snowball {err}",
+                )
+                await m.term()
             except PoisonError as err:
                 log.error("task %s poisoned: %s", task.task_id, err)
                 emit_trace("failed", task.task_id, ROLE, detail=str(err))

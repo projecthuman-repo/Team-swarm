@@ -5,8 +5,10 @@ RUNTIME := $(shell command -v podman || command -v docker)
 COMPOSE := $(RUNTIME) compose -f deploy/compose.yaml
 
 .PHONY: quickstart up down bootstrap swarm forgejo chat vllm qdrant \
-        observability openobserve relay relay-cdc agent graph crew ingest \
-        inject qualify dlq sla seed test lint gate gen models models-35b logs
+        observability openobserve headroom litellm relay relay-cdc agent \
+        graph crew verify-diff ingest inject qualify dlq dlq-replay sla seed \
+        index-repo shadow-eval morning speculative test lint gate gen \
+        models models-35b models-bf16 migrate logs
 
 quickstart: up bootstrap ## start infra and bootstrap everything
 
@@ -40,6 +42,12 @@ observability: ## baseline: OpenSearch (logs) + Langfuse (traces)
 openobserve: ## optional single-binary observability swap
 	$(COMPOSE) --profile openobserve up -d
 
+headroom: ## token-compression proxy sidecar (v4.1; seed assets first)
+	$(COMPOSE) --profile headroom up -d --build
+
+litellm: ## model gateway: local primary, opt-in API fallback (v4.1)
+	$(COMPOSE) --profile litellm up -d
+
 relay: ## run the outbox relay on the host (needs node 22: cd relay && npm install)
 	cd relay && npm start
 
@@ -67,19 +75,46 @@ qualify: ## stage-1 qualification checks (after: inject_task.py --count 100)
 dlq: ## DLQ -> human triage pass (Stage 4 requirement)
 	python scripts/dlq_triage.py
 
-sla: ## operational SLA report (completion rate, pickup latency)
+dlq-replay: ## re-inject a fixed task by stream sequence (SEQ=<n>)
+	python scripts/dlq_triage.py --replay $(SEQ)
+
+sla: ## operational SLA report (completion, latency, green rate, headroom savings)
 	python scripts/sla_report.py
 
 seed: ## seed vector memory from knowledge/ (Appendix C packs)
 	python scripts/seed_knowledge.py
 
+index-repo: ## RAG-index a repo's files + signatures (REPO=/path)
+	python scripts/seed_knowledge.py --index-repo $(or $(REPO),.)
+
+shadow-eval: ## compare a candidate config vs default on the golden pack
+	python scripts/shadow_eval.py $(foreach kv,$(CANDIDATE),--candidate $(kv))
+
+morning: ## Morning Operator Routine: dlq + sla + verifier audit + learn
+	./scripts/morning_routine.sh
+
+speculative: ## multi-candidate patch fan-out for a swarm-hard task (TASK=<id>)
+	python scripts/speculative_patch.py $(TASK)
+
+verify-diff: ## independent verifier over a diff+spec (DIFF=<f> SPEC=<f>)
+	python -m agent.verifier --diff $(DIFF) --spec $(SPEC)
+
+migrate: ## apply db/migrations/*.sql in order (idempotent)
+	for f in db/migrations/*.sql; do \
+	  $(RUNTIME) exec -i $$($(RUNTIME) ps -qf name=postgres | head -1) \
+	    psql -U postgres -d swarm < $$f; done
+
 models: ## pull the default Ornith model into the ollama container
 	$(RUNTIME) exec -it $$($(RUNTIME) ps -qf name=ollama | head -1) \
 	  ollama pull maxwell1500/ornith-9b:Q4_K_M
 
-models-35b: ## 35B MoE for 24GB+ nodes (both architect and editor roles)
+models-35b: ## 35B MoE Q4 for 24GB+ nodes (both architect and editor roles)
 	$(RUNTIME) exec -it $$($(RUNTIME) ps -qf name=ollama | head -1) \
 	  ollama pull maxwell1500/ornith-35b:Q4_K_M
+
+models-bf16: ## 9B bf16 for 48-80GB nodes (T4.5 lineup; higher fidelity)
+	$(RUNTIME) exec -it $$($(RUNTIME) ps -qf name=ollama | head -1) \
+	  ollama pull maxwell1500/ornith-9b:bf16
 
 test:
 	pytest -q

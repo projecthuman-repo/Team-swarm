@@ -1,0 +1,12 @@
+# Skill manifest (v4.1 T6.3 — skills as MIT modules).
+# Every skill directory carries: run (entrypoint), skill.yaml, LICENSE.
+# The fail-closed license gate (syft dir scan) covers skills/.
+name: hello
+version: 1.0.0
+license: MIT
+entrypoint: run
+description: Sandbox smoke-test skill; --prove-isolation verifies the boundary.
+sandbox:
+  network: none
+  rootfs: read-only
+  tmpfs: /work

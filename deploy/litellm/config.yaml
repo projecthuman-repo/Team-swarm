@@ -1,0 +1,38 @@
+# LiteLLM gateway (v4.1 T4.3) — self-hosted PRIMARY, hosted API optional.
+# MIT core only; the enterprise/ directory is not used.
+#
+# Routing invariant (structural, not aspirational): the local models are
+# always first; the hosted fallback only exists when ROUTE_API_FALLBACK=1
+# AND FALLBACK_API_BASE/FALLBACK_API_MODEL are set. With the flag off,
+# local failure fails closed to the normal JetStream retry path.
+# The fallback API key is an OpenBao lease injected as FALLBACK_API_KEY
+# (Hard Rule 7) — never hard-coded here.
+
+model_list:
+  - model_name: swarm-local
+    litellm_params:
+      model: openai/Ornith-1.0-9B
+      api_base: os.environ/OLLAMA_OPENAI_BASE # http://ollama:11434/v1
+      api_key: "unused"
+  - model_name: swarm-local-35b
+    litellm_params:
+      model: openai/Ornith-1.0-35B
+      api_base: os.environ/VLLM_OPENAI_BASE # http://vllm:8000/v1
+      api_key: "unused"
+  - model_name: swarm-api-fallback
+    litellm_params:
+      model: os.environ/FALLBACK_API_MODEL # any OpenAI/Anthropic-compatible
+      api_base: os.environ/FALLBACK_API_BASE
+      api_key: os.environ/FALLBACK_API_KEY # OpenBao lease, injected
+
+litellm_settings:
+  num_retries: 3
+  request_timeout: 600
+  # exponential backoff between retries is litellm's default behavior
+  context_window_fallbacks:
+    - swarm-local: [swarm-local-35b]
+
+router_settings:
+  routing_strategy: simple-shuffle
+  # fallbacks list is appended at startup ONLY when ROUTE_API_FALLBACK=1
+  # (see deploy/litellm/entrypoint.sh)

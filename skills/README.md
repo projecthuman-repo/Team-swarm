@@ -3,8 +3,11 @@
 Executable tools agents may invoke — always through the sandbox
 (Hard Rule 6), never on the host kernel.
 
-A skill is a directory containing an executable named `run` (any
-language). Input arrives on stdin, results go to stdout.
+A skill is a packaged MIT module (v4.1 T6.3): a directory containing an
+executable named `run` (any language), a `skill.yaml` manifest
+(name/version/license/entrypoint), and a `LICENSE` file. The fail-closed
+license gate scans this directory — a skill without a permissive license
+blocks the merge. Input arrives on stdin, results go to stdout.
 
 ```bash
 echo world | skills/run_skill.sh hello          # -> hello, world

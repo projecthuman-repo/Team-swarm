@@ -145,7 +145,7 @@ creates no duplicate.
 
 All required, any non-zero exit blocks auto-merge: `ruff`, `pytest --cov`
 (floor), `bandit`, diff-size (`.forgejo/scripts/diff_size_gate.sh`),
-headroom CLI, and the fail-closed license gate
+the Headroom compression gate (headroom-ai fixtures), and the fail-closed license gate
 (`.forgejo/scripts/license_gate.py`, needs [syft](https://github.com/anchore/syft)).
 
 **Verify:** add an AGPL dep on a test branch → gate exits 1, merge blocked.
@@ -179,6 +179,56 @@ prompt, token spend, and check results from the trace.
 Stage-4 operational tooling: `make dlq` (DLQ → `needs-human` Forgejo
 issues), `make sla` (completion rate, publish→claim latency, p95 pickup),
 `make seed` (Appendix C knowledge packs into vector memory).
+
+## v4.1 operations
+
+- **Migrations:** existing DBs run `make migrate` (002 lessons.tag,
+  003 task quality, 004 node_caps, 005 outbox UNIQUE); fresh installs get
+  everything from `db/schema.sql`. Re-run `make bootstrap` after
+  upgrading — the task stream subject widens to `swarm.tasks.>` (edit the
+  stream with `nats stream edit SWARM_TASKS --subjects='swarm.tasks.>'`
+  on live deployments) and consumers gain the 1s→10m backoff ladder +
+  tier consumers.
+- **Headroom chain:** `scripts/seed_headroom_assets.sh` (egress host) →
+  `make headroom` → per-role `HEADROOM_ENABLED=1`. Budgets meter what the
+  engine actually sends (post-compression); the pre/post pair in traces
+  is observability, not billing (T1.9). Verify no-egress: the proxy
+  compresses while attached only to swarm-internal.
+- **Fallback drill (T4.3):** stop Ollama; with `ROUTE_API_FALLBACK=1` +
+  a stub `FALLBACK_API_BASE`, requests land on the stub; with the flag
+  off they fail closed to JetStream retry and never egress.
+- **Duplicate-delivery drill (T5.1):** force a redelivery (kill a worker
+  mid-task); the CAS claim + `UNIQUE(msg_id)` mean no double-claim and no
+  duplicate outbox row. Replay a DLQ'd task: `make dlq-replay SEQ=<n>`.
+- **Adoption rule:** any default flip (model, scaffold, flag) must first
+  beat the current default on `make shadow-eval` — leaderboards don't
+  transfer.
+- **Morning Operator Routine:** `make morning` = DLQ triage → SLA report
+  (green rate + measured Headroom savings) → verifier audit of last
+  night's merges → `headroom learn` dry-run (corrections ship as a
+  feature/* PR, never a direct context write).
+
+## Agent coding guidelines (Appendix D)
+
+`karpathy-guidelines.md` is vendored from `multica-ai/andrej-karpathy-skills`
+(MIT — passes the §19 gate) and imported into every agent's context via
+`AGENTS.md` and aider's `read:` list, so it applies to aider and
+nano-claude-code alike. Its four principles map onto controls the swarm
+already enforces:
+
+| Principle | Demands | Reinforces |
+|---|---|---|
+| Think Before Coding | state assumptions; ask when ambiguous | "teacher not doer"; fewer bad diffs |
+| Simplicity First | minimum code, no speculative abstractions | diff-size gate (§10) |
+| Surgical Changes | touch only what the task requires; flag dead code, don't remove it | diff-size gate; guards against silent-drop regressions |
+| Goal-Driven Execution | define success criteria; loop until verified | CI gates + qualification SLAs |
+
+Agents have no egress, so the file is vendored — refresh it from a host
+with `scripts/update_karpathy.sh`, never at runtime.
+
+**Verify:** an agent given an ambiguous ticket opens a clarifying question
+instead of guessing; its PR touches only files the task names and contains
+no drive-by refactors of adjacent code.
 
 ## Model licensing status
 
