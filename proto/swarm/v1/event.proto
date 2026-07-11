@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package swarm.v1;
+
+// Audit/event record emitted by agents. Always written to the Postgres
+// outbox in the same transaction as the state change; the relay is the
+// only publisher into JetStream.
+message AgentEvent {
+  string task_id = 1;
+  string agent   = 2;
+  enum Kind {
+    CLAIMED       = 0;
+    PROGRESS      = 1;
+    PR_OPENED     = 2;
+    CHECKS_PASSED = 3;
+    FAILED        = 4;
+    LESSON        = 5;
+  }
+  Kind   kind    = 3;
+  string detail  = 4;
+  int64  ts_unix = 5;
+}

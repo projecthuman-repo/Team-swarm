@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: swarm
+  labels:
+    istio.io/dataplane-mode: ambient # ztunnel mTLS, no sidecars
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: swarm-agent
+  namespace: swarm

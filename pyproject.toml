@@ -1,0 +1,25 @@
+[project]
+name = "overnight-agent-swarm"
+version = "4.0.0"
+description = "Overnight Agent Swarm v4.0 — JetStream + transactional outbox + sandboxed coding agents"
+requires-python = ">=3.12"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = ["agent/gen"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = ["E402"]  # gen/ sys.path insertion precedes imports by design
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+omit = ["agent/gen/*"]
+
+[tool.bandit]
+exclude_dirs = ["tests", "agent/gen"]

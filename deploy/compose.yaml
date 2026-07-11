@@ -1,0 +1,137 @@
+# Tier A — the laptop tier. One machine, Podman, Ollama, no Kubernetes.
+#   podman compose -f deploy/compose.yaml up -d
+#
+# Networks: agents live on `swarm-internal` (internal: true — no egress,
+# Hard Rule 1). Only ollama (model pulls) and chat ingress sit on `egress`.
+#
+# Profiles:
+#   (default)        core spine: nats, postgres+pgvector, apicurio, valkey,
+#                    seaweedfs, openbao, ollama
+#   --profile swarm  outbox relay + one backend agent (built from deploy/)
+#   --profile observability  opensearch (+ dashboards)
+
+networks:
+  swarm-internal:
+    internal: true
+  egress: {}
+
+volumes:
+  nats-data: {}
+  pg-data: {}
+  ollama: {}
+  seaweed-data: {}
+  opensearch-data: {}
+
+services:
+  nats:
+    image: nats:2.12
+    command: ["-js", "-sd", "/data"]
+    volumes: ["nats-data:/data"]
+    networks: [swarm-internal]
+    ports: ["4222:4222", "8222:8222"]
+
+  postgres:
+    # pgvector must be present for db/schema.sql (CREATE EXTENSION vector)
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_PASSWORD: dev
+      POSTGRES_DB: swarm
+    command: ["postgres", "-c", "wal_level=logical"] # enables CDC relay option
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ../db/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+    networks: [swarm-internal]
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d swarm"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  apicurio:
+    image: apicurio/apicurio-registry:3.3.0
+    environment:
+      APICURIO_STORAGE_KIND: sql
+      APICURIO_STORAGE_SQL_KIND: postgresql
+      APICURIO_DATASOURCE_URL: jdbc:postgresql://postgres/swarm
+      APICURIO_DATASOURCE_USERNAME: postgres
+      APICURIO_DATASOURCE_PASSWORD: dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [swarm-internal]
+    ports: ["8081:8080"]
+
+  valkey:
+    image: valkey/valkey:9.0
+    networks: [swarm-internal]
+    ports: ["6379:6379"]
+
+  seaweedfs:
+    image: chrislusf/seaweedfs:latest
+    command: "server -s3"
+    volumes: ["seaweed-data:/data"]
+    networks: [swarm-internal]
+    ports: ["8333:8333"]
+
+  openbao:
+    image: openbao/openbao:2.5.0
+    command: "server -dev -dev-root-token-id=dev-root -dev-listen-address=0.0.0.0:8200"
+    environment:
+      BAO_ADDR: http://127.0.0.1:8200
+    networks: [swarm-internal]
+    ports: ["8200:8200"]
+
+  ollama:
+    image: ollama/ollama:latest
+    volumes: ["ollama:/root/.ollama"]
+    networks: [swarm-internal, egress] # egress only for model pulls
+    ports: ["11434:11434"]
+
+  # ---- profile: swarm ------------------------------------------------
+  relay:
+    build:
+      context: ..
+      dockerfile: deploy/Containerfile.relay
+    profiles: [swarm]
+    environment:
+      NATS_URL: nats://nats:4222
+      DATABASE_URL: postgres://postgres:dev@postgres:5432/swarm
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [swarm-internal]
+    restart: unless-stopped
+
+  agent-backend:
+    build:
+      context: ..
+      dockerfile: deploy/Containerfile.agent
+    profiles: [swarm]
+    environment:
+      AGENT_ROLE: backend
+      NATS_URL: nats://nats:4222
+      DATABASE_URL: postgres://postgres:dev@postgres:5432/swarm
+      VALKEY_URL: valkey://valkey:6379
+      OPENBAO_ADDR: http://openbao:8200
+      OPENBAO_TOKEN: dev-root
+      OLLAMA_API_BASE: http://ollama:11434
+      AIDER_MODEL: ollama/maxwell1500/ornith-9b:Q4_K_M
+    read_only: true
+    tmpfs: ["/tmp", "/home/swarm"] # writable HOME for git/aider state only
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges=true"]
+    networks: [swarm-internal] # internal-only: no egress, Hard Rule 1
+    restart: unless-stopped
+
+  # ---- profile: observability ----------------------------------------
+  opensearch:
+    image: opensearchproject/opensearch:2
+    profiles: [observability]
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+    volumes: ["opensearch-data:/usr/share/opensearch/data"]
+    networks: [swarm-internal]
+    ports: ["9200:9200"]

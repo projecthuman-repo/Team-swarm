@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package swarm.v1;
+
+// A unit of work for one agent role. Produced by ingest (Forgejo issues,
+// chat ingress) and consumed by agent workers via JetStream.
+message Task {
+  string task_id       = 1;   // UUID
+  string role          = 2;   // backend|frontend|review|triage
+  string title         = 3;
+  string spec_ref      = 4;   // SeaweedFS blob key
+  string branch        = 5;   // feature/<task_id>
+  int32  attempt       = 6;
+  int64  budget_tokens = 7;
+  int64  deadline_unix = 8;
+}

@@ -1,0 +1,37 @@
+# Forgejo Actions workflow for the optional iOS build (Appendix A).
+# Place in the TARGET repo's .forgejo/workflows/ if it ships an iOS app.
+name: ios-build
+on:
+  push:
+    branches: [integration]
+  schedule:
+    - cron: "0 3 * * *" # nightly
+
+jobs:
+  build:
+    runs-on: macos # dedicated macOS runner, outside the agent boundary
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: lease signing secrets from OpenBao
+        run: |
+          export BAO_ADDR="$OPENBAO_ADDR"
+          bao login -method=approle role_id="$BAO_ROLE_ID" secret_id="$BAO_SECRET_ID" >/dev/null
+          bao kv get -field=p12_base64 secret/swarm/ios-signing | base64 -d > /tmp/sign.p12
+
+      - name: build .ipa
+        run: |
+          xcodebuild -workspace ios/App.xcworkspace -scheme App \
+            -configuration Release -archivePath build/App.xcarchive archive
+          xcodebuild -exportArchive -archivePath build/App.xcarchive \
+            -exportOptionsPlist ios/ExportOptions.plist -exportPath build/
+
+      - name: upload artifact to SeaweedFS (S3 API)
+        run: |
+          aws --endpoint-url "$SEAWEEDFS_S3_URL" \
+            s3 cp build/*.ipa "s3://builds/ios/${GITHUB_SHA}/"
+
+      - name: emit build-status event (through the outbox — never JetStream)
+        run: |
+          psql "$DATABASE_URL" -c "INSERT INTO outbox(subject, msg_id, payload)
+            VALUES ('swarm.events.build', '${GITHUB_SHA}-ios', '\x');"

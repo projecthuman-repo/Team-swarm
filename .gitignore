@@ -1,0 +1,12 @@
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+.ruff_cache/
+node_modules/
+relay/gen/
+dist/
+*.egg-info/
+.venv/
+venv/

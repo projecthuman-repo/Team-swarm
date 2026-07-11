@@ -1,0 +1,3 @@
+# Optional: local embeddings for writable vector memory (agent/lessons.py).
+# all-MiniLM-L6-v2 -> vector(384) in db/schema.sql. Apache-2.0.
+sentence-transformers>=3.0

@@ -1,0 +1,33 @@
+# Outbox relay — the ONLY publisher into JetStream (Hard Rule 2).
+# Safe to run >1 replica: FOR UPDATE SKIP LOCKED prevents double-publish,
+# and Nats-Msg-Id dedupes at the server if a relay crashes mid-batch.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: outbox-relay
+  namespace: swarm
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: outbox-relay }
+  template:
+    metadata:
+      labels: { app: outbox-relay }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: relay
+          image: localhost:5000/swarm-relay:latest # build from deploy/Containerfile.relay
+          env:
+            - { name: NATS_URL, value: nats://nats:4222 }
+            - { name: DATABASE_URL, value: postgres://postgres:dev@postgres:5432/swarm }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: "1", memory: 512Mi }
