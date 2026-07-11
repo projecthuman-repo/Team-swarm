@@ -1,0 +1,59 @@
+# Agent worker Deployment (Tier B). One Deployment per role — copy this
+# and change AGENT_ROLE + name to add roles (Appendix B): the bus, outbox,
+# and relay are unchanged.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-backend
+  namespace: swarm
+spec:
+  replicas: 2 # durable pull consumer load-balances across instances
+  selector:
+    matchLabels: { app: agent-backend }
+  template:
+    metadata:
+      labels: { app: agent-backend }
+      annotations:
+        # OpenBao Agent Injector (openbao-k8s): the Forgejo token is a
+        # 15m-TTL lease rendered into the pod — never in the image or env.
+        openbao.org/agent-inject: "true"
+        openbao.org/role: "swarm-agent"
+        openbao.org/agent-inject-secret-forgejo: "secret/data/swarm/forgejo"
+        openbao.org/agent-inject-template-forgejo: |
+          {{- with secret "secret/data/swarm/forgejo" -}}
+          export FORGEJO_TOKEN="{{ .Data.data.token }}"
+          {{- end -}}
+    spec:
+      serviceAccountName: swarm-agent
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: agent
+          image: localhost:5000/swarm-agent:latest # build from deploy/Containerfile.agent
+          env:
+            - { name: AGENT_ROLE, value: backend }
+            - { name: NATS_URL, value: nats://nats:4222 }
+            - { name: DATABASE_URL, value: postgres://postgres:dev@postgres:5432/swarm }
+            - { name: VALKEY_URL, value: valkey://valkey-primary:6379 }
+            - { name: OPENBAO_INJECTED_DIR, value: /vault/secrets }
+            - { name: OLLAMA_API_BASE, value: http://vllm:8000 }
+            - { name: AIDER_MODEL, value: openai/Ornith-1.0-35B }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: home, mountPath: /home/swarm } # writable HOME for git/aider
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: "2", memory: 2Gi }
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 2Gi }
+        - name: home
+          emptyDir: { sizeLimit: 1Gi }

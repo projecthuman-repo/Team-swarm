@@ -1,0 +1,14 @@
+# Sandbox runtimes for skill execution (Hard Rule 6).
+# gVisor (runsc) is the baseline; Kata/Firecracker is the optional
+# dedicated-kernel upgrade when the threat model demands it.
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: gvisor
+handler: runsc
+---
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: kata
+handler: kata

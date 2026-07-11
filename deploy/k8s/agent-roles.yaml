@@ -1,0 +1,141 @@
+# Frontend / review / triage worker Deployments (Appendix B: adding a role
+# touches only the consumer + a worker with AGENT_ROLE=<role>; the bus,
+# outbox, and relay are unchanged). agent-backend.yaml is the annotated
+# reference copy — these mirror it.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-frontend
+  namespace: swarm
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: agent-frontend }
+  template:
+    metadata:
+      labels: { app: agent-frontend }
+      annotations:
+        openbao.org/agent-inject: "true"
+        openbao.org/role: "swarm-agent"
+        openbao.org/agent-inject-secret-forgejo: "secret/data/swarm/forgejo"
+    spec:
+      serviceAccountName: swarm-agent
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: agent
+          image: localhost:5000/swarm-agent:latest
+          env:
+            - { name: AGENT_ROLE, value: frontend }
+            - { name: NATS_URL, value: nats://nats:4222 }
+            - { name: DATABASE_URL, value: postgres://postgres:dev@postgres:5432/swarm }
+            - { name: VALKEY_URL, value: valkey://valkey-primary:6379 }
+            - { name: OPENBAO_INJECTED_DIR, value: /vault/secrets }
+            - { name: OLLAMA_API_BASE, value: http://vllm:8000 }
+            - { name: AIDER_MODEL, value: openai/Ornith-1.0-35B }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: home, mountPath: /home/swarm }
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 2Gi }
+        - name: home
+          emptyDir: { sizeLimit: 1Gi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-review
+  namespace: swarm
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: agent-review }
+  template:
+    metadata:
+      labels: { app: agent-review }
+      annotations:
+        openbao.org/agent-inject: "true"
+        openbao.org/role: "swarm-agent"
+        openbao.org/agent-inject-secret-forgejo: "secret/data/swarm/forgejo"
+    spec:
+      serviceAccountName: swarm-agent
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: agent
+          image: localhost:5000/swarm-agent:latest
+          env:
+            - { name: AGENT_ROLE, value: review }
+            - { name: NATS_URL, value: nats://nats:4222 }
+            - { name: DATABASE_URL, value: postgres://postgres:dev@postgres:5432/swarm }
+            - { name: VALKEY_URL, value: valkey://valkey-primary:6379 }
+            - { name: OPENBAO_INJECTED_DIR, value: /vault/secrets }
+            - { name: OLLAMA_API_BASE, value: http://vllm:8000 }
+            - { name: AIDER_MODEL, value: openai/Ornith-1.0-35B }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: home, mountPath: /home/swarm }
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 2Gi }
+        - name: home
+          emptyDir: { sizeLimit: 1Gi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-triage
+  namespace: swarm
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: agent-triage }
+  template:
+    metadata:
+      labels: { app: agent-triage }
+      annotations:
+        openbao.org/agent-inject: "true"
+        openbao.org/role: "swarm-agent"
+        openbao.org/agent-inject-secret-forgejo: "secret/data/swarm/forgejo"
+    spec:
+      serviceAccountName: swarm-agent
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: agent
+          image: localhost:5000/swarm-agent:latest
+          env:
+            - { name: AGENT_ROLE, value: triage }
+            - { name: NATS_URL, value: nats://nats:4222 }
+            - { name: DATABASE_URL, value: postgres://postgres:dev@postgres:5432/swarm }
+            - { name: VALKEY_URL, value: valkey://valkey-primary:6379 }
+            - { name: OPENBAO_INJECTED_DIR, value: /vault/secrets }
+            - { name: OLLAMA_API_BASE, value: http://vllm:8000 }
+            - { name: AIDER_MODEL, value: openai/Ornith-1.0-35B }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: home, mountPath: /home/swarm }
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 2Gi }
+        - name: home
+          emptyDir: { sizeLimit: 1Gi }

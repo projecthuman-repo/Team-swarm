@@ -1,0 +1,19 @@
+# aider configuration (runbook §13) — architect/editor two-model mode.
+#
+# Default (6-12 GB GPU): Ornith-1.0-9B for both roles.
+# On a 24 GB+ node, switch both to ornith-35b (MoE, ~3B active params:
+# faster AND more accurate than the 9B):
+#   model: ollama/maxwell1500/ornith-35b:Q4_K_M
+#   editor-model: ollama/maxwell1500/ornith-35b:Q4_K_M
+# Tier B (vLLM): model: openai/Ornith-1.0-35B with OPENAI_API_BASE=http://vllm:8000/v1
+# Fallback (no Ornith): ollama/gpt-oss:20b or ollama/qwen2.5-coder:7b (Apache-2.0).
+
+architect: true
+model: ollama/maxwell1500/ornith-9b:Q4_K_M
+editor-model: ollama/maxwell1500/ornith-9b:Q4_K_M
+
+yes-always: true
+auto-commits: true
+analytics: false
+check-update: false
+read: [AGENTS.md, identity.md, user.md, guardrails.md]

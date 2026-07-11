@@ -1,0 +1,4 @@
+# Optional Confluent wire-compatibility path (agent/ccompat.py):
+# confluent-kafka's Protobuf SerDes against Apicurio's ccompat endpoint.
+# Apache-2.0.
+confluent-kafka[protobuf]>=2.6

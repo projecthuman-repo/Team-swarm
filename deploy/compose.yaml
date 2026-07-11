@@ -1,0 +1,260 @@
+# Tier A — the laptop tier. One machine, Podman, Ollama, no Kubernetes.
+#   podman compose -f deploy/compose.yaml up -d
+#
+# Networks: agents live on `swarm-internal` (internal: true — no egress,
+# Hard Rule 1). Only ollama (model pulls), forgejo, and chat ingress sit
+# on `egress`.
+#
+# Profiles (every documented option is runnable):
+#   (default)        core spine: nats, postgres+pgvector, apicurio, valkey,
+#                    seaweedfs, openbao, ollama
+#   --profile swarm          outbox relay + all four role agents
+#   --profile forgejo        self-hosted git + Actions (GPLv3, isolated service)
+#   --profile chat           Telegram/Slack/Discord ingress
+#   --profile vllm           Tier-A vLLM (adopt past ~5 concurrent agents; GPU)
+#   --profile qdrant         optional vector-store upgrade
+#   --profile observability  OpenSearch (logs) + Langfuse (traces) baseline
+#   --profile openobserve    optional single-binary observability swap
+
+networks:
+  swarm-internal:
+    internal: true
+  egress: {}
+
+volumes:
+  nats-data: {}
+  pg-data: {}
+  ollama: {}
+  seaweed-data: {}
+  opensearch-data: {}
+  qdrant-data: {}
+  forgejo-data: {}
+  openobserve-data: {}
+
+x-agent-base: &agent-base
+  build:
+    context: ..
+    dockerfile: deploy/Containerfile.agent
+  profiles: [swarm]
+  environment: &agent-env
+    NATS_URL: nats://nats:4222
+    DATABASE_URL: postgres://postgres:dev@postgres:5432/swarm
+    VALKEY_URL: valkey://valkey:6379
+    OPENBAO_ADDR: http://openbao:8200
+    OPENBAO_TOKEN: dev-root
+    OLLAMA_API_BASE: http://ollama:11434
+    AIDER_MODEL: ollama/maxwell1500/ornith-9b:Q4_K_M
+    FORGEJO_URL: http://forgejo:3000
+  read_only: true
+  tmpfs: ["/tmp", "/home/swarm"] # writable HOME for git/aider state only
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges=true"]
+  networks: [swarm-internal] # internal-only: no egress, Hard Rule 1
+  restart: unless-stopped
+
+services:
+  nats:
+    image: nats:2.12
+    command: ["-js", "-sd", "/data"]
+    volumes: ["nats-data:/data"]
+    networks: [swarm-internal]
+    ports: ["4222:4222", "8222:8222"]
+
+  postgres:
+    # pgvector must be present for db/schema.sql (CREATE EXTENSION vector)
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_PASSWORD: dev
+      POSTGRES_DB: swarm
+    command: ["postgres", "-c", "wal_level=logical"] # enables CDC relay option
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ../db/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+    networks: [swarm-internal]
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d swarm"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  apicurio:
+    image: apicurio/apicurio-registry:3.3.0
+    environment:
+      APICURIO_STORAGE_KIND: sql
+      APICURIO_STORAGE_SQL_KIND: postgresql
+      APICURIO_DATASOURCE_URL: jdbc:postgresql://postgres/swarm
+      APICURIO_DATASOURCE_USERNAME: postgres
+      APICURIO_DATASOURCE_PASSWORD: dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [swarm-internal]
+    ports: ["8081:8080"]
+
+  valkey:
+    image: valkey/valkey:9.0
+    networks: [swarm-internal]
+    ports: ["6379:6379"]
+
+  seaweedfs:
+    image: chrislusf/seaweedfs:latest
+    command: "server -s3"
+    volumes: ["seaweed-data:/data"]
+    networks: [swarm-internal]
+    ports: ["8333:8333"]
+
+  openbao:
+    image: openbao/openbao:2.5.0
+    command: "server -dev -dev-root-token-id=dev-root -dev-listen-address=0.0.0.0:8200"
+    environment:
+      BAO_ADDR: http://127.0.0.1:8200
+    networks: [swarm-internal]
+    ports: ["8200:8200"]
+
+  ollama:
+    image: ollama/ollama:latest
+    volumes: ["ollama:/root/.ollama"]
+    networks: [swarm-internal, egress] # egress only for model pulls
+    ports: ["11434:11434"]
+
+  # ---- profile: swarm (relay + one agent per role, Appendix B) --------
+  relay:
+    build:
+      context: ..
+      dockerfile: deploy/Containerfile.relay
+    profiles: [swarm]
+    environment:
+      NATS_URL: nats://nats:4222
+      DATABASE_URL: postgres://postgres:dev@postgres:5432/swarm
+      # CDC relay option (runbook §7): switch the command to tail logical
+      # replication instead of polling.
+      # command: ["npx", "tsx", "relay_cdc.ts"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [swarm-internal]
+    restart: unless-stopped
+
+  agent-backend:
+    <<: *agent-base
+    environment:
+      <<: *agent-env
+      AGENT_ROLE: backend
+
+  agent-frontend:
+    <<: *agent-base
+    environment:
+      <<: *agent-env
+      AGENT_ROLE: frontend
+
+  agent-review:
+    <<: *agent-base
+    environment:
+      <<: *agent-env
+      AGENT_ROLE: review
+
+  agent-triage:
+    <<: *agent-base
+    environment:
+      <<: *agent-env
+      AGENT_ROLE: triage
+
+  # ---- profile: forgejo (GPLv3 — isolated network service only) -------
+  forgejo:
+    image: codeberg.org/forgejo/forgejo:11
+    profiles: [forgejo]
+    environment:
+      FORGEJO__server__ROOT_URL: http://localhost:3000/
+      FORGEJO__server__HTTP_PORT: "3000"
+    volumes: ["forgejo-data:/data"]
+    networks: [swarm-internal, egress]
+    ports: ["3000:3000", "2222:22"]
+
+  # ---- profile: chat (Telegram baseline; Slack/Discord optional) -------
+  chat-ingress:
+    build:
+      context: ..
+      dockerfile: deploy/Containerfile.agent
+    profiles: [chat]
+    command: ["python", "-m", "ingest.chat_ingress"]
+    environment:
+      DATABASE_URL: postgres://postgres:dev@postgres:5432/swarm
+      OPENBAO_ADDR: http://openbao:8200
+      OPENBAO_TOKEN: dev-root
+      CHAT_SOURCES: telegram # add: slack,discord (+ channel ids below)
+      SLACK_CHANNEL_ID: ""
+      DISCORD_CHANNEL_ID: ""
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [swarm-internal, egress] # needs chat-provider APIs
+    restart: unless-stopped
+
+  # ---- profile: vllm (inference upgrade, >5 concurrent agents) ---------
+  vllm:
+    image: vllm/vllm-openai:latest
+    profiles: [vllm]
+    command:
+      - --model=deepreinforce-ai/Ornith-1.0-9B # 35B on 24GB+ nodes
+      - --served-model-name=Ornith-1.0-9B
+      - --max-model-len=262144
+      - --enable-auto-tool-choice
+      - --tool-call-parser=qwen3_xml
+      - --reasoning-parser=qwen3
+      - --trust-remote-code
+    networks: [swarm-internal, egress] # egress only for model download
+    ports: ["8000:8000"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # ---- profile: qdrant (vector-store upgrade, >5-10M vectors) ----------
+  qdrant:
+    image: qdrant/qdrant:latest
+    profiles: [qdrant]
+    volumes: ["qdrant-data:/qdrant/storage"]
+    networks: [swarm-internal]
+    ports: ["6333:6333"]
+
+  # ---- profile: observability (baseline: OpenSearch + Langfuse) --------
+  opensearch:
+    image: opensearchproject/opensearch:2
+    profiles: [observability]
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+    volumes: ["opensearch-data:/usr/share/opensearch/data"]
+    networks: [swarm-internal]
+    ports: ["9200:9200"]
+
+  langfuse:
+    image: langfuse/langfuse:2
+    profiles: [observability]
+    environment:
+      DATABASE_URL: postgres://postgres:dev@postgres:5432/langfuse
+      NEXTAUTH_URL: http://localhost:3001
+      NEXTAUTH_SECRET: dev-only-change-me
+      SALT: dev-only-change-me
+      TELEMETRY_ENABLED: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [swarm-internal]
+    ports: ["3001:3000"]
+
+  # ---- profile: openobserve (single-binary observability swap) ---------
+  openobserve:
+    image: public.ecr.aws/zinclabs/openobserve:latest
+    profiles: [openobserve]
+    environment:
+      ZO_ROOT_USER_EMAIL: dev@swarm.local
+      ZO_ROOT_USER_PASSWORD: dev-only-change-me
+    volumes: ["openobserve-data:/data"]
+    networks: [swarm-internal]
+    ports: ["5080:5080"]

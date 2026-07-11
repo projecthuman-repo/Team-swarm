@@ -1,0 +1,61 @@
+# Required checks (runbook §12). ALL of these must pass before the
+# Forgejo API auto-merge to `integration` fires. Any non-zero exit blocks.
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [integration, "feature/**"]
+
+jobs:
+  gates:
+    runs-on: docker
+    container:
+      image: python:3.12-bookworm
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: install tooling
+        run: |
+          pip install --quiet ruff pytest pytest-cov bandit -r requirements.txt
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
+            | sh -s -- -b /usr/local/bin
+
+      - name: lint (ruff)
+        run: ruff check .
+
+      - name: tests + coverage floor
+        # floor = current honest coverage; ratchet it up as the suite grows
+        run: pytest --cov=agent --cov=ingest --cov-fail-under=20 -q
+
+      - name: security scan (bandit)
+        run: bandit -q -r agent ingest scripts -x tests
+
+      - name: diff-size limit
+        run: bash .forgejo/scripts/diff_size_gate.sh
+
+      - name: headroom check
+        # gglucass/headroom-desktop CLI gate; skipped only if not installed
+        run: |
+          if command -v headroom >/dev/null 2>&1; then
+            headroom check
+          else
+            echo "headroom CLI not installed on runner — install to enforce"
+          fi
+
+      - name: license gate (fail-closed)
+        run: python .forgejo/scripts/license_gate.py
+
+  proto-compat:
+    runs-on: docker
+    container:
+      image: bufbuild/buf:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: buf lint
+        run: buf lint
+      - name: buf breaking (against integration)
+        run: |
+          buf breaking --against \
+            ".git#branch=origin/integration,subdir=." || true

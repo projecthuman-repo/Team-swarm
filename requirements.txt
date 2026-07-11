@@ -1,0 +1,9 @@
+# Agent worker + ingest runtime (Python 3.12). All permissive licenses.
+nats-py>=2.9
+asyncpg>=0.29
+valkey>=6.0
+requests>=2.32
+protobuf>=7.35,<8  # matches the checked-in gencode under agent/gen/
+fastapi>=0.115
+uvicorn>=0.32
+aider-chat>=0.86

@@ -1,0 +1,9 @@
+version: v2
+plugins:
+  - remote: buf.build/protocolbuffers/python
+    out: agent/gen
+  - remote: buf.build/community/stephenh-ts-proto
+    out: relay/gen
+    opt:
+      - esModuleInterop=true
+      - outputServices=false

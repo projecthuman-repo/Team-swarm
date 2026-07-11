@@ -1,0 +1,22 @@
+# Hard Rule 1: agents have no internet egress. Default-deny for the swarm
+# namespace; agents reach only in-mesh services (DNS + in-namespace).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+  namespace: swarm
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector: {} # in-namespace services only
+    - to: # cluster DNS
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
