@@ -37,6 +37,10 @@ jobs:
       - name: diff-size limit
         run: bash .forgejo/scripts/diff_size_gate.sh
 
+      - name: AGENTS.md size gate (cross-tool constitution, v4.2 T7.5)
+        # keep the shared constitution <= Codex's 32 KiB project_doc_max_bytes
+        run: python .forgejo/scripts/agents_md_gate.py
+
       - name: headroom gate (token compression, v4.1 T1.1)
         # chopratejas/headroom (PyPI headroom-ai, Apache-2.0) — compresses
         # checked-in fixtures and asserts ratio floor + CCR round-trip.

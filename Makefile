@@ -5,9 +5,11 @@ RUNTIME := $(shell command -v podman || command -v docker)
 COMPOSE := $(RUNTIME) compose -f deploy/compose.yaml
 
 .PHONY: quickstart up down bootstrap swarm forgejo chat vllm qdrant \
-        observability openobserve headroom litellm relay relay-cdc agent \
-        graph crew verify-diff ingest inject qualify dlq dlq-replay sla seed \
-        index-repo shadow-eval morning speculative test lint gate gen \
+        observability openobserve headroom litellm strix codex-engine \
+        relay relay-cdc agent graph crew verify-diff codex-review \
+        codex-audit agents-md-check ingest inject qualify dlq dlq-replay \
+        sla seed index-repo shadow-eval shadow-eval-engines strix-findings \
+        doomloop morning speculative test lint gate gen \
         models models-35b models-bf16 migrate logs
 
 quickstart: up bootstrap ## start infra and bootstrap everything
@@ -47,6 +49,12 @@ headroom: ## token-compression proxy sidecar (v4.1; seed assets first)
 
 litellm: ## model gateway: local primary, opt-in API fallback (v4.1)
 	$(COMPOSE) --profile litellm up -d
+
+strix: ## Strix autonomous pentest lane (v4.2; augments bandit, opt-in)
+	$(COMPOSE) --profile security up -d
+
+codex-engine: ## Codex engine lane (v4.2 T7.3; if not egress-sealable)
+	$(COMPOSE) --profile codex up -d --build
 
 relay: ## run the outbox relay on the host (needs node 22: cd relay && npm install)
 	cd relay && npm start
@@ -90,6 +98,9 @@ index-repo: ## RAG-index a repo's files + signatures (REPO=/path)
 shadow-eval: ## compare a candidate config vs default on the golden pack
 	python scripts/shadow_eval.py $(foreach kv,$(CANDIDATE),--candidate $(kv))
 
+shadow-eval-engines: ## cross-engine eval: aider (default) vs codex (v4.2 T7.6)
+	python scripts/shadow_eval.py --candidate AGENT_ENGINE=codex
+
 morning: ## Morning Operator Routine: dlq + sla + verifier audit + learn
 	./scripts/morning_routine.sh
 
@@ -98,6 +109,21 @@ speculative: ## multi-candidate patch fan-out for a swarm-hard task (TASK=<id>)
 
 verify-diff: ## independent verifier over a diff+spec (DIFF=<f> SPEC=<f>)
 	python -m agent.verifier --diff $(DIFF) --spec $(SPEC)
+
+codex-review: ## Codex as a 2nd independent reviewer over a diff (v4.2 T7.4)
+	python -m agent.codex_review --base $(or $(BASE),integration)
+
+codex-audit: ## Codex offline egress audit — sealed vs lane (v4.2 T7.1)
+	./scripts/codex_egress_audit.sh
+
+agents-md-check: ## AGENTS.md <= 32 KiB cross-tool constitution (v4.2 T7.5)
+	python .forgejo/scripts/agents_md_gate.py
+
+strix-findings: ## route a Strix JSON report -> lessons + issues (REPORT=<f>)
+	python scripts/strix_findings.py --report $(REPORT)
+
+doomloop: ## measure Ornith doom-loop + snowball rate (v4.2 T9.2)
+	python scripts/doomloop_probe.py --snowball-rate
 
 migrate: ## apply db/migrations/*.sql in order (idempotent)
 	for f in db/migrations/*.sql; do \

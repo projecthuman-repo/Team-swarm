@@ -1,0 +1,51 @@
+# Strix autonomous security-review lane (v4.2 T8.1) — Tier B.
+# Runs as a Job on the dedicated security lane, NOT the sealed coding
+# container. Inference stays self-hosted via LLM_API_BASE -> the in-cluster
+# LiteLLM/vLLM serving Ornith. Targets are restricted to in-org repos
+# (conventions/security-scope.md). bandit remains the always-on static gate.
+#
+# Strix needs Docker-in-the-loop; on k8s that means either a DinD sidecar
+# or a node with a container runtime socket exposed under strict policy.
+# This manifest uses a DinD sidecar to avoid mounting the host socket.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: strix-scan
+  namespace: swarm
+spec:
+  backoffLimit: 1
+  template:
+    metadata:
+      labels: { app: strix }
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: strix
+          image: ghcr.io/usestrix/strix:latest
+          args:
+            - "-n"
+            - "--target"
+            - "/work"
+            - "--scan-mode"
+            - "quick"
+          env:
+            - { name: LLM_API_BASE, value: http://litellm:4000/v1 }
+            - { name: STRIX_MODEL, value: openai/swarm-local }
+            - { name: DOCKER_HOST, value: tcp://localhost:2375 }
+          volumeMounts:
+            - { name: work, mountPath: /work }
+        - name: dind
+          image: docker:27-dind
+          securityContext:
+            privileged: true # DinD sidecar, isolated from the host
+          env:
+            - { name: DOCKER_TLS_CERTDIR, value: "" }
+          volumeMounts:
+            - { name: work, mountPath: /work }
+      volumes:
+        - name: work
+          emptyDir: { sizeLimit: 4Gi }

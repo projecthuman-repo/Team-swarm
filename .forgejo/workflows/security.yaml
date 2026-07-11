@@ -1,0 +1,48 @@
+# Strix autonomous security-review workflow (v4.2 T8.2).
+#
+# SEPARATE from ci.yaml — the always-on bandit static gate there is
+# UNTOUCHED. This adds dynamic DAST/pentest depth on the diff.
+#
+# Starts ADVISORY (continue-on-error: findings are posted, the PR is not
+# blocked) for a burn-in window. Promote to blocking (drop continue-on-
+# error) once the false-positive rate is acceptable on the swarm's own
+# history. Inference stays self-hosted via LLM_API_BASE (Ornith).
+name: security
+on:
+  pull_request:
+    branches: [integration]
+
+jobs:
+  strix:
+    runs-on: docker
+    # Strix needs Docker-in-the-loop; this runner label provides it.
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: install strix (opt-in security lane)
+        run: pip install --quiet -r requirements-security.txt
+
+      - name: strix dynamic scan (advisory — burn-in)
+        id: strix
+        continue-on-error: true # ADVISORY: remove to promote to blocking
+        env:
+          LLM_API_BASE: ${{ env.LLM_API_BASE }} # self-hosted Ornith gateway
+        run: |
+          strix -n -t ./ \
+            --scan-mode quick \
+            --scope-mode diff \
+            --diff-base origin/integration \
+            --output json > strix-report.json || true
+          cat strix-report.json || true
+
+      - name: route validated findings -> lessons + needs-human
+        if: always()
+        continue-on-error: true
+        run: |
+          if [ -s strix-report.json ]; then
+            python scripts/strix_findings.py --report strix-report.json --no-issues
+          fi
+
+      # bandit still runs in ci.yaml — this workflow does not touch it.

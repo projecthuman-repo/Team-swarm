@@ -208,6 +208,37 @@ issues), `make sla` (completion rate, publish→claim latency, p95 pickup),
   night's merges → `headroom learn` dry-run (corrections ship as a
   feature/* PR, never a direct context write).
 
+## v4.2 operations (Elevation+ — engines, security, model improvement)
+
+Additive to everything above; `aider` stays default, `bandit` stays on.
+
+- **Codex egress audit (T7.1, do first):** `make codex-audit`. PASS → Codex
+  may be `AGENT_ENGINE=codex` inside the sealed container. FAIL (any
+  auth/telemetry callout) → run it on the `codex-engine` lane
+  (`make codex-engine`, controlled egress). The decision is recorded, never
+  silent. Needs the `codex` binary (see `requirements-codex.md`).
+- **Cross-engine adoption (T7.6):** `make shadow-eval-engines` compares
+  aider vs codex on the golden pack. Promote Codex to default **only** on a
+  green-rate win within the token threshold — otherwise it stays opt-in.
+- **Codex review lane (T7.4):** `make codex-review BASE=integration` adds a
+  second heterogeneous reviewer whose findings feed the verifier
+  `aggregate()`. Optional — no-ops cleanly if `codex` is absent.
+- **Claude escalation (T7.7):** only with `ROUTE_API_FALLBACK=1` and the
+  Claude key leased into OpenBao (`secret/data/swarm/claude`, field
+  `api_key`). The escalated patch re-enters the green-build gate before any
+  PR. With the flag off it fails closed to local retry — no egress.
+- **Strix security lane (T8):** `make strix` (needs Docker). CI runs
+  `.forgejo/workflows/security.yaml` **advisory** first (findings posted,
+  PR not blocked); drop `continue-on-error` to promote to blocking once the
+  false-positive rate is acceptable. `make strix-findings REPORT=<json>`
+  routes validated findings to `lessons(tag='strix')` + needs-human issues.
+  Targets are in-org repos only (`conventions/security-scope.md`).
+- **Antidoom (T9, offline GPU host only):** `deploy/antidoom/` — measure the
+  baseline (`make doomloop`), train (`deploy/antidoom/train.sh`), then serve
+  behind a distinct tag and `make shadow-eval CANDIDATE=AIDER_MODEL=<tag>`.
+  Promote only on a measured doom-loop + tokens/PR drop with no green-rate
+  regression. Never on the runtime path; 9B/35B only, never LFM2.
+
 ## Agent coding guidelines (Appendix D)
 
 `karpathy-guidelines.md` is vendored from `multica-ai/andrej-karpathy-skills`

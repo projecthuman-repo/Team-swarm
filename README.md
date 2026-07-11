@@ -1,4 +1,4 @@
-# Team-swarm — Overnight Agent Swarm v4.1 "Elevation"
+# Team-swarm — Overnight Agent Swarm v4.2 "Elevation+"
 
 A self-hosted, licence-clean multi-agent coding swarm: autonomous agents
 (backend / frontend / review / triage) pick up tasks overnight, write code
@@ -191,6 +191,29 @@ bypass per-role with `HEADROOM_ENABLED=0`. Existing deployments: run
 `make migrate` (migrations 002–005) and re-run `make bootstrap`
 (tier consumers + backoff ladder; the stream subject widens to
 `swarm.tasks.>`).
+
+## v4.2 "Elevation+" — engines, security depth, model improvement
+
+A strict superset of v4.1 (nothing removed): three new workstreams add a
+second/third coding engine, a dynamic security lane, and an offline
+model-improvement track. All are **opt-in and shadow-eval-gated**; `aider`
+stays the default engine, `bandit` stays the always-on static gate.
+
+| Workstream | What runs |
+|---|---|
+| Codex engine (T7.1–T7.6) | `AGENT_ENGINE=codex` runs Ornith self-hosted via `codex exec --oss --local-provider ollama` (`agent/sandbox.py`, engine-aware token parser); offline egress audit (`make codex-audit`) decides sealed-container vs. the `codex-engine` lane (`make codex-engine`); Codex as a 2nd heterogeneous reviewer (`make codex-review`, `agent/codex_review.py`); cross-engine shadow eval (`make shadow-eval-engines`) — promote only on a win; AGENTS.md ≤32 KiB cross-tool constitution (`make agents-md-check`, CI gate) |
+| Claude Code / SDK (T7.7–T7.8) | Claude Opus 4.8 escalation for the hard ~5% on the **API-fallback lane only** (`agent/escalation_claude.py`, behind `ROUTE_API_FALLBACK=1`, OpenBao-leased key, never sealed); its patch re-enters the green-build gate. Enforcement patterns mirrored onto swarm machinery (`conventions/enforcement-patterns.md`) incl. a rubric grader that forces exactly one revision (`grade_rubric()` in `agent/verifier.py`) |
+| Strix security lane (T8.1–T8.5) | `usestrix/strix` dynamic pentest **augmenting** bandit: `make strix` service (profile `security`, `deploy/k8s/strix.yaml`), advisory CI workflow (`.forgejo/workflows/security.yaml`, promotes to blocking after burn-in), validated findings → `lessons(tag='strix')` + needs-human issues (`scripts/strix_findings.py`), scope guardrail (`conventions/security-scope.md`, in-org repos only) |
+| Antidoom offline (T9.1–T9.5) | FTPO/LoRA anti-doom-loop adapter for local Ornith 9B/35B, **off the critical path** on a GPU host (`deploy/antidoom/`); doom-loop baseline probe (`make doomloop`, `scripts/doomloop_probe.py`) correlated with `reason=snowball`; promote the merged (MIT-derivative) checkpoint only on a measured doom-loop + tokens/PR drop with no green-rate regression |
+
+Placement rule that governs the two CLIs: the sealed agent container is
+egress-free (Hard Rule 1), so **Claude Code/SDK can never run inside it**
+(Claude-model-only + Anthropic egress → API-fallback lane only). **Codex
+runs Ornith locally** and may be sealed *iff* `make codex-audit` proves it
+egress-free; otherwise it runs on the `codex-engine` lane — decided by the
+audit spike, never silently. New external deps (`strix-agent`,
+`claude-agent-sdk`, the `codex` binary, `antidoom`) are all optional and
+guarded — the build stays green when they're absent.
 
 ## Tier B (production: k3s + Istio ambient)
 

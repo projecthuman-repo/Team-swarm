@@ -1,0 +1,38 @@
+# Codex engine lane image (v4.2 T7.3) — the agent worker with the Codex
+# CLI installed, for when scripts/codex_egress_audit.sh shows Codex cannot
+# run egress-free inside the sealed container. This lane has controlled
+# egress (like the LiteLLM lane); it consumes the SAME JetStream subjects
+# and pushes only to feature/* — the sealed container is never weakened.
+FROM python:3.12-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Codex CLI (Rust binary). Pin CODEX_VERSION at build time; the reference
+# distribution is npm, but the self-contained binary needs no Node at
+# runtime. Adjust the install line to your pinned release/arch.
+ARG CODEX_VERSION=latest
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && npm install -g @openai/codex@${CODEX_VERSION} \
+    && apt-get purge -y nodejs && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/* /root/.npm \
+    || echo "NOTE: pin @openai/codex install for your environment"
+
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY agent/ agent/
+COPY ingest/ ingest/
+COPY scripts/ scripts/
+COPY skills/ skills/
+COPY AGENTS.md identity.md user.md guardrails.md karpathy-guidelines.md .aider.conf.yml ./
+COPY conventions/ conventions/
+
+RUN useradd --create-home --uid 10001 swarm
+USER swarm
+
+ENV PYTHONUNBUFFERED=1 AGENT_ENGINE=codex
+CMD ["python", "-m", "agent.agent_worker"]

@@ -12,3 +12,7 @@ litellm>=1.60,<2
 # capacity probe (T4.1)
 nvidia-ml-py>=12.560
 psutil>=6.0
+# v4.2 T7.7 — Claude Agent SDK escalation engine, API-fallback lane ONLY
+# (Claude-model-only, Anthropic egress; never in the sealed container).
+# Optional-guarded in agent/escalation_claude.py.
+claude-agent-sdk>=0.2

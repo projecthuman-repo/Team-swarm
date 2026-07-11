@@ -1,0 +1,14 @@
+# v4.2 Workstream 8 — Strix autonomous security-review lane (opt-in).
+# usestrix/strix — Apache-2.0 (badge + LICENSE verified). Self-hosted
+# inference via LLM_API_BASE -> the LiteLLM gateway / vLLM serving Ornith.
+#
+# Strix is HEAVIER than bandit: it needs Docker-in-the-loop and a running
+# target, and it is offensive — it runs ONLY on the dedicated security
+# lane against the swarm's own repos (conventions/security-scope.md),
+# never inside the sealed coding container. bandit stays the always-on
+# static gate (requirements-dev.txt); Strix adds dynamic DAST depth.
+#
+# Run `make gate` (syft, fail-closed) after installing: Strix bundles
+# Caido / Nuclei / Playwright / Textual / LiteLLM — each license is
+# verified at pin time on the resolved tree.
+strix-agent>=1.0.4

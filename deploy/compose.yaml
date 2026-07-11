@@ -17,6 +17,8 @@
 #   --profile openobserve    optional single-binary observability swap
 #   --profile headroom       token-compression proxy sidecar (v4.1 W1)
 #   --profile litellm        model gateway: local primary, opt-in API fallback (v4.1 T4.3)
+#   --profile security       Strix autonomous pentest lane, augments bandit (v4.2 T8.1)
+#   --profile codex          Codex engine lane (fallback if not egress-sealable, v4.2 T7.3)
 
 networks:
   swarm-internal:
@@ -294,3 +296,44 @@ services:
     volumes: ["openobserve-data:/data"]
     networks: [swarm-internal]
     ports: ["5080:5080"]
+
+  # ---- profile: security (Strix autonomous pentest lane, v4.2 T8.1) -----
+  # Augments the always-on bandit static scan with dynamic DAST. Heavier:
+  # needs Docker-in-the-loop and a running target, and it is offensive, so
+  # it runs on a DEDICATED lane against the swarm's own repos only
+  # (conventions/security-scope.md) — never the sealed coding container.
+  # Inference stays self-hosted via LLM_API_BASE -> LiteLLM/vLLM (Ornith).
+  strix:
+    image: ghcr.io/usestrix/strix:latest
+    profiles: [security]
+    environment:
+      LLM_API_BASE: http://litellm:4000/v1 # self-hosted Ornith via the gateway
+      STRIX_MODEL: openai/swarm-local
+      STRIX_SCAN_MODE: quick
+      STRIX_TARGET: /work
+    volumes:
+      # Docker-in-the-loop: Strix runs targets in its own Docker sandbox.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./strix-work:/work
+    networks: [swarm-internal, egress] # egress reaches only in-org targets
+    restart: "no"
+
+  # ---- profile: codex (Codex engine lane — fallback for T7.1-negative) --
+  # If scripts/codex_egress_audit.sh shows Codex cannot run egress-free, it
+  # runs here on a controlled-egress lane (like litellm), consuming the
+  # SAME JetStream subjects but never weakening the sealed container.
+  codex-engine:
+    build:
+      context: ..
+      dockerfile: deploy/Containerfile.codex
+    profiles: [codex]
+    environment:
+      <<: *agent-env
+      AGENT_ROLE: backend
+      AGENT_ENGINE: codex
+      CODEX_HOME: /home/swarm/.codex
+    tmpfs: ["/tmp", "/home/swarm"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges=true"]
+    networks: [swarm-internal, egress] # controlled egress for Codex only
+    restart: unless-stopped

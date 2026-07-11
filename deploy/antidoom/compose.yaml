@@ -1,0 +1,28 @@
+# Antidoom offline training env (v4.2 T9.1) — runs on a SEPARATE GPU host,
+# outside the swarm runtime path. Never brought up by the main stack.
+#   docker compose -f deploy/antidoom/compose.yaml up
+services:
+  antidoom:
+    image: nvidia/cuda:12.4.0-runtime-ubuntu22.04
+    working_dir: /work
+    # Pin antidoom from Liquid4All/antidoom (Apache-2.0). It uses `uv`.
+    command: >-
+      bash -lc "pip install uv &&
+                uv run antidoom -c configs/default.yaml
+                --model-name ${ORNITH_HF_ID:-deepreinforce-ai/Ornith-1.0-9B}"
+    environment:
+      # Target Ornith only — never pull LFM2 checkpoints (T9.3).
+      ORNITH_HF_ID: ${ORNITH_HF_ID:-deepreinforce-ai/Ornith-1.0-9B}
+      HF_HOME: /work/hf
+    volumes:
+      - ./work:/work
+      - ./antidoom-src:/work/antidoom # git clone Liquid4All/antidoom here
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    # AMD/ROCm hosts: swap the image for a ROCm base and use
+    # configs/default_amd.yaml (attention_backend: TRITON_ATTN).
