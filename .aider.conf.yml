@@ -16,4 +16,4 @@ yes-always: true
 auto-commits: true
 analytics: false
 check-update: false
-read: [AGENTS.md, identity.md, user.md, guardrails.md]
+read: [AGENTS.md, identity.md, user.md, guardrails.md, karpathy-guidelines.md]

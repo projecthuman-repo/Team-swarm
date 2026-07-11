@@ -73,6 +73,7 @@ etc.), and schedule `make ingest`. See [docs/RUNBOOK.md](docs/RUNBOOK.md).
 
 ```
 AGENTS.md identity.md user.md guardrails.md   # agent context (+ conventions/)
+karpathy-guidelines.md # vendored coding guidelines (Appendix D; scripts/update_karpathy.sh)
 proto/swarm/v1/        # Protobuf contracts (Task, AgentEvent) + buf config
 agent/                 # Python 3.12 worker: claim -> aider -> outbox emit
 agent/gen/             # checked-in generated protobuf code (make gen to refresh)
@@ -159,6 +160,7 @@ docs ships runnable:
 | DLQ → human triage (Stage 4) | — | `make dlq` (opens `needs-human` Forgejo issues) |
 | SLA tracking (≥70% / <10 min) | — | `make sla` |
 | Knowledge-pack seeding (Appendix C) | — | `make seed` after dropping docs in `knowledge/` |
+| Karpathy coding guidelines (Appendix D) | — | vendored as `karpathy-guidelines.md`, imported by `AGENTS.md` + aider; refresh with `scripts/update_karpathy.sh` |
 
 ## Tier B (production: k3s + Istio ambient)
 

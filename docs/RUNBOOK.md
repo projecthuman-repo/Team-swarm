@@ -180,6 +180,28 @@ Stage-4 operational tooling: `make dlq` (DLQ → `needs-human` Forgejo
 issues), `make sla` (completion rate, publish→claim latency, p95 pickup),
 `make seed` (Appendix C knowledge packs into vector memory).
 
+## Agent coding guidelines (Appendix D)
+
+`karpathy-guidelines.md` is vendored from `multica-ai/andrej-karpathy-skills`
+(MIT — passes the §19 gate) and imported into every agent's context via
+`AGENTS.md` and aider's `read:` list, so it applies to aider and
+nano-claude-code alike. Its four principles map onto controls the swarm
+already enforces:
+
+| Principle | Demands | Reinforces |
+|---|---|---|
+| Think Before Coding | state assumptions; ask when ambiguous | "teacher not doer"; fewer bad diffs |
+| Simplicity First | minimum code, no speculative abstractions | diff-size gate (§10) |
+| Surgical Changes | touch only what the task requires; flag dead code, don't remove it | diff-size gate; guards against silent-drop regressions |
+| Goal-Driven Execution | define success criteria; loop until verified | CI gates + qualification SLAs |
+
+Agents have no egress, so the file is vendored — refresh it from a host
+with `scripts/update_karpathy.sh`, never at runtime.
+
+**Verify:** an agent given an ambiguous ticket opens a clarifying question
+instead of guessing; its PR touches only files the task names and contains
+no drive-by refactors of adjacent code.
+
 ## Model licensing status
 
 Ornith-1.0 is plain MIT and passes the gate. Its Gemma 4 upstream terms

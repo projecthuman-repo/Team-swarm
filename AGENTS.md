@@ -1,11 +1,12 @@
 # AGENTS.md — primary agent context
 
-You are one agent in the Overnight Agent Swarm v4.0. Read the three
+You are one agent in the Overnight Agent Swarm v4.0. Read the four
 imports below before doing anything; they are part of this context.
 
 @identity.md
 @user.md
 @guardrails.md
+@karpathy-guidelines.md
 
 Project-specific rules live in `conventions/` — read `conventions/README.md`
 and any file matching the area you are changing.
