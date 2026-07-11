@@ -145,7 +145,7 @@ creates no duplicate.
 
 All required, any non-zero exit blocks auto-merge: `ruff`, `pytest --cov`
 (floor), `bandit`, diff-size (`.forgejo/scripts/diff_size_gate.sh`),
-headroom CLI, and the fail-closed license gate
+the Headroom compression gate (headroom-ai fixtures), and the fail-closed license gate
 (`.forgejo/scripts/license_gate.py`, needs [syft](https://github.com/anchore/syft)).
 
 **Verify:** add an AGPL dep on a test branch → gate exits 1, merge blocked.
@@ -179,6 +179,34 @@ prompt, token spend, and check results from the trace.
 Stage-4 operational tooling: `make dlq` (DLQ → `needs-human` Forgejo
 issues), `make sla` (completion rate, publish→claim latency, p95 pickup),
 `make seed` (Appendix C knowledge packs into vector memory).
+
+## v4.1 operations
+
+- **Migrations:** existing DBs run `make migrate` (002 lessons.tag,
+  003 task quality, 004 node_caps, 005 outbox UNIQUE); fresh installs get
+  everything from `db/schema.sql`. Re-run `make bootstrap` after
+  upgrading — the task stream subject widens to `swarm.tasks.>` (edit the
+  stream with `nats stream edit SWARM_TASKS --subjects='swarm.tasks.>'`
+  on live deployments) and consumers gain the 1s→10m backoff ladder +
+  tier consumers.
+- **Headroom chain:** `scripts/seed_headroom_assets.sh` (egress host) →
+  `make headroom` → per-role `HEADROOM_ENABLED=1`. Budgets meter what the
+  engine actually sends (post-compression); the pre/post pair in traces
+  is observability, not billing (T1.9). Verify no-egress: the proxy
+  compresses while attached only to swarm-internal.
+- **Fallback drill (T4.3):** stop Ollama; with `ROUTE_API_FALLBACK=1` +
+  a stub `FALLBACK_API_BASE`, requests land on the stub; with the flag
+  off they fail closed to JetStream retry and never egress.
+- **Duplicate-delivery drill (T5.1):** force a redelivery (kill a worker
+  mid-task); the CAS claim + `UNIQUE(msg_id)` mean no double-claim and no
+  duplicate outbox row. Replay a DLQ'd task: `make dlq-replay SEQ=<n>`.
+- **Adoption rule:** any default flip (model, scaffold, flag) must first
+  beat the current default on `make shadow-eval` — leaderboards don't
+  transfer.
+- **Morning Operator Routine:** `make morning` = DLQ triage → SLA report
+  (green rate + measured Headroom savings) → verifier audit of last
+  night's merges → `headroom learn` dry-run (corrections ship as a
+  feature/* PR, never a direct context write).
 
 ## Agent coding guidelines (Appendix D)
 

@@ -13,4 +13,8 @@ message Task {
   int32  attempt       = 6;
   int64  budget_tokens = 7;
   int64  deadline_unix = 8;
+  // v4.1 append-only additions (buf breaking stays green):
+  string parent_task_id = 9;  // set on planner-emitted subtasks (T3.1)
+  string verify_cmd     = 10; // per-subtask verification command (T3.1)
+  string tier           = 11; // model tier for capacity routing (T4.2); "" = default
 }

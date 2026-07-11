@@ -1,0 +1,14 @@
+# v4.1 "Elevation" additions (T0.3) — opt-in, matching the repo's
+# granular-requirements convention. Run `make gate` after installing:
+# the fail-closed license gate must stay green (no copyleft in the tree).
+#
+# headroom-ai: Apache-2.0 (chopratejas/headroom — the compression layer,
+#   NOT gglucass/headroom-desktop). Kompress-v2-base model + bundled RTK
+#   binary licenses are verified at pin time by the syft gate (fail-closed
+#   either way).
+headroom-ai==0.31.0
+# litellm: MIT core only — the enterprise/ directory is not used.
+litellm>=1.60,<2
+# capacity probe (T4.1)
+nvidia-ml-py>=12.560
+psutil>=6.0

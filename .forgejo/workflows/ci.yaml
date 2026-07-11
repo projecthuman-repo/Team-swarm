@@ -30,19 +30,21 @@ jobs:
         run: pytest --cov=agent --cov=ingest --cov-fail-under=20 -q
 
       - name: security scan (bandit)
-        run: bandit -q -r agent ingest scripts -x tests
+        # medium+ blocks; Low subprocess-usage notes are accepted (the
+        # engines ARE subprocesses — list args, never shell=True)
+        run: bandit -q -r agent ingest scripts -x tests --severity-level medium
 
       - name: diff-size limit
         run: bash .forgejo/scripts/diff_size_gate.sh
 
-      - name: headroom check
-        # gglucass/headroom-desktop CLI gate; skipped only if not installed
+      - name: headroom gate (token compression, v4.1 T1.1)
+        # chopratejas/headroom (PyPI headroom-ai, Apache-2.0) — compresses
+        # checked-in fixtures and asserts ratio floor + CCR round-trip.
+        # (Replaces the mis-wired gglucass/headroom-desktop step: that is a
+        # paid desktop tray app, not the compression library.)
         run: |
-          if command -v headroom >/dev/null 2>&1; then
-            headroom check
-          else
-            echo "headroom CLI not installed on runner — install to enforce"
-          fi
+          pip install --quiet --only-binary headroom-ai headroom-ai
+          python .forgejo/scripts/headroom_gate.py
 
       - name: license gate (fail-closed)
         run: python .forgejo/scripts/license_gate.py

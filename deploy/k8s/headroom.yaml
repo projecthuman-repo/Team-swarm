@@ -1,0 +1,68 @@
+# Headroom token-compression proxy (v4.1 T1.2) — Tier B.
+# Assets PVC is pre-seeded by scripts/seed_headroom_assets.sh from an
+# egress-capable admin host; the pod itself has no egress (default-deny).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: headroom
+  namespace: swarm
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: headroom }
+  template:
+    metadata:
+      labels: { app: headroom }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: headroom
+          image: localhost:5000/swarm-headroom:latest # deploy/Containerfile.headroom
+          env:
+            - { name: OPENAI_BASE_URL, value: http://vllm:8000/v1 }
+            - { name: HEADROOM_UPDATE_CHECK, value: "off" }
+            - { name: HF_HUB_OFFLINE, value: "1" }
+            - { name: ORT_STRATEGY, value: system }
+            - { name: ORT_LIB_LOCATION, value: /assets/ort }
+            - { name: HF_HOME, value: /assets/hf }
+          ports:
+            - containerPort: 8787
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: assets, mountPath: /assets, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: "2", memory: 2Gi }
+      volumes:
+        - name: assets
+          persistentVolumeClaim: { claimName: headroom-assets }
+        - name: tmp
+          emptyDir: { sizeLimit: 512Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: headroom
+  namespace: swarm
+spec:
+  selector: { app: headroom }
+  ports:
+    - port: 8787
+      targetPort: 8787
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: headroom-assets
+  namespace: swarm
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests: { storage: 5Gi }

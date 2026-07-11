@@ -47,27 +47,37 @@ DISCORD_CHANNEL_ID = os.environ.get("DISCORD_CHANNEL_ID", "")
 
 
 async def create_task(pool: asyncpg.Pool, ext_id: str, title: str) -> str | None:
-    """tasks row + outbox row in one tx; dedupe on ext_id (idempotent)."""
+    """tasks row + outbox row in one tx; dedupe on ext_id (idempotent).
+
+    Oversized pasted logs are compressed (v4.1 T1.8); the original goes
+    to SeaweedFS via spec_ref.
+    """
+    from ingest.compress_util import prepare_spec
+
     role = "triage"
     async with pool.acquire() as conn:
         async with conn.transaction():
             if await conn.fetchval("SELECT 1 FROM tasks WHERE ext_id=$1", ext_id):
                 return None
             tid = str(uuid.uuid4())
+            spec_text, spec_ref = prepare_spec(tid, title)
+            stored_title = spec_text if spec_ref else title
             await conn.execute(
-                "INSERT INTO tasks(task_id, role, status, ext_id, title, branch, "
-                "budget_tokens) VALUES($1, $2, 'pending', $3, $4, $5, $6)",
+                "INSERT INTO tasks(task_id, role, status, ext_id, title, spec_ref, "
+                "branch, budget_tokens) VALUES($1, $2, 'pending', $3, $4, $5, $6, $7)",
                 uuid.UUID(tid),
                 role,
                 ext_id,
-                title,
+                title[:500],
+                spec_ref or None,
                 f"feature/{tid}",
                 DEFAULT_BUDGET,
             )
             task = task_pb2.Task(
                 task_id=tid,
                 role=role,
-                title=title,
+                title=stored_title,
+                spec_ref=spec_ref,
                 branch=f"feature/{tid}",
                 budget_tokens=DEFAULT_BUDGET,
             )

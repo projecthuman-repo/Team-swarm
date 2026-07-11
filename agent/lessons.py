@@ -107,8 +107,18 @@ def _index_upsert(lesson_id: str, text: str, vec: list[float] | None) -> None:
 # ---- public API -------------------------------------------------------
 
 
-async def write_lesson(pool: asyncpg.Pool, task_id: str, text: str, agent: str) -> str:
-    """Store a lesson and its LESSON event in one transaction (via outbox)."""
+async def write_lesson(
+    pool: asyncpg.Pool,
+    task_id: str,
+    text: str,
+    agent: str,
+    tag: str | None = None,
+) -> str:
+    """Store a lesson and its LESSON event in one transaction (via outbox).
+
+    `tag` drives the retrieval flywheel (v4.1 T0.2): 'headroom-learn',
+    'morning-audit', 'codex-index', or a role name.
+    """
     import sys
 
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "gen"))
@@ -126,11 +136,12 @@ async def write_lesson(pool: asyncpg.Pool, task_id: str, text: str, agent: str) 
     async with pool.acquire() as conn:
         async with conn.transaction():
             await conn.execute(
-                "INSERT INTO lessons(lesson_id, task_id, text, embedding) "
-                "VALUES($1, $2, $3, $4)",
+                "INSERT INTO lessons(lesson_id, task_id, text, tag, embedding) "
+                "VALUES($1, $2, $3, $4, $5)",
                 uuid.UUID(lesson_id),
                 uuid.UUID(task_id),
                 text,
+                tag,
                 to_pgvector(vec),
             )
             await conn.execute(
@@ -143,16 +154,37 @@ async def write_lesson(pool: asyncpg.Pool, task_id: str, text: str, agent: str) 
     return lesson_id
 
 
-async def search_lessons(pool: asyncpg.Pool, query: str, limit: int = 5) -> list[str]:
-    """Nearest-neighbour search over lessons via the selected backend."""
+async def search_lessons(
+    pool: asyncpg.Pool,
+    query: str,
+    limit: int = 5,
+    tag: str | None = None,
+) -> list[str]:
+    """Nearest-neighbour search over lessons via the selected backend.
+
+    `tag` filters to one lesson family (pgvector path; the alternative
+    index backends return untagged results, so tagged retrieval always
+    goes through Postgres — the canonical store).
+    """
     vec = embed(query)
-    if vec is None:  # text fallback when embeddings aren't installed
-        rows = await pool.fetch(
-            "SELECT text FROM lessons WHERE text ILIKE '%' || $1 || '%' "
-            "ORDER BY created_at DESC LIMIT $2",
-            query,
-            limit,
-        )
+    if vec is None or tag is not None:  # text/tag path always via Postgres
+        if vec is not None:
+            rows = await pool.fetch(
+                "SELECT text FROM lessons WHERE tag = $3 "
+                "ORDER BY embedding <=> $1 LIMIT $2",
+                to_pgvector(vec),
+                limit,
+                tag,
+            )
+        else:
+            rows = await pool.fetch(
+                "SELECT text FROM lessons WHERE ($3::text IS NULL OR tag = $3) "
+                "AND text ILIKE '%' || $1 || '%' "
+                "ORDER BY created_at DESC LIMIT $2",
+                query,
+                limit,
+                tag,
+            )
         return [r["text"] for r in rows]
 
     if BACKEND == "qdrant":

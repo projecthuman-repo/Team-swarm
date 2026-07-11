@@ -1,0 +1,5 @@
+{
+  "title": "Bug: pagination returns 11 items per page instead of 10. Write a failing reproduction test first, then fix it.",
+  "role": "backend",
+  "verify_cmd": "pytest -q"
+}

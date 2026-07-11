@@ -20,7 +20,8 @@ and any file matching the area you are changing.
 3. Make the smallest change that completes the task. The diff-size CI gate
    blocks oversized changes — split instead of forcing.
 4. Every merge requires green checks: ruff, pytest+coverage, security scan,
-   diff-size, headroom, and the fail-closed license gate. Only permissive
+   diff-size, the Headroom compression gate, and the fail-closed license
+   gate. Only permissive
    licenses (Apache/MIT/BSD/MPL) may be introduced — never AGPL/SSPL/BSL.
 5. Auto-merge targets `integration` only. A human promotes to `main`.
 6. When you learn something reusable (a failure cause, a repo quirk, a

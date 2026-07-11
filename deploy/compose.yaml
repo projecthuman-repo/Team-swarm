@@ -15,6 +15,8 @@
 #   --profile qdrant         optional vector-store upgrade
 #   --profile observability  OpenSearch (logs) + Langfuse (traces) baseline
 #   --profile openobserve    optional single-binary observability swap
+#   --profile headroom       token-compression proxy sidecar (v4.1 W1)
+#   --profile litellm        model gateway: local primary, opt-in API fallback (v4.1 T4.3)
 
 networks:
   swarm-internal:
@@ -212,6 +214,40 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+
+  # ---- profile: headroom (token-compression proxy, v4.1 T1.2) ----------
+  headroom:
+    build:
+      context: ..
+      dockerfile: deploy/Containerfile.headroom
+    profiles: [headroom]
+    environment:
+      # upstream the proxy forwards to; point at litellm:4000/v1 when the
+      # litellm profile is also up (chain: agent -> headroom -> litellm -> model)
+      OPENAI_BASE_URL: http://ollama:11434/v1
+    volumes:
+      - ./headroom-assets:/assets:ro # seeded by scripts/seed_headroom_assets.sh
+    networks: [swarm-internal] # NO egress: assets are pre-provisioned (T1.4)
+    ports: ["8787:8787"]
+    restart: unless-stopped
+
+  # ---- profile: litellm (gateway — local primary, T4.3) ----------------
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest # MIT core; enterprise/ unused
+    profiles: [litellm]
+    entrypoint: ["/bin/sh", "/config/entrypoint.sh"]
+    environment:
+      OLLAMA_OPENAI_BASE: http://ollama:11434/v1
+      VLLM_OPENAI_BASE: http://vllm:8000/v1
+      ROUTE_API_FALLBACK: "0" # explicit opt-in; off = fails closed locally
+      FALLBACK_API_BASE: ""
+      FALLBACK_API_MODEL: ""
+      FALLBACK_API_KEY: "" # OpenBao lease in real deployments (Hard Rule 7)
+    volumes:
+      - ./litellm:/config:ro
+    networks: [swarm-internal, egress] # egress used ONLY with the opt-in flag
+    ports: ["4000:4000"]
+    restart: unless-stopped
 
   # ---- profile: qdrant (vector-store upgrade, >5-10M vectors) ----------
   qdrant:

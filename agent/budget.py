@@ -30,6 +30,16 @@ class BudgetExceeded(Exception):
     """Raised when a task's token spend crosses its budget."""
 
 
+class SnowballError(Exception):
+    """v4.1 T5.3 — expensive-failure circuit breaker tripped.
+
+    A task exceeded its wall-clock or cumulative-attempt budget. The
+    worker term()s the message with reason=snowball -> DLQ, countering
+    the documented token-snowball failure mode (retries quietly burning
+    the budget on an unsolvable task).
+    """
+
+
 class ValkeyBudget:
     """Token budget counter for one task, enforced in Valkey.
 
@@ -54,6 +64,53 @@ class ValkeyBudget:
     async def spent(self) -> int:
         val = await client().get(self.key)
         return int(val) if val else 0
+
+
+MAX_TASK_WALL_S = int(os.environ.get("MAX_TASK_WALL_S", "14400"))  # 4h
+MAX_TASK_ATTEMPTS = int(os.environ.get("MAX_TASK_ATTEMPTS", "8"))
+
+
+class CircuitBreaker:
+    """Wall-clock + cumulative-attempt caps for one task (v4.1 T5.3).
+
+    Attempts accumulate in Valkey across redeliveries and worker
+    restarts, so a task bouncing between instances still trips the
+    breaker. Wall clock is measured from the task's created_at.
+    """
+
+    def __init__(
+        self,
+        task_id: str,
+        created_at_unix: float,
+        max_wall_s: int = MAX_TASK_WALL_S,
+        max_attempts: int = MAX_TASK_ATTEMPTS,
+    ) -> None:
+        self.task_id = task_id
+        self.created_at_unix = created_at_unix
+        self.max_wall_s = max_wall_s
+        self.max_attempts = max_attempts
+        self.key = f"attempts:{task_id}"
+
+    def wall_exceeded(self, now_unix: float) -> bool:
+        return (now_unix - self.created_at_unix) > self.max_wall_s
+
+    async def record_attempt(self) -> int:
+        n = await client().incrby(self.key, 1)
+        await client().expire(self.key, 7 * 24 * 3600)
+        return int(n)
+
+    async def check(self, now_unix: float) -> None:
+        """Raise SnowballError if any cap is exceeded."""
+        attempts = await self.record_attempt()
+        if attempts > self.max_attempts:
+            raise SnowballError(
+                f"task {self.task_id}: {attempts} cumulative attempts "
+                f"> cap {self.max_attempts}"
+            )
+        if self.wall_exceeded(now_unix):
+            raise SnowballError(
+                f"task {self.task_id}: wall clock exceeded {self.max_wall_s}s"
+            )
 
 
 @asynccontextmanager

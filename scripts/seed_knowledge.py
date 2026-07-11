@@ -5,10 +5,18 @@ with embeddings, so agents retrieve platform know-how from their first
 task. Also supports re-embedding after an embedding-model swap (e.g. the
 bge-m3 upgrade) and relevance spot-checks (the §17 SLA).
 
+v4.1 T2.4 — repository RAG done right: --index-repo walks a repo and
+indexes FILES + API SIGNATURES (AST) into the codex knowledge pack
+(lessons tag='codex-index'). Deliberately excluded: "similar-snippet"
+retrieval — it empirically degrades results up to 15%. Retrieval is
+injected as bounded context (agent/context_pack.py) under a hard token
+cap.
+
 Usage:
     python scripts/seed_knowledge.py                 # ingest knowledge/
     python scripts/seed_knowledge.py --reembed       # after model swap
     python scripts/seed_knowledge.py --query "jetstream ack"   # spot-check
+    python scripts/seed_knowledge.py --index-repo /path/to/repo
 """
 
 from __future__ import annotations
@@ -69,6 +77,52 @@ async def seed(pool: asyncpg.Pool) -> int:
     return n
 
 
+def extract_signatures(source: str, filename: str) -> str:
+    """Files + API signatures only (T2.4) — never snippet bodies."""
+    import ast
+
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return ""
+    lines = [f"file: {filename}"]
+    doc = ast.get_docstring(tree)
+    if doc:
+        lines.append(f"  doc: {doc.splitlines()[0][:120]}")
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef):
+            lines.append(f"  class {node.name}")
+        elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            args = ", ".join(a.arg for a in node.args.args)
+            prefix = "async def" if isinstance(node, ast.AsyncFunctionDef) else "def"
+            lines.append(f"  {prefix} {node.name}({args})")
+    return "\n".join(lines) if len(lines) > 1 else lines[0]
+
+
+async def index_repo(pool: asyncpg.Pool, repo_path: str) -> int:
+    """Index a repo's files + signatures into lessons(tag='codex-index')."""
+    root = pathlib.Path(repo_path)
+    n = 0
+    for path in sorted(root.rglob("*.py")):
+        if any(part in {".git", "node_modules", ".venv", "gen"} for part in path.parts):
+            continue
+        sig = extract_signatures(path.read_text(errors="replace"), str(path.relative_to(root)))
+        if not sig:
+            continue
+        text = f"[codex-index] {sig}"
+        if await pool.fetchval("SELECT 1 FROM lessons WHERE text = $1", text):
+            continue
+        await pool.execute(
+            "INSERT INTO lessons(lesson_id, text, tag, embedding) "
+            "VALUES($1, $2, 'codex-index', $3)",
+            uuid.uuid4(),
+            text,
+            to_pgvector(embed(text)),
+        )
+        n += 1
+    return n
+
+
 async def reembed(pool: asyncpg.Pool) -> int:
     rows = await pool.fetch("SELECT lesson_id, text FROM lessons")
     for r in rows:
@@ -87,6 +141,9 @@ async def run(args: argparse.Namespace) -> None:
             print(f"--- {i} ---\n{text[:400]}\n")
     elif args.reembed:
         print(f"re-embedded {await reembed(pool)} lesson(s)")
+    elif args.index_repo:
+        n = await index_repo(pool, args.index_repo)
+        print(f"indexed {n} file signature record(s) (tag='codex-index')")
     else:
         print(f"seeded {await seed(pool)} new lesson chunk(s) from {KNOWLEDGE_DIR}")
     await pool.close()
@@ -96,6 +153,7 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--reembed", action="store_true")
     p.add_argument("--query", default="")
+    p.add_argument("--index-repo", default="", help="repo path to signature-index")
     asyncio.run(run(p.parse_args()))
 
 

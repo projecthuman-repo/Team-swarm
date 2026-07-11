@@ -4,7 +4,10 @@ Drop `.md`/`.txt` files here and run `python scripts/seed_knowledge.py` to
 seed vector memory (and reference key files from `AGENTS.md`). The
 documents recommend seeding from:
 
-- **gglucass/headroom-desktop** — the headroom CI gate
+- **chopratejas/headroom** (PyPI `headroom-ai`, Apache-2.0) — the token
+  compression layer behind the CI gate, proxy sidecar, and `learn` loop
+  (v4.1 ledger S1: replaces the earlier mis-wired reference to
+  gglucass/headroom-desktop, a paid desktop app)
 - **openai/codex** — agentic coding-CLI patterns (tool-calling loops, diff
   application, sandboxed execution) to mine for the worker and skills
 - **SafeRL-Lab/nano-claude-code** — the lightweight agent runtime used

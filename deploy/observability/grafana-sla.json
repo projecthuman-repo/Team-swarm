@@ -1,0 +1,117 @@
+{
+  "title": "Swarm SLA — v4.1",
+  "uid": "swarm-sla",
+  "schemaVersion": 39,
+  "tags": ["swarm", "sla"],
+  "time": { "from": "now-7d", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Task completion within 24h (SLA >= 70%)",
+      "type": "gauge",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 6 },
+      "datasource": { "type": "postgres", "uid": "${DS_SWARM_POSTGRES}" },
+      "targets": [
+        {
+          "rawSql": "SELECT 100.0 * count(*) FILTER (WHERE status='done' AND updated_at - created_at <= interval '24 hours') / greatest(count(*), 1) AS completion_pct FROM tasks WHERE created_at > now() - interval '7 days'",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": 0 },
+              { "color": "green", "value": 70 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "p95 inter-agent latency (publish -> claim; SLA < 10 min)",
+      "type": "stat",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 6 },
+      "datasource": { "type": "postgres", "uid": "${DS_SWARM_POSTGRES}" },
+      "targets": [
+        {
+          "rawSql": "SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY extract(epoch FROM t.updated_at - o.published_at)) AS p95_seconds FROM tasks t JOIN outbox o ON o.msg_id = t.task_id::text WHERE t.status IN ('claimed','done') AND o.published_at IS NOT NULL AND t.created_at > now() - interval '7 days'",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "red", "value": 600 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "First-pass green rate (north-star, target +20pts)",
+      "type": "gauge",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 6 },
+      "datasource": { "type": "postgres", "uid": "${DS_SWARM_POSTGRES}" },
+      "targets": [
+        {
+          "rawSql": "SELECT 100.0 * count(*) FILTER (WHERE first_pass_green) / greatest(count(*) FILTER (WHERE first_pass_green IS NOT NULL), 1) AS green_pct FROM tasks WHERE created_at > now() - interval '7 days'",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 } }
+    },
+    {
+      "id": 4,
+      "title": "Retry counts (attempts per task, 7d)",
+      "type": "timeseries",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 6 },
+      "datasource": { "type": "postgres", "uid": "${DS_SWARM_POSTGRES}" },
+      "targets": [
+        {
+          "rawSql": "SELECT date_trunc('hour', updated_at) AS time, avg(attempt) AS avg_attempts, max(attempt) AS max_attempts FROM tasks WHERE updated_at > now() - interval '7 days' GROUP BY 1 ORDER BY 1",
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Tokens per merged PR (Headroom pre/post, via OTel)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 6, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "${DS_OTEL_METRICS}" },
+      "targets": [
+        { "expr": "sum by (task_id) (swarm_tokens_spent)", "legendFormat": "spent {{task_id}}" },
+        { "expr": "avg(headroom_compression_ratio)", "legendFormat": "compression ratio" }
+      ],
+      "description": "Populated from agent/tracing.py OTLP export (gen_ai.usage.*, headroom.tokens_pre/post). Target: -15-20% tokens per merged PR."
+    },
+    {
+      "id": 6,
+      "title": "DLQ arrivals + snowball terminations (7d)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 6, "w": 12, "h": 7 },
+      "datasource": { "type": "postgres", "uid": "${DS_SWARM_POSTGRES}" },
+      "targets": [
+        {
+          "rawSql": "SELECT date_trunc('hour', updated_at) AS time, count(*) FILTER (WHERE status='failed') AS failed FROM tasks WHERE updated_at > now() - interval '7 days' GROUP BY 1 ORDER BY 1",
+          "format": "time_series"
+        }
+      ]
+    }
+  ],
+  "templating": {
+    "list": [
+      { "name": "DS_SWARM_POSTGRES", "type": "datasource", "query": "postgres" },
+      { "name": "DS_OTEL_METRICS", "type": "datasource", "query": "prometheus" }
+    ]
+  }
+}
