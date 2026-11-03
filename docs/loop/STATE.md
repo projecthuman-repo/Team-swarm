@@ -64,6 +64,16 @@ record (now `conventions/licensing.md`); the agent image is forecast over 700 MB
 known deviation, target kept). 3 refuted. The review ran concurrently with L2.1–L2.5 and L3.1
 (two agents at a time on this host), so the fix commit lands after them.
 
+## Phase-2 review (adversarial, 16 agents)
+
+12 findings, 7 confirmed (5 distinct defects) and fixed in `lean(L2.x): fix phase-2 review
+findings` (DECISIONS D-030): stage 1 of the gate never ran with aider (auto-commits; the diff was
+against HEAD) — now against the task's base commit; stage 1 ignored ruff excludes (now
+`--force-exclude`); a v4.1 `.env` model id crashed the fastembed default (aliased, and model
+failures degrade to text-only); an unparsable file lost its codex row; `make qualify` reported false
+dual-write losses after outbox pruning. 5 refuted. The review ran while L3.1–L3.2 were built, so
+the fix commit and the `lean-phase-2` tag land after them.
+
 ## Deferred commands by phase
 
 ### Phase 0 — closed 2026-11-03 (tag `lean-phase-0`)
@@ -91,3 +101,21 @@ refreshed in `docs/footprint-baseline.md`. Deferred to the runtime host, all ins
 - `uv run --no-sync python .forgejo/scripts/license_gate.py --zone C` and `--zone B` (syft)
 - `LITE_SMOKE_FORGEJO_TOKEN=<bot token> ./scripts/lite_smoke.sh` (lite spine → one task reaches
   `done`; needs a `swarm/sandbox-repo` in Forgejo)
+
+### Phase 2 — closed 2026-11-03 (tag `lean-phase-2`)
+
+Unit protocol green: `make ci-local` passed end to end (138 passed, 2 skipped — the two
+real-fastembed tests, skipped because ci-local syncs agent+dev only; with the `embeddings` extra all
+140 pass). Real-Postgres tests ran in-session against Postgres 16 + pgvector 0.6. Footprint table
+refreshed. Deferred to the runtime host, all inside `make verify-integration`:
+
+- `env REQUIRE_POSTGRES=1 uv run --no-sync pytest -q` (hybrid retrieval, codex index, retention,
+  SLA queries on the spine's pgvector image — a skip fails the step)
+- `uv run --frozen --group agent --extra embeddings python -c "from agent.lessons import embed; …"`
+  (real bge-small download → 384-dim; HuggingFace is 403 here)
+- `./scripts/embeddings_shadow.sh` (re-embed + golden pack per embedder; fastembed first-pass green
+  rate ≥ the v4.1 baseline embedder)
+
+Known follow-up (found by accident): `scripts/torch_cpu_lock.sh` leaves the CPU-torch source
+enabled in `pyproject.toml` when the re-lock fails (download.pytorch.org unreachable); it should
+restore the file on failure. Not yet fixed.

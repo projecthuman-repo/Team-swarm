@@ -51,3 +51,25 @@ Compressed wheel bytes per resolved set (PyPI JSON sizes; `*` = sdist fallback).
 | `requirements-dev.txt` | 28 | 32.5 | ruff 10.6, grpcio 7.4, virtualenv 6.0, grpcio-tools 2.8, pygments 1.3 |
 | `requirements-ccompat.txt` | 16 | 11.5 | confluent-kafka 5.0, cryptography 4.8, protobuf 0.3, googleapis-common-protos 0.3, authlib 0.3 |
 | `requirements-elevation.txt` | 0 | 0.0 |  |
+
+## Phase 2 close-out — 2026-11-03 (tag `lean-phase-2`, tree 09d0710)
+
+Phase 2 added no Python dependency of its own (fastembed already sat in the
+`embeddings` extra from L1.1). This tree also carries L3.1–L3.2, so
+`requirements.txt` gains prometheus-client (115 packages, 131.3 MB, +0.1 MB).
+
+### Wheel footprint — Python 3.12 / x86_64-manylinux_2_28
+
+Compressed wheel bytes per resolved set (PyPI JSON sizes; `*` = sdist fallback).
+
+| set | packages | compressed MB | top 5 packages (MB) |
+|---|---:|---:|---|
+| `requirements-routing.txt` | 105 | 3,210.1 | torch 539.2, nvidia-cudnn-cu13 519.2, nvidia-cublas 404.9, triton 285.7, nvidia-cusolver 227.9 |
+| `requirements-orchestration.txt` | 157 | 224.4 | litellm 36.6, onnxruntime 23.8, chromadb 23.3, uv 17.2, numpy 16.7 |
+| `requirements.txt` | 115 | 131.3 | scipy 37.3, tree-sitter-language-pack 20.0, numpy 18.0, litellm 14.5, pillow 8.0 |
+| `requirements-ingest.txt` | 68 | 108.0 | litellm 36.6, headroom-ai 17.8, botocore 16.2, ast-grep-cli 8.9, hf-xet 4.3 |
+| `requirements-vector.txt` | 89 | 104.6 | onnxruntime 23.8, chromadb 23.3, numpy 16.7, grpcio 7.4, kubernetes 4.7 |
+| `requirements-embeddings.txt` | 28 | 59.7 | onnxruntime 23.8, numpy 16.7, pillow 7.1, hf-xet 4.3, tokenizers 3.4 |
+| `requirements-dev.txt` | 28 | 32.5 | ruff 10.6, grpcio 7.4, virtualenv 6.0, grpcio-tools 2.8, pygments 1.3 |
+| `requirements-ccompat.txt` | 16 | 11.5 | confluent-kafka 5.0, cryptography 4.8, protobuf 0.3, googleapis-common-protos 0.3, authlib 0.3 |
+| `requirements-elevation.txt` | 0 | 0.0 |  |
