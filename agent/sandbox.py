@@ -59,6 +59,10 @@ HEADROOM_URL = os.environ.get("HEADROOM_URL", "http://headroom:8787/v1")
 MAX_REPAIR_CYCLES = int(os.environ.get("MAX_REPAIR_CYCLES", "2"))
 QUALITY_CHECK_TIMEOUT_S = int(os.environ.get("QUALITY_CHECK_TIMEOUT_S", "300"))
 QUALITY_CHECKS = os.environ.get("QUALITY_CHECKS", "ruff check .;pytest -q")
+# Two-stage gate (Lean & Precise L2.1): a fast lint of the changed Python
+# files first; red there returns at once (seconds, not a pytest run) and the
+# repair prompt carries only that output. Green -> QUALITY_CHECKS + verify_cmd.
+QUALITY_FAST_CHECK = os.environ.get("QUALITY_FAST_CHECK", "ruff check")
 
 # Reproduction-test-first policy (v4.1 T2.2)
 REPRO_TEST_POLICY = os.environ.get("REPRO_TEST_POLICY", "1") == "1"
@@ -119,6 +123,8 @@ class RunResult:
 
     first_pass_green: bool = True
     repair_cycles: int = 0
+    gate_stage1_ms: int | None = None  # first-pass gate timings (L2.1)
+    gate_stage2_ms: int | None = None
     tokens_spent: int = 0
     check_output: str = ""
     branch: str = ""
@@ -230,13 +236,60 @@ async def _run(
     return proc.returncode or 0, out
 
 
-async def check_workspace(repo: str, env: dict) -> tuple[bool, str]:
-    """Run the quality checks (T2.1). Returns (green, combined output).
+async def changed_python_files(repo: str, env: dict) -> list[str]:
+    """Python files the engine added/copied/modified/renamed, plus untracked ones."""
+    _, diff = await _run(
+        ["git", "diff", "--name-only", "--diff-filter=ACMR", "HEAD"], repo, env, 60, check=False
+    )
+    _, untracked = await _run(
+        ["git", "ls-files", "--others", "--exclude-standard"], repo, env, 60, check=False
+    )
+    files = []
+    for line in (diff + "\n" + untracked).splitlines():
+        path = line.strip()
+        if path.endswith(".py") and path not in files:
+            files.append(path)
+    return files
 
+
+def _ms_since(start: float) -> int:
+    return int((time.monotonic() - start) * 1000)
+
+
+async def check_workspace(
+    repo: str, env: dict, verify_cmd: str = "", timings: dict | None = None
+) -> tuple[bool, str]:
+    """Run the two-stage quality gate (T2.1, L2.1). Returns (green, output).
+
+    Stage 1: QUALITY_FAST_CHECK on the changed .py files only; red returns
+    immediately with just that output. Skipped when no Python changed.
+    Stage 2: every QUALITY_CHECKS command, then verify_cmd (T3.1).
     pytest exit code 5 (no tests collected) counts as green; a check
     binary missing from the workspace image is skipped with a note.
+    `timings`, when given, receives stage1_ms / stage2_ms (None = not run).
     """
-    outputs = []
+    timings = {} if timings is None else timings
+    timings["stage1_ms"] = timings["stage2_ms"] = None
+
+    files = await changed_python_files(repo, env) if QUALITY_FAST_CHECK.strip() else []
+    if files:
+        start = time.monotonic()
+        argv = shlex.split(QUALITY_FAST_CHECK) + files
+        shown = f"{QUALITY_FAST_CHECK} {' '.join(shlex.quote(f) for f in files)}"
+        try:
+            code, out = await _run(argv, repo, env, QUALITY_CHECK_TIMEOUT_S, check=False)
+        except FileNotFoundError:
+            code, out = None, f"(skipped: {argv[0]} not installed)"
+        else:
+            timings["stage1_ms"] = _ms_since(start)
+        if code:
+            return False, f"$ {shown}\n{out}"
+        stage1_note = [f"$ {shown}\n{out}"] if code is None else []
+    else:
+        stage1_note = []
+
+    start = time.monotonic()
+    outputs = stage1_note
     green = True
     for check_cmd in [c.strip() for c in QUALITY_CHECKS.split(";") if c.strip()]:
         argv = shlex.split(check_cmd)
@@ -250,6 +303,13 @@ async def check_workspace(repo: str, env: dict) -> tuple[bool, str]:
             continue  # no tests collected — nothing to fail
         if code != 0:
             green = False
+    if verify_cmd:  # per-subtask verification (T3.1)
+        code, vout = await _run(
+            shlex.split(verify_cmd), repo, env, QUALITY_CHECK_TIMEOUT_S, check=False
+        )
+        green = green and code == 0
+        outputs.append(f"$ {verify_cmd}\n{vout}")
+    timings["stage2_ms"] = _ms_since(start)
     return green, "\n\n".join(outputs)
 
 
@@ -285,20 +345,12 @@ async def run_sandboxed_aider(task, secret: str, budget: ValkeyBudget) -> RunRes
             await budget.spend(max(_parse_tokens(out), 1))
 
             _heartbeat(workdir)
-            green, check_out = await check_workspace(repo, env)
-            if task.verify_cmd:  # per-subtask verification (T3.1)
-                _heartbeat(workdir)
-                code, vout = await _run(
-                    shlex.split(task.verify_cmd),
-                    repo,
-                    env,
-                    QUALITY_CHECK_TIMEOUT_S,
-                    check=False,
-                )
-                green = green and code == 0
-                check_out += f"\n\n$ {task.verify_cmd}\n{vout}"
+            timings: dict = {}
+            green, check_out = await check_workspace(repo, env, task.verify_cmd, timings)
             if cycle == 0:
                 result.first_pass_green = green
+                result.gate_stage1_ms = timings["stage1_ms"]
+                result.gate_stage2_ms = timings["stage2_ms"]
             if green:
                 break
             result.repair_cycles = cycle + 1

@@ -53,6 +53,15 @@ def headroom_savings_lines(stats: dict | None, holdout: float) -> list[str]:
     return lines
 
 
+def gate_timing_line(stage1_ms: float | None, stage2_ms: float | None) -> str:
+    """L2.1 — median first-pass gate time per stage (None = no data)."""
+
+    def fmt(ms):
+        return "n/a" if ms is None else f"{ms / 1000:.1f}s"
+
+    return f"gate median s1 / s2   : {fmt(stage1_ms)} / {fmt(stage2_ms)}  (fast lint / full checks)"
+
+
 def print_headroom_savings() -> None:
     import requests
 
@@ -106,6 +115,16 @@ async def report(hours: int) -> int:
         hours,
     )
 
+    # Lean & Precise L2.1 — two-stage gate medians (first pass)
+    gate_row = await pool.fetchrow(
+        """
+        SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY gate_stage1_ms) AS s1,
+               percentile_cont(0.5) WITHIN GROUP (ORDER BY gate_stage2_ms) AS s2
+        FROM tasks WHERE created_at > now() - make_interval(hours => $1)
+        """,
+        hours,
+    )
+
     rate = (done_in_window / total * 100) if total else 100.0
     avg_pickup = latency["avg_pickup"]
     p95_s = latency["p95_s"]
@@ -120,6 +139,7 @@ async def report(hours: int) -> int:
         )
     else:
         print("first-pass green rate : n/a (no measured tasks yet)")
+    print(gate_timing_line(gate_row["s1"], gate_row["s2"]))
     print(
         f"avg publish->claim    : {avg_pickup if avg_pickup is not None else 'n/a'}  (SLA < 10 min)"
     )

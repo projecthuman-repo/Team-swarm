@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   branch        text,
   first_pass_green boolean,                       -- v4.1 T2.1 north-star metric
   repair_cycles int NOT NULL DEFAULT 0,           -- grounded repair loop count
+  gate_stage1_ms int,                             -- L2.1 fast lint (first pass)
+  gate_stage2_ms int,                             -- L2.1 full checks + verify_cmd
   created_at    timestamptz NOT NULL DEFAULT now(), -- SLA tracking (runbook §17)
   updated_at    timestamptz NOT NULL DEFAULT now()
 );

@@ -72,3 +72,10 @@ where it went) or `generated` (the file stays, with a header saying so).
 | `agent_worker.main` | extended | L1.6 — reaps orphaned workdirs on boot |
 | `.env.example` SANDBOX_WORKDIR / SANDBOX_TMPFS_SIZE | generated (new) | L1.6 |
 | `tests/test_sandbox_workspace.py` | generated (new) | L1.6 |
+| `check_workspace` | extended | L2.1 — two stages: `QUALITY_FAST_CHECK` on changed `.py` files, then QUALITY_CHECKS + verify_cmd (moved in from `run_sandboxed_aider`, same command and semantics) |
+| `changed_python_files()` | generated (new) | L2.1 — `agent/sandbox.py` |
+| `RunResult.gate_stage1_ms/gate_stage2_ms` | generated (new) | L2.1 — first-pass timings, written by `handle_task` |
+| `db/migrations/006_gate_timing.sql` (+ schema.sql) | generated (new) | L2.1 |
+| SLA "gate median s1 / s2" line | generated (new) | L2.1 — `scripts/sla_report.py` |
+| `.env.example` QUALITY_FAST_CHECK | generated (new) | L2.1 |
+| `tests/test_gate_timing.py` | generated (new) | L2.1 |

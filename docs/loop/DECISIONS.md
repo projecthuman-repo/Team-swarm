@@ -198,3 +198,20 @@ k8s keeps disk-backed `emptyDir` with `sizeLimit` (4Gi/1Gi) rather than
 `medium: Memory`: a 4Gi RAM tmpfs would not fit the 2Gi memory limit.
 `SANDBOX_TMPFS_SIZE` is a compose interpolation; raw k8s manifests cannot
 read it, so the k8s value is documented next to it.
+
+**D-022 · Gate details (L2.1).** Timings are the **first pass** (cycle 0),
+like `first_pass_green`, so medians compare like with like; NULL means the
+stage did not run (no `.py` changed → no stage 1; stage 1 red → no stage 2).
+`verify_cmd` moved from `run_sandboxed_aider` into stage 2 of
+`check_workspace` (same command, timeout and green rule) so stage 1 red
+really skips it; the workdir heartbeat (D-021) is now taken before the
+engine run, before the gate and before the push. A missing fast-check
+binary is noted and skipped, like a missing stage-2 binary.
+`QUALITY_FAST_CHECK=` (empty) turns stage 1 off.
+**Local Postgres:** the session container ships Postgres 16; pgvector
+0.6.0 was added from the Ubuntu archive, so SQL acceptance from L2.1 on
+runs against a real database in-session (the compose image is
+`pgvector/pgvector:pg16`, newer pgvector — the integration run re-checks).
+The Phase-1 adversarial review ran concurrently with L2.1 (two agents at a
+time on this host); its fixes and the `lean-phase-1` close-out land right
+after this commit.
