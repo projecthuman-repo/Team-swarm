@@ -30,6 +30,9 @@ jobs:
           uv sync --frozen --group agent --group dev
           uv lock --check
 
+      - name: embeddings extra is torch-free (fastembed default)
+        run: ./scripts/check_torch_free.sh
+
       - name: cache pre-commit hook envs
         uses: actions/cache@v4
         with:

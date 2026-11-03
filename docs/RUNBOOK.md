@@ -41,6 +41,16 @@ and idempotently by `make bootstrap`.
 **Verify:** `\dt` lists `tasks`, `outbox`, `lessons`; `\d lessons` shows
 `vector(384)` and the hnsw index.
 
+**Embeddings (L2.3).** The default embedder is fastembed (ONNX Runtime, no
+torch — extra `embeddings`) with `BAAI/bge-small-en-v1.5`, 384-dim, matching
+`vector(384)`. Options: `EMBEDDING_MODEL=BAAI/bge-m3 EMBEDDING_DIM=1024`
+(after migration 001; same fastembed path) or
+`EMBEDDING_BACKEND=sentence-transformers` (extra `embeddings-torch`; default
+model all-MiniLM-L6-v2). Any switch of backend or model changes the vector
+space — `python scripts/seed_knowledge.py --reembed` is **mandatory** after
+it, or dense search compares incompatible vectors. The upgrade from the
+v4.1 default (all-MiniLM-L6-v2) to bge-small is such a switch.
+
 ## 3. JetStream
 
 `scripts/bootstrap_jetstream.sh` creates:
@@ -171,7 +181,7 @@ prompt, token spend, and check results from the trace.
 | Sandbox | gVisor | Kata/Firecracker | dedicated-kernel threat model | `runtimeClassName: kata` |
 | Observability | OpenSearch+Langfuse | OpenObserve | storage cost / tool sprawl | `make openobserve` + OTLP env |
 | Tracing | Langfuse | OTel (Laminar/OpenLLMetry-style) | vendor-neutral instrumentation | `OTEL_EXPORTER_OTLP_ENDPOINT` |
-| Embeddings | all-MiniLM-L6-v2 | bge-m3 | retrieval quality > speed | migration 001 + `EMBEDDING_MODEL` |
+| Embeddings | fastembed bge-small-en-v1.5 (384) | bge-m3 via fastembed (1024); sentence-transformers (torch) | retrieval quality > speed | migration 001 + `EMBEDDING_MODEL`/`EMBEDDING_DIM` (or `EMBEDDING_BACKEND`), then `seed_knowledge.py --reembed` |
 | Relay | 250ms poll | logical-replication CDC | outbox throughput | `make relay-cdc` |
 | Engine | aider | nano-claude-code | lightweight runtime | `AGENT_ENGINE=nano-claude-code` |
 | Chat ingress | Telegram | +Slack/Discord | team-channel task initiation | `CHAT_SOURCES=telegram,slack,discord` |

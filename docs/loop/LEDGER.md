@@ -83,3 +83,10 @@ where it went) or `generated` (the file stays, with a header saying so).
 | `search_lessons` pgvector path | extended | L2.2 — hybrid RRF with embedding; full-text (was ILIKE) without; Qdrant/Chroma dense paths kept |
 | `tests/conftest.py` `pg` fixture | generated (new) | L2.2 — real Postgres in a throwaway schema; skip, or fail under REQUIRE_POSTGRES=1 |
 | `verify-integration` real-Postgres step | generated (new) | L2.2 — `REQUIRE_POSTGRES=1 pytest -q` |
+| `EMBEDDING_BACKEND` (fastembed default) | generated (new) | L2.3 — `agent/lessons.py`; `.env.example` |
+| sentence-transformers embedder | kept | L2.3 — `EMBEDDING_BACKEND=sentence-transformers` (extra `embeddings-torch`), default model all-MiniLM-L6-v2 unchanged |
+| bge-m3 option | extended | L2.3 — served by fastembed (ONNX export); migration 001 unchanged; README/RUNBOOK rows |
+| `scripts/check_torch_free.sh` | generated (new) | L2.3 — CI step + `make ci-local` step |
+| `shadow_eval.py --single / --require-not-worse`, context pack in golden runs | extended | L2.3 — default two-config run unchanged |
+| `scripts/embeddings_shadow.sh` | generated (new) | L2.3 — `verify-integration` |
+| `tests/test_embeddings.py` | generated (new) | L2.3 |

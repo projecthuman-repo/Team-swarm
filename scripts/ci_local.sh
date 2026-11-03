@@ -13,6 +13,9 @@ step "locked environment"
 uv sync --frozen --group agent --group dev
 uv lock --check
 
+step "embeddings extra is torch-free"
+./scripts/check_torch_free.sh
+
 step "pre-commit (developer hooks)"
 uv run --no-sync pre-commit run --all-files --show-diff-on-failure
 

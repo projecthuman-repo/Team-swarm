@@ -226,3 +226,24 @@ than relying on the function-result coercion rules. Everything else is
 the spec's SQL. The text-only fallback switches from `ILIKE '%q%'` to
 the full-text match the spec names (whole tokens, `simple` config); its
 ordering is now `ts_rank_cd` instead of recency.
+
+**D-024 · fastembed details (L2.3).** (a) fastembed 0.9.1 does not list
+`BAAI/bge-m3` as a dense model, so `agent/lessons.py` registers it once
+with `TextEmbedding.add_custom_model` from BAAI's own ONNX export
+(`onnx/model.onnx` + `onnx/model.onnx_data`, CLS pooling, normalized,
+1024-dim — bge-m3's dense recipe); the registration was exercised against
+the installed library, the 2.2 GB download is left to the integration run.
+(b) Vectors are L2-normalized in `embed()` for both backends (ST used
+`normalize_embeddings=True`), so cosine distances stay comparable.
+(c) `EMBEDDING_MODEL` defaults per backend: bge-small for fastembed,
+all-MiniLM-L6-v2 for sentence-transformers — selecting the ST backend alone
+restores v4.1 behaviour exactly. (d) The "first-pass green rate ≥
+baseline" acceptance needs the embedder to reach code generation: the
+golden pack only consults lessons through the context pack, and the
+embedder is read at import, so `shadow_eval` now applies the context pack
+when `CONTEXT_PACK=1` and gains `--single`; `scripts/embeddings_shadow.sh`
+re-embeds and runs each embedder in its own process, then
+`--report baseline fastembed --require-not-worse`. Running both configs in
+one process would compare a model against itself. (e) HuggingFace is
+denied by this session's egress policy (403), so no model weights were
+downloaded in-session.

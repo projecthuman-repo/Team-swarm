@@ -12,6 +12,15 @@ drawn from Forgejo history + synthetics.
 
     python scripts/shadow_eval.py --candidate AIDER_MODEL=ollama/gpt-oss:20b
     python scripts/shadow_eval.py --report a.json b.json   # compare saved runs
+    python scripts/shadow_eval.py --single LABEL   # current env only -> eval/LABEL.json
+    python scripts/shadow_eval.py --report a.json b.json --require-not-worse
+        # exit 1 when b's first-pass green rate is below a's (L2.3 gate)
+
+With CONTEXT_PACK=1 each golden task gets the same bounded retrieval pack
+handle_task builds (agent/context_pack.py) — the path through which the
+embedder (EMBEDDING_BACKEND/EMBEDDING_MODEL) affects code generation. The
+embedder is read at import, so compare embedders with one --single run per
+config (after `seed_knowledge.py --reembed`), then --report.
 """
 
 from __future__ import annotations
@@ -52,15 +61,30 @@ async def run_config(label: str, env_overrides: dict, pack: list[dict]) -> dict:
 
     old_env = {k: os.environ.get(k) for k in env_overrides}
     os.environ.update(env_overrides)
+    pool = None
     try:
         secret = lease_secret("forgejo")
+        if os.environ.get("CONTEXT_PACK", "") == "1":
+            import asyncpg
+
+            from agent.context_pack import build_context
+
+            pool = await asyncpg.create_pool(
+                os.environ.get("DATABASE_URL", "postgres://postgres:dev@localhost:5432/swarm"),
+                min_size=1,
+                max_size=2,
+            )
         results = []
         for item in pack:
             tid = str(uuid.uuid4())
+            role = item.get("role", "backend")
+            title = item["title"]
+            if pool is not None:  # same retrieval pack as handle_task
+                title += await build_context(pool, title, role)
             task = task_pb2.Task(
                 task_id=tid,
-                role=item.get("role", "backend"),
-                title=item["title"],
+                role=role,
+                title=title,
                 branch=f"feature/eval-{tid[:8]}",
                 budget_tokens=200_000,
                 verify_cmd=item.get("verify_cmd", ""),
@@ -90,6 +114,8 @@ async def run_config(label: str, env_overrides: dict, pack: list[dict]) -> dict:
                 )
         return summarize(label, results)
     finally:
+        if pool is not None:
+            await pool.close()
         for k, v in old_env.items():
             if v is None:
                 os.environ.pop(k, None)
@@ -148,11 +174,27 @@ async def main_async(args: argparse.Namespace) -> int:
         with open(args.report[1]) as f:
             candidate = json.load(f)
         print(markdown_report(default, candidate))
+        if args.require_not_worse and candidate["green_rate"] < default["green_rate"]:
+            print(
+                f"FAIL: first-pass green rate {candidate['green_rate']:.0%} "
+                f"< baseline {default['green_rate']:.0%}"
+            )
+            return 1
         return 0
 
     pack = load_golden_pack()
     if not pack:
         raise SystemExit(f"no golden tasks in {GOLDEN_DIR} — add *.json fixtures")
+    if args.single:
+        summary = await run_config(args.single, {}, pack)
+        path = os.path.join(os.path.dirname(GOLDEN_DIR), f"{args.single}.json")
+        with open(path, "w") as f:
+            json.dump(summary, f, indent=2)
+        print(
+            f"{args.single}: green rate {summary['green_rate']:.0%} "
+            f"over {summary['tasks']} task(s) -> {path}"
+        )
+        return 0
     overrides = dict(kv.split("=", 1) for kv in args.candidate)
     log.info("running %d golden tasks x 2 configs", len(pack))
     default = await run_config("default", {}, pack)
@@ -183,6 +225,14 @@ def main() -> None:
         nargs=2,
         metavar=("DEFAULT.json", "CANDIDATE.json"),
         help="render a report from two saved runs",
+    )
+    p.add_argument(
+        "--require-not-worse",
+        action="store_true",
+        help="with --report: exit 1 if CANDIDATE's green rate is below DEFAULT's",
+    )
+    p.add_argument(
+        "--single", metavar="LABEL", help="run the current env only; save eval/LABEL.json"
     )
     sys.exit(asyncio.run(main_async(p.parse_args())))
 
