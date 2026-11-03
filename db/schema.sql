@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   repair_cycles int NOT NULL DEFAULT 0,           -- grounded repair loop count
   gate_stage1_ms int,                             -- L2.1 fast lint (first pass)
   gate_stage2_ms int,                             -- L2.1 full checks + verify_cmd
+  tokens_spent  bigint,                           -- L3.2 engine tokens (SLA gauge)
   created_at    timestamptz NOT NULL DEFAULT now(), -- SLA tracking (runbook §17)
   updated_at    timestamptz NOT NULL DEFAULT now()
 );

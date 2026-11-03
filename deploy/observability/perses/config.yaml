@@ -1,0 +1,13 @@
+# Perses server config (L3.2): file database, dashboards provisioned from
+# /etc/perses/provisioning (resources.json = project + Prometheus
+# datasource; perses-sla.json = the SLA dashboard). Local dev: no auth.
+database:
+  file:
+    folder: /perses
+    extension: json
+provisioning:
+  folders:
+    - /etc/perses/provisioning
+security:
+  readonly: false
+  enable_auth: false

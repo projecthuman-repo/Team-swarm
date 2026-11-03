@@ -11,7 +11,7 @@ COMPOSE_LITE := $(RUNTIME) compose -f deploy/compose.lite.yaml
         index-repo shadow-eval morning speculative test lint gate gen \
         models models-35b models-bf16 migrate logs footprint \
         verify-integration tools ingest-container lock sync torch-cpu-lock \
-        ci-local hooks up-lite down-lite ollama clean disk-usage
+        ci-local hooks up-lite down-lite ollama clean disk-usage perses-migrate
 
 quickstart: up bootstrap ## start infra and bootstrap everything
 
@@ -54,8 +54,13 @@ vllm: ## Tier-A vLLM (inference upgrade past ~5 concurrent agents; GPU)
 qdrant: ## optional vector-store upgrade (then VECTOR_BACKEND=qdrant)
 	$(COMPOSE) --profile qdrant up -d
 
-observability: ## baseline: OpenSearch (logs) + Langfuse (traces)
+observability: ## OpenSearch logs · Jaeger traces · Prometheus + Perses dashboards · Langfuse LLM traces
 	$(COMPOSE) --profile observability up -d
+
+PERSES_URL ?= http://localhost:8090
+perses-migrate: ## convert grafana-sla.json with percli against the compose Perses (refinement aid)
+	percli login $(PERSES_URL)
+	percli migrate -f deploy/observability/grafana-sla.json --online -o json
 
 openobserve: ## optional single-binary observability swap
 	$(COMPOSE) --profile openobserve up -d
@@ -198,4 +203,6 @@ verify-integration: ## run every deferred integration check (runtime host)
 	@$(VI) "L2.2+ real-Postgres tests (hybrid retrieval SQL) on the spine" env REQUIRE_POSTGRES=1 uv run --no-sync pytest -q
 	@$(VI) "L2.3 fastembed embeds: embed('hello') is a 384-vector" uv run --frozen --group agent --extra embeddings python -c "from agent.lessons import embed; v = embed('hello'); assert v is not None and len(v) == 384, v; print('384-dim ok')"
 	@$(VI) "L2.3 make shadow-eval: fastembed first-pass green rate >= baseline embedder" ./scripts/embeddings_shadow.sh
+	@$(VI) "L3.2 observability: gauges scraped, task span in Jaeger, Perses dashboard" ./scripts/observability_smoke.sh
+	@$(VI) "L3.2 percli lint of the Perses dashboard (needs percli)" percli lint -f deploy/observability/perses-sla.json
 	@./scripts/vi_summary.sh

@@ -118,12 +118,13 @@ async def handle_task(pool: asyncpg.Pool, task: task_pb2.Task, budget: ValkeyBud
         async with pool.acquire() as conn:  # v4.1 T2.1 quality metrics
             await conn.execute(
                 "UPDATE tasks SET first_pass_green=$2, repair_cycles=$3, "
-                "gate_stage1_ms=$4, gate_stage2_ms=$5 WHERE task_id=$1",
+                "gate_stage1_ms=$4, gate_stage2_ms=$5, tokens_spent=$6 WHERE task_id=$1",
                 uuid.UUID(task.task_id),
                 result.first_pass_green,
                 result.repair_cycles,
                 result.gate_stage1_ms,
                 result.gate_stage2_ms,
+                result.tokens_spent,
             )
         await emit(
             pool,
@@ -175,7 +176,7 @@ async def main() -> None:
             )
     log.info("subscribed tiers: %s", tiers)
 
-    health = asyncio.create_task(serve_health(WORKER_ID, ROLE))
+    health = asyncio.create_task(serve_health(WORKER_ID, ROLE, pool))
 
     while True:  # event-driven pull, not fixed-interval poll
         msgs = []

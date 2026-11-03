@@ -63,6 +63,7 @@ pathspec==1.0.4
 pexpect==4.9.0
 pillow==12.1.1
 posthog==7.8.6
+prometheus-client==0.26.0
 prompt-toolkit==3.0.52
 propcache==0.4.1
 protobuf==7.36.2

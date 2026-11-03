@@ -54,7 +54,8 @@ async def test_handle_task_writes_gate_timings(monkeypatch):
     await agent_worker.handle_task(pool, task, budget=None)
     sql, args = pool.log[0]
     assert "gate_stage1_ms=$4" in sql and "gate_stage2_ms=$5" in sql
-    assert args[1:] == (False, 1, 412, None)
+    assert "tokens_spent=$6" in sql  # L3.2 swarm_tokens_per_merged_pr source
+    assert args[1:] == (False, 1, 412, None, 0)
 
 
 def test_migration_and_schema_carry_the_columns():

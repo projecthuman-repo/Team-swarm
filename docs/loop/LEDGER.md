@@ -111,3 +111,14 @@ where it went) or `generated` (the file stays, with a header saying so).
 | `scripts/bootstrap.sh` secret seeding | extended | Phase-1 fixes — placeholders only where no secret exists |
 | `scripts/lite_smoke.sh` | extended | Phase-1 fixes — LITE_SMOKE_FORGEJO_TOKEN |
 | `tests/test_requirements_consistency.py` | generated (new) | Phase-1 fixes |
+| jaeger / prometheus / perses compose services | generated (new) | L3.2 — observability profile; OpenSearch + Langfuse kept in the same profile |
+| `agent/sla_metrics.py` | generated (new) | L3.2 — SLA queries moved here from `scripts/sla_report.py` (same SQL; `make sla` output unchanged) |
+| `/metrics` on the agent health port | generated (new) | L3.2 — `agent/health.py` (`/healthz` unchanged) |
+| `emit_trace` | extended | L3.2 — also emits the event as an OTLP span (logs/Langfuse/OpenSearch sinks unchanged) |
+| relay `/metrics` (`RELAY_METRICS_PORT`) | generated (new) | L3.2 — `relay/relay.ts` |
+| `db/migrations/009_task_tokens.sql` (+ schema) | generated (new) | L3.2 — `tasks.tokens_spent`, source of `swarm_tokens_per_merged_pr` |
+| `deploy/observability/{prometheus.yml,perses-sla.json,perses/}` | generated (new) | L3.2 |
+| `deploy/observability/grafana-sla.json` | kept | L3.2 — documented option; `make perses-migrate` |
+| `prometheus-client` | generated (new) | L3.2 — base dependency 0.26.0 |
+| `scripts/observability_smoke.sh`, VI steps | generated (new) | L3.2 |
+| `tests/test_observability.py` | generated (new) | L3.2 |

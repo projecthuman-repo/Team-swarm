@@ -47,6 +47,9 @@ x-agent-base: &agent-base
     OLLAMA_API_BASE: http://ollama:11434
     AIDER_MODEL: ollama/maxwell1500/ornith-9b:Q4_K_M
     FORGEJO_URL: http://forgejo:3000
+    # L3.2: spans + logs to Jaeger when the observability profile runs.
+    # Unset -> Jaeger; set it empty to disable, or point it at OpenObserve.
+    OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT-http://jaeger:4318}
   read_only: true
   # L1.6: size-capped tmpfs; task workdirs live in /tmp (SANDBOX_WORKDIR)
   tmpfs: ["/tmp:size=${SANDBOX_TMPFS_SIZE:-4g}", "/home/swarm:size=1g"] # writable HOME for git/aider state only
@@ -285,6 +288,34 @@ services:
         condition: service_healthy
     networks: [swarm-internal]
     ports: ["3001:3000"]
+
+  # Canonical observability stack (Lean & Precise L3.2): Jaeger traces ·
+  # Prometheus metrics · Perses dashboards, beside OpenSearch logs and
+  # Langfuse LLM traces. Licences: conventions/licensing.md (Zone A).
+  jaeger:
+    image: jaegertracing/jaeger:2.22.0
+    profiles: [observability]
+    environment:
+      JAEGER_LISTEN_HOST: 0.0.0.0 # OTLP + UI reachable from the other containers
+    networks: [swarm-internal]
+    ports: ["16686:16686", "4318:4318"] # UI/API, OTLP/HTTP
+
+  prometheus:
+    image: prom/prometheus:v3.15.1
+    profiles: [observability]
+    volumes: ["./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
+    networks: [swarm-internal]
+    ports: ["9090:9090"]
+
+  perses:
+    image: persesdev/perses:v0.55.1
+    profiles: [observability]
+    volumes:
+      - ./observability/perses/config.yaml:/etc/perses/config/config.yaml:ro
+      - ./observability/perses/resources.json:/etc/perses/provisioning/resources.json:ro
+      - ./observability/perses-sla.json:/etc/perses/provisioning/perses-sla.json:ro
+    networks: [swarm-internal]
+    ports: ["8090:8080"]
 
   # ---- profile: openobserve (single-binary observability swap) ---------
   openobserve:

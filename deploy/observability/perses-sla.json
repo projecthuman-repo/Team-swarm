@@ -1,0 +1,450 @@
+{
+  "kind": "Dashboard",
+  "metadata": {
+    "name": "swarm-sla",
+    "project": "swarm"
+  },
+  "spec": {
+    "display": {
+      "name": "Swarm SLA — v4.1.1",
+      "description": "Runbook §17 SLAs from the agents' /metrics (Lean & Precise L3.2). Thresholds: 70% of tasks done within 24h; publish->claim under 10 minutes."
+    },
+    "duration": "24h",
+    "refreshInterval": "1m",
+    "variables": [],
+    "panels": {
+      "done24h": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Tasks done within 24h (SLA >= 70%)",
+            "description": "max(swarm_tasks_done_24h_ratio) — agent/sla_metrics.py"
+          },
+          "plugin": {
+            "kind": "GaugeChart",
+            "spec": {
+              "calculation": "last-number",
+              "format": {
+                "unit": "percent-decimal"
+              },
+              "max": 1,
+              "thresholds": {
+                "defaultColor": "#e02f44",
+                "steps": [
+                  {
+                    "value": 0.7,
+                    "color": "#56a64b"
+                  }
+                ]
+              }
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "PrometheusTimeSeriesQuery",
+                  "spec": {
+                    "query": "max(swarm_tasks_done_24h_ratio)",
+                    "datasource": {
+                      "kind": "PrometheusDatasource",
+                      "name": "prometheus"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "pickupP95": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "p95 publish -> claim latency (SLA < 10 min)",
+            "description": "max(swarm_pickup_latency_p95_seconds) — agent/sla_metrics.py"
+          },
+          "plugin": {
+            "kind": "StatChart",
+            "spec": {
+              "calculation": "last-number",
+              "format": {
+                "unit": "seconds"
+              },
+              "thresholds": {
+                "defaultColor": "#56a64b",
+                "steps": [
+                  {
+                    "value": 600,
+                    "color": "#e02f44"
+                  }
+                ]
+              }
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "PrometheusTimeSeriesQuery",
+                  "spec": {
+                    "query": "max(swarm_pickup_latency_p95_seconds)",
+                    "datasource": {
+                      "kind": "PrometheusDatasource",
+                      "name": "prometheus"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "firstPassGreen": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "First-pass green rate (north star)",
+            "description": "max(swarm_first_pass_green_ratio) — agent/sla_metrics.py"
+          },
+          "plugin": {
+            "kind": "GaugeChart",
+            "spec": {
+              "calculation": "last-number",
+              "format": {
+                "unit": "percent-decimal"
+              },
+              "max": 1
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "PrometheusTimeSeriesQuery",
+                  "spec": {
+                    "query": "max(swarm_first_pass_green_ratio)",
+                    "datasource": {
+                      "kind": "PrometheusDatasource",
+                      "name": "prometheus"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "tokensPerPr": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Engine tokens per merged PR",
+            "description": "max(swarm_tokens_per_merged_pr) — agent/sla_metrics.py"
+          },
+          "plugin": {
+            "kind": "StatChart",
+            "spec": {
+              "calculation": "last-number",
+              "format": {
+                "unit": "decimal"
+              }
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "PrometheusTimeSeriesQuery",
+                  "spec": {
+                    "query": "max(swarm_tokens_per_merged_pr)",
+                    "datasource": {
+                      "kind": "PrometheusDatasource",
+                      "name": "prometheus"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "headroomSavings": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Headroom input-token savings",
+            "description": "max(swarm_headroom_savings_ratio) — agent/sla_metrics.py"
+          },
+          "plugin": {
+            "kind": "GaugeChart",
+            "spec": {
+              "calculation": "last-number",
+              "format": {
+                "unit": "percent-decimal"
+              },
+              "max": 1
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "PrometheusTimeSeriesQuery",
+                  "spec": {
+                    "query": "max(swarm_headroom_savings_ratio)",
+                    "datasource": {
+                      "kind": "PrometheusDatasource",
+                      "name": "prometheus"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "dlqDepth": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "DLQ depth (failed tasks, 24h)",
+            "description": "max(swarm_dlq_depth) — agent/sla_metrics.py"
+          },
+          "plugin": {
+            "kind": "StatChart",
+            "spec": {
+              "calculation": "last-number",
+              "format": {
+                "unit": "decimal"
+              }
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "PrometheusTimeSeriesQuery",
+                  "spec": {
+                    "query": "max(swarm_dlq_depth)",
+                    "datasource": {
+                      "kind": "PrometheusDatasource",
+                      "name": "prometheus"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "snowballs": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Snowball terminations (24h)",
+            "description": "max(swarm_snowball_total) — agent/sla_metrics.py"
+          },
+          "plugin": {
+            "kind": "StatChart",
+            "spec": {
+              "calculation": "last-number",
+              "format": {
+                "unit": "decimal"
+              }
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "PrometheusTimeSeriesQuery",
+                  "spec": {
+                    "query": "max(swarm_snowball_total)",
+                    "datasource": {
+                      "kind": "PrometheusDatasource",
+                      "name": "prometheus"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "gateStage1": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Median stage-1 gate time (fast lint)",
+            "description": "max(swarm_gate_stage1_ms_median) — agent/sla_metrics.py"
+          },
+          "plugin": {
+            "kind": "StatChart",
+            "spec": {
+              "calculation": "last-number",
+              "format": {
+                "unit": "milliseconds"
+              }
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "PrometheusTimeSeriesQuery",
+                  "spec": {
+                    "query": "max(swarm_gate_stage1_ms_median)",
+                    "datasource": {
+                      "kind": "PrometheusDatasource",
+                      "name": "prometheus"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "outboxRows": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Outbox rows",
+            "description": "max(swarm_outbox_rows) — agent/sla_metrics.py"
+          },
+          "plugin": {
+            "kind": "StatChart",
+            "spec": {
+              "calculation": "last-number",
+              "format": {
+                "unit": "decimal"
+              }
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "PrometheusTimeSeriesQuery",
+                  "spec": {
+                    "query": "max(swarm_outbox_rows)",
+                    "datasource": {
+                      "kind": "PrometheusDatasource",
+                      "name": "prometheus"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "layouts": [
+      {
+        "kind": "Grid",
+        "spec": {
+          "display": {
+            "title": "SLA",
+            "collapse": {
+              "open": true
+            }
+          },
+          "items": [
+            {
+              "x": 0,
+              "y": 0,
+              "width": 8,
+              "height": 6,
+              "content": {
+                "$ref": "#/spec/panels/done24h"
+              }
+            },
+            {
+              "x": 8,
+              "y": 0,
+              "width": 8,
+              "height": 6,
+              "content": {
+                "$ref": "#/spec/panels/pickupP95"
+              }
+            },
+            {
+              "x": 16,
+              "y": 0,
+              "width": 8,
+              "height": 6,
+              "content": {
+                "$ref": "#/spec/panels/firstPassGreen"
+              }
+            },
+            {
+              "x": 0,
+              "y": 6,
+              "width": 8,
+              "height": 6,
+              "content": {
+                "$ref": "#/spec/panels/tokensPerPr"
+              }
+            },
+            {
+              "x": 8,
+              "y": 6,
+              "width": 8,
+              "height": 6,
+              "content": {
+                "$ref": "#/spec/panels/headroomSavings"
+              }
+            },
+            {
+              "x": 16,
+              "y": 6,
+              "width": 8,
+              "height": 6,
+              "content": {
+                "$ref": "#/spec/panels/dlqDepth"
+              }
+            },
+            {
+              "x": 0,
+              "y": 12,
+              "width": 8,
+              "height": 6,
+              "content": {
+                "$ref": "#/spec/panels/snowballs"
+              }
+            },
+            {
+              "x": 8,
+              "y": 12,
+              "width": 8,
+              "height": 6,
+              "content": {
+                "$ref": "#/spec/panels/gateStage1"
+              }
+            },
+            {
+              "x": 16,
+              "y": 12,
+              "width": 8,
+              "height": 6,
+              "content": {
+                "$ref": "#/spec/panels/outboxRows"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

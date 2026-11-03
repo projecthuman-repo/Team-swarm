@@ -335,3 +335,33 @@ reports it honestly; the owner decides between a raised target and a
 grammar-pruning follow-up. Three findings refuted (L1.2's license gate
 deferral is inside ci-local by design; OWNER_STOP is a close-out artifact;
 the embeddings option is restored by fastembed in L2.3).
+
+**D-029 · Observability details (L3.2).** (a) Gauge sources: the spec's
+SLA queries plus three it implies but the schema did not hold —
+`tasks.tokens_spent` (migration 009, written by `handle_task` from
+`RunResult.tokens_spent`) for tokens per merged PR, where "merged PR" is a
+task that reached `done` (PR opened; auto-merge happens in Forgejo);
+`swarm_dlq_depth` = tasks terminated `failed` (the worker `term()`s them
+into SWARM_DLQ) in the 24 h window — a SQL proxy, not the stream's message
+count, which needs NATS; `swarm_snowball_total` = FAILED events whose
+payload carries `reason=snowball`, within the outbox's retention.
+`swarm_headroom_savings_ratio` reads the Headroom proxy `/stats` (NaN when
+unreachable). (b) Every agent exports the same global gauges; dashboards
+use `max(...)` across instances. (c) Jaeger only ingests OTLP traces, and
+nothing called `emit_span`, so no task could ever "appear in Jaeger";
+`emit_trace` now also posts each event as a span. (d) The agents' env
+anchor defaults `OTEL_EXPORTER_OTLP_ENDPOINT` to Jaeger with `${VAR-…}`
+(unset → Jaeger, set-empty → off): compose cannot vary env by profile, and
+without the profile the exports fail fast and are debug-logged — emission
+never fails a task. (e) The relay gets a dependency-free `/metrics`
+(node:http, two counters) so the "scrape the relay" target exists; it
+starts after the NATS connection, so `up` means "relay connected". The
+CDC relay is not a scrape target. (f) Perses is provisioned from a folder
+(`resources.json`: project `swarm` + a global Prometheus datasource;
+`perses-sla.json`: the dashboard), mounted at the image's default config
+path. (g) Observation, not changed here: the spine services sit only on the
+`internal: true` network yet publish host ports; Docker does not publish
+ports for containers attached only to internal networks. If `make up` +
+host `make bootstrap` cannot reach :5432, that is the cause —
+`verify-integration` (lite smoke) will show it on the runtime host; noted
+in OWNER_STOP.

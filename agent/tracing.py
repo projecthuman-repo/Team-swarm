@@ -209,3 +209,6 @@ def emit_trace(
             )
         except requests.RequestException as err:
             log.debug("otlp emit failed: %s", err)
+        # L3.2: the same event as a span (trace id = task id), so every
+        # task is one trace in Jaeger; OTLP log-only backends ignore it.
+        emit_span(f"swarm.{kind}", task_id, event)
