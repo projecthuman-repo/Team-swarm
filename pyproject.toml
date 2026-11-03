@@ -82,6 +82,7 @@ ignore = ["E402"]  # gen/ sys.path insertion precedes imports by design
 testpaths = ["tests"]
 pythonpath = ["."]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 
 [tool.coverage.run]
 omit = ["agent/gen/*"]

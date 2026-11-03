@@ -79,3 +79,7 @@ where it went) or `generated` (the file stays, with a header saying so).
 | SLA "gate median s1 / s2" line | generated (new) | L2.1 — `scripts/sla_report.py` |
 | `.env.example` QUALITY_FAST_CHECK | generated (new) | L2.1 |
 | `tests/test_gate_timing.py` | generated (new) | L2.1 |
+| `db/migrations/007_lessons_fts.sql` (+ schema.sql) | generated (new) | L2.2 — `fts` column, GIN index, `match_lessons_hybrid` |
+| `search_lessons` pgvector path | extended | L2.2 — hybrid RRF with embedding; full-text (was ILIKE) without; Qdrant/Chroma dense paths kept |
+| `tests/conftest.py` `pg` fixture | generated (new) | L2.2 — real Postgres in a throwaway schema; skip, or fail under REQUIRE_POSTGRES=1 |
+| `verify-integration` real-Postgres step | generated (new) | L2.2 — `REQUIRE_POSTGRES=1 pytest -q` |

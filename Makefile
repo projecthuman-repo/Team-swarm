@@ -192,4 +192,5 @@ verify-integration: ## run every deferred integration check (runtime host)
 	@$(VI) "L1.1 CPU-only torch for the torch extras" $(MAKE) --no-print-directory torch-cpu-lock
 	@$(VI) "L1.2 license gate (syft)" uv run --no-sync python .forgejo/scripts/license_gate.py
 	@$(VI) "L1.5 lite spine: boot, bootstrap, one task reaches done" ./scripts/lite_smoke.sh
+	@$(VI) "L2.2+ real-Postgres tests (hybrid retrieval SQL) on the spine" env REQUIRE_POSTGRES=1 uv run --no-sync pytest -q
 	@./scripts/vi_summary.sh

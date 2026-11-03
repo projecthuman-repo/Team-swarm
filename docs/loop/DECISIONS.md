@@ -215,3 +215,14 @@ runs against a real database in-session (the compose image is
 The Phase-1 adversarial review ran concurrently with L2.1 (two agents at a
 time on this host); its fixes and the `lean-phase-1` close-out land right
 after this commit.
+
+**D-023 · Two corrections to the L2.2 SQL.** (a) The spec's `sparse` CTE
+has `LIMIT k * 4` with no `ORDER BY`: the window function numbers every
+match, but LIMIT then keeps an arbitrary k*4 of them, so with more than
+k*4 full-text matches the best-ranked ones can be dropped. Added
+`ORDER BY r` before the LIMIT. (b) The RRF sum is `numeric`; it is cast
+to `float8` to match the declared `score float8` result column rather
+than relying on the function-result coercion rules. Everything else is
+the spec's SQL. The text-only fallback switches from `ILIKE '%q%'` to
+the full-text match the spec names (whole tokens, `simple` config); its
+ordering is now `ts_rank_cd` instead of recency.
