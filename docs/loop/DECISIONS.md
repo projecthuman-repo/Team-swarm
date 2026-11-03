@@ -59,3 +59,49 @@ the second call, and fails outright inside a running loop. So
 `VALKEY_URL` (2 s connect / 5 s socket timeouts so an unreachable Valkey
 degrades fast at import). One source of Valkey configuration is kept; the
 TTL reuses `budget.MAX_TASK_WALL_S`.
+
+**D-009 · `requires-python = ">=3.12,<3.13"` (L1.1).** With `>=3.12` the
+universal lock is unsolvable: for Python ≥3.14 aider-chat pins
+`numpy==1.26.4` while fastembed needs `numpy>=2.3`. Every image and CI job
+runs 3.12, so the lock is scoped to it.
+
+**D-010 · Ingest group carries its whole runtime (L1.1 vs L1.4).** L1.1
+lists `ingest = ["headroom-ai==0.31.0"]`, but L1.4 builds the ingest image
+with `uv sync --only-group ingest`, which excludes the base dependencies —
+the image would lack asyncpg/requests/protobuf/valkey and crash. The group
+therefore lists L0.2's set: asyncpg, requests, protobuf, valkey,
+headroom-ai==0.31.0.
+
+**D-011 · CPU-torch source shipped disabled (L1.1).** `download.pytorch.org`
+is blocked by this session's network proxy (CONNECT 403), so with the torch
+source active `uv lock` cannot run here, and without a lock L1.2's CI and
+L1.4's images have nothing to install. pyproject defines the `pytorch-cpu`
+index and keeps the `[tool.uv.sources] torch` mapping in a marked,
+commented block; `make torch-cpu-lock` enables it, re-locks, and fails
+unless both torch extras resolve `torch==…+cpu` with no `nvidia-*` wheels.
+It runs in `make verify-integration` on the owner's host (whose allow-list
+gains download.pytorch.org, §9). The default embeddings path (fastembed)
+needs no torch at all. Also: the prompt's mapping alone would never have
+applied — uv sources bind only direct dependencies and torch was
+transitive — so `torch` is now listed directly in `embeddings-torch` and
+`routing`.
+
+**D-012 · `--only-extra` emulated (L1.1).** uv 0.11 has no
+`uv export --only-extra`. `scripts/lock_export.sh` exports base+extra and
+drops every package the base closure already pins (by name), so each
+extras file stays an add-on to `requirements.txt` with pins from the same
+lock. Requirements files are exported without hashes (uv.lock is the
+hash-verified source; the files are the pip fallback, as before).
+
+**D-014 · Torch-free checks use `uv export`, not `uv tree` (L1.1, L2.3).**
+`uv tree` in uv 0.11 has no `--extra` flag and always renders every extra
+(annotated `(extra: …)`), so `uv tree --group agent | grep torch` matches
+torch through the torch extras even though the agent closure has none. The
+selection-aware equivalent is `uv export --frozen --no-dev --group agent`
+(0 torch lines); L2.3's CI check uses `uv export --extra embeddings`.
+
+**D-015 · Tags are local (§7).** The session's git proxy accepts the
+working-branch push but refuses tag refs (`send-pack: unexpected
+disconnect`, three attempts with backoff). Phase tags are created locally
+and listed in `docs/loop/OWNER_STOP.md` for a push from a machine with
+normal access.

@@ -58,7 +58,9 @@ Run components on the host instead of in containers (nicer for hacking):
 
 ```bash
 cp .env.example .env
-pip install -r requirements.txt -r requirements-dev.txt
+uv sync --frozen --group agent --group dev   # pyproject.toml + uv.lock are the source of truth
+#   fallback without uv: pip install -r requirements.txt -r requirements-dev.txt
+#   (the requirements*.txt files are generated from uv.lock by `make lock`)
 (cd relay && npm install)
 make relay                # terminal 1 — outbox relay
 make agent ROLE=backend   # terminal 2 — one agent worker

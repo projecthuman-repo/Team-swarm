@@ -9,7 +9,7 @@ COMPOSE := $(RUNTIME) compose -f deploy/compose.yaml
         graph crew verify-diff ingest inject qualify dlq dlq-replay sla seed \
         index-repo shadow-eval morning speculative test lint gate gen \
         models models-35b models-bf16 migrate logs footprint \
-        verify-integration tools ingest-container
+        verify-integration tools ingest-container lock sync torch-cpu-lock
 
 quickstart: up bootstrap ## start infra and bootstrap everything
 
@@ -144,6 +144,18 @@ logs:
 footprint: ## wheel sizes per requirement set (+ image sizes when a runtime is up)
 	./scripts/footprint_report.sh
 
+GROUPS ?= agent dev
+EXTRAS ?=
+
+lock: ## uv lock + regenerate every requirements*.txt from uv.lock (idempotent)
+	./scripts/lock_export.sh
+
+sync: ## uv sync --frozen GROUPS="agent dev" EXTRAS="embeddings" (never agent + ingest)
+	uv sync --frozen $(foreach g,$(GROUPS),--group $(g)) $(foreach e,$(EXTRAS),--extra $(e))
+
+torch-cpu-lock: ## enable CPU torch wheels for the torch extras and re-lock (needs download.pytorch.org)
+	./scripts/torch_cpu_lock.sh
+
 # Every check that needs a runtime host (Podman, GPU, the running spine).
 # Tasks that cannot prove their acceptance in a dev session append their
 # exact command here; deferred is not skipped — this target must pass on
@@ -154,3 +166,5 @@ verify-integration: ## run every deferred integration check (runtime host)
 	@echo "==> [L0.2/L0.4] ingest + relay images build from their Containerfiles"
 	$(RUNTIME) build -f deploy/Containerfile.ingest -t swarm-ingest:dev .
 	$(RUNTIME) build -f deploy/Containerfile.relay -t swarm-relay:dev .
+	@echo "==> [L1.1] CPU-only torch for the torch extras (needs download.pytorch.org)"
+	$(MAKE) --no-print-directory torch-cpu-lock
