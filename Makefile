@@ -9,7 +9,8 @@ COMPOSE := $(RUNTIME) compose -f deploy/compose.yaml
         graph crew verify-diff ingest inject qualify dlq dlq-replay sla seed \
         index-repo shadow-eval morning speculative test lint gate gen \
         models models-35b models-bf16 migrate logs footprint \
-        verify-integration tools ingest-container lock sync torch-cpu-lock
+        verify-integration tools ingest-container lock sync torch-cpu-lock \
+        ci-local
 
 quickstart: up bootstrap ## start infra and bootstrap everything
 
@@ -130,6 +131,9 @@ test:
 lint:
 	ruff check .
 
+ci-local: ## the gates of .forgejo/workflows/ci.yaml, same commands (license gate deferred without syft)
+	./scripts/ci_local.sh
+
 gate: ## run the fail-closed license gate locally (needs syft)
 	python .forgejo/scripts/license_gate.py
 
@@ -168,3 +172,5 @@ verify-integration: ## run every deferred integration check (runtime host)
 	$(RUNTIME) build -f deploy/Containerfile.relay -t swarm-relay:dev .
 	@echo "==> [L1.1] CPU-only torch for the torch extras (needs download.pytorch.org)"
 	$(MAKE) --no-print-directory torch-cpu-lock
+	@echo "==> [L1.2] license gate (needs syft)"
+	uv run --no-sync python .forgejo/scripts/license_gate.py

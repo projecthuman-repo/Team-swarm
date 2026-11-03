@@ -40,3 +40,7 @@ where it went) or `generated` (the file stays, with a header saying so).
 | `requirements-elevation.txt` | generated | L1.1 — comment-only note: psutil/nvidia-ml-py → base, headroom-ai → ingest group + `make tools`, litellm → gateway container |
 | `make lock` / `make sync` / `make torch-cpu-lock` | extended (new targets) | Makefile |
 | README quickstart | extended | L1.1 — `uv sync --frozen --group agent --group dev`; pip kept as fallback |
+| `.forgejo/workflows/ci.yaml` `gates` job | extended | L1.2 — uv cache keyed on uv.lock; `uv sync --frozen` + `uv lock --check`; generated-files-match check; every gate via `uv run --no-sync`; headroom gate in an isolated venv |
+| `.forgejo/workflows/ci.yaml` `proto-compat` job | kept | unchanged |
+| `.forgejo/scripts/diff_size_gate.sh` | extended | L1.2 — base resolution, fail-closed, generated files excluded, enforcement scope (D-013) |
+| `make ci-local` / `scripts/ci_local.sh` | extended (new) | L1.2 — mirrors the CI gates |

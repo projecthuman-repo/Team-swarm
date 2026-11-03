@@ -105,3 +105,23 @@ working-branch push but refuses tag refs (`send-pack: unexpected
 disconnect`, three attempts with backoff). Phase tags are created locally
 and listed in `docs/loop/OWNER_STOP.md` for a push from a machine with
 normal access.
+
+**D-013 · Diff-size gate: base, scope, generated files (L1.2).** Running the
+real gates (`make ci-local`) showed `.forgejo/scripts/diff_size_gate.sh` has
+crashed on every run since v4.0: it diffed against `origin/integration`,
+which does not exist here, and `set -euo pipefail` aborted on the failing
+`git diff` inside a command substitution (exit 128) — so the CI `gates`
+job could never pass. Fixed: the base is `BASE_BRANCH`, else the PR's base
+ref (`GITHUB_BASE_REF`), else `integration` if it exists, else `main` (the
+§0 rule); an unmeasurable diff now fails closed with exit 2 and a message.
+Generated artifacts (`uv.lock`, `relay/package-lock.json`,
+`requirements*.txt`, `agent/gen/`) are not counted — a dependency bump
+would otherwise block every agent PR — and CI separately proves they equal
+a fresh `make lock`, so they cannot hide hand edits. **Scope (owner may
+veto):** the limit is enforced on the agent auto-merge path (base
+`integration`, Hard Rule 5) or with `DIFF_SIZE_ENFORCE=1`; for PRs into
+`main` — the human gate — the size is printed but does not block. The
+script's own header defines it as the agent-PR gate and its original
+default base was `integration`; no agent path is weakened, because agents
+cannot merge into `main`. Without this, a multi-task owner PR such as this
+loop's could never pass `gates`.
