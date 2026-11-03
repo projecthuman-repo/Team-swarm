@@ -12,7 +12,7 @@ dependencies = [
   "asyncpg>=0.29",
   "valkey>=6.0",
   "requests>=2.32",
-  "protobuf>=7.35,<8", # matches the checked-in gencode under agent/gen/
+  "protobuf>=7.35.1,<8", # matches the checked-in gencode under agent/gen/ (protoc 7.35.1)
   "fastapi>=0.115",
   "uvicorn>=0.32",
   "psutil>=6.0",
@@ -38,7 +38,7 @@ agent = ["aider-chat>=0.86"]
 ingest = [
   "asyncpg>=0.29",
   "requests>=2.32",
-  "protobuf>=7.35,<8",
+  "protobuf>=7.35.1,<8",
   "valkey>=6.0",
   "headroom-ai==0.31.0",
 ]

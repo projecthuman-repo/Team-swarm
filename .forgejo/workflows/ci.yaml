@@ -50,6 +50,9 @@ jobs:
           ./scripts/lock_export.sh
           sha1sum -c --quiet "${TMPDIR:-/tmp}/lock.sha"
 
+      - name: generated protobuf code matches proto/
+        run: ./scripts/check_gen.sh
+
       - name: install syft (license gate)
         run: |
           curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \

@@ -290,3 +290,48 @@ Zone C contents (stated in licensing.md); image *application* contents are
 Zone C. (d) Any scan failure or missing path exits 2 — never a pass.
 (e) Grafana is not a compose service; it is listed as an operator-run
 Zone A option because `deploy/observability/grafana-sla.json` is kept.
+
+**D-028 · Phase-1 review fixes.** Ten confirmed findings, six defects:
+(1) *Diff-size gate shortened full clones* (`fetch --depth=50` made a
+`fetch-depth: 0` checkout shallow, then the three-dot diff died with git's
+exit 128 when the branch point was >50 commits back; `make ci-local` did
+this to developer clones). Now: plain fetch with an explicit refspec
+(`+refs/heads/B:refs/remotes/origin/B`, which also works in single-branch
+clones), `--unshallow` only for clones that are already shallow, and a
+merge-base guard that fails closed with exit 2. Reproduced before and after
+on a 120-commit origin with the branch at main~100. (2) *Add-on
+requirements were exported from another uv fork* — the D-012 claim "pins
+come from the same lock, so consistent" was wrong: with the declared
+agent/ingest conflict, a selection without the agent group resolves in a
+different fork (numpy 2.5.4 vs 1.26.4, litellm 1.106.6 vs 1.81.10, …), so
+`pip install -r requirements.txt -r requirements-<x>.txt` was impossible.
+Every add-on (dev and each extra) is now exported as *agent selection + the
+add-on* minus what requirements.txt pins; `uv pip compile requirements.txt
+requirements-<x>.txt` resolves for all six; `tests/test_requirements_consistency.py`
+fails on the old files and passes on the new. D-012 is superseded by this.
+(3) *Generated-file exclusions without proof*: `agent/gen/**` stays
+excluded because CI and `ci-local` now regenerate it (`scripts/check_gen.sh`,
+grpcio-tools from uv.lock) and fail on any difference; the checked-in code
+was regenerated with that protoc (header 7.35.0 → 7.35.1, 4 lines) and the
+`protobuf` floor raised to `>=7.35.1` to match its runtime check.
+`relay/package-lock.json` is now counted (the gates job has no Node to
+prove it). (4) *Lite smoke could never pass*: bootstrap overwrote the
+Forgejo token with a placeholder, and OpenBao dev mode starts empty.
+`bootstrap.sh` now seeds a placeholder only where no secret is stored
+(verified against a stand-in KV endpoint: a stored token is kept, missing
+ones are seeded) — this also stops a re-run of `make bootstrap` from
+destroying real tokens. `lite_smoke.sh` requires `LITE_SMOKE_FORGEJO_TOKEN`,
+fails fast without it, and stores it (via stdin, not argv) after bootstrap.
+(5) *No licensing record for Phase 0–1 additions* — closed by
+`conventions/licensing.md` (L3.1), dependency table included. (6) *Agent
+image is forecast over 700 MB*: the builder venv measures 546 MB (decimal,
+uv 0.11.32, same flags); with python:3.12-slim (~120 MB) and git + its perl
+dependencies (~90 MB) that is ~755 MB. The two big pieces are load-bearing:
+scipy (100 MB with libs) is imported by networkx PageRank in aider's repo
+map, and tree-sitter-language-pack (183 MB, 171 grammars) serves aider's
+repo map and the L2.4 index. Recorded as a known deviation like D-017;
+`scripts/image_sizes.sh` keeps the 700 MB target, so `verify-integration`
+reports it honestly; the owner decides between a raised target and a
+grammar-pruning follow-up. Three findings refuted (L1.2's license gate
+deferral is inside ci-local by design; OWNER_STOP is a close-out artifact;
+the embeddings option is restored by fastembed in L2.3).

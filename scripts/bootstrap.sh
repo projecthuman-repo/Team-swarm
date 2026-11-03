@@ -71,14 +71,20 @@ fi
 echo "==> creating JetStream streams + consumers"
 ./scripts/bootstrap_jetstream.sh
 
-echo "==> seeding OpenBao dev secrets (placeholders — replace with real tokens)"
-curl -sf -X POST "$OPENBAO_ADDR/v1/secret/data/swarm/forgejo" \
-  -H "X-Vault-Token: $OPENBAO_TOKEN" \
-  -d '{"data":{"token":"REPLACE_WITH_FORGEJO_BOT_TOKEN"}}' >/dev/null
-for chat in telegram slack discord; do
-  curl -sf -X POST "$OPENBAO_ADDR/v1/secret/data/swarm/$chat" \
+echo "==> seeding OpenBao dev secrets (placeholders only where none is stored yet)"
+seed_placeholder() { # $1 = secret name; never overwrites a stored secret
+  if curl -sf "$OPENBAO_ADDR/v1/secret/data/swarm/$1" \
+      -H "X-Vault-Token: $OPENBAO_TOKEN" >/dev/null; then
+    echo "    swarm/$1: already set — kept"
+    return
+  fi
+  curl -sf -X POST "$OPENBAO_ADDR/v1/secret/data/swarm/$1" \
     -H "X-Vault-Token: $OPENBAO_TOKEN" \
-    -d "{\"data\":{\"token\":\"REPLACE_WITH_${chat^^}_BOT_TOKEN\"}}" >/dev/null
+    -d "{\"data\":{\"token\":\"REPLACE_WITH_${1^^}_BOT_TOKEN\"}}" >/dev/null
+  echo "    swarm/$1: placeholder seeded"
+}
+for name in forgejo telegram slack discord; do
+  seed_placeholder "$name"
 done
 
 if [ "$LITE" = 1 ]; then

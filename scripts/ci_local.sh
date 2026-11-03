@@ -24,6 +24,9 @@ sha1sum uv.lock requirements*.txt > "${TMPDIR:-/tmp}/lock.sha"
 ./scripts/lock_export.sh
 sha1sum -c --quiet "${TMPDIR:-/tmp}/lock.sha"
 
+step "generated protobuf code matches proto/"
+./scripts/check_gen.sh
+
 step "lint (ruff)"
 uv run --no-sync ruff check .
 

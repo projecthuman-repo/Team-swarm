@@ -8,8 +8,10 @@
 # or with DIFF_SIZE_ENFORCE=1; PRs into `main` — the human gate — get the
 # size reported but not blocked (DECISIONS D-013).
 #
-# Generated artifacts are not counted (they are regenerated, not authored);
-# CI separately proves they match a fresh `make lock`.
+# Generated artifacts are not counted (they are regenerated, not authored)
+# — only those CI proves are generated: uv.lock (`uv lock --check`),
+# requirements*.txt (fresh `make lock` must match) and agent/gen/ (fresh
+# protoc must match). relay/package-lock.json is counted.
 set -euo pipefail
 
 MAX="${MAX_CHANGED_LINES:-1500}"
@@ -24,15 +26,27 @@ else
   BASE=main
 fi
 
-git fetch origin "$BASE" --depth=50 >/dev/null 2>&1 || true
+# Never shorten a full clone (a --depth fetch would make it shallow and cut
+# the merge base off); deepen only a clone that is already shallow.
+# The explicit refspec also creates origin/$BASE in single-branch clones.
+REFSPEC="+refs/heads/$BASE:refs/remotes/origin/$BASE"
+if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+  git fetch --unshallow origin "$REFSPEC" >/dev/null 2>&1 \
+    || git fetch origin "$REFSPEC" >/dev/null 2>&1 || true
+else
+  git fetch origin "$REFSPEC" >/dev/null 2>&1 || true
+fi
 if ! git rev-parse --verify --quiet "origin/$BASE" >/dev/null; then
   echo "DIFF-SIZE GATE ERROR: origin/$BASE not found — cannot measure the diff (fail closed)"
   exit 2
 fi
+if ! git merge-base "origin/$BASE" HEAD >/dev/null 2>&1; then
+  echo "DIFF-SIZE GATE ERROR: no merge base between origin/$BASE and HEAD (fail closed)"
+  exit 2
+fi
 
 STAT="$(git diff --shortstat "origin/$BASE"...HEAD -- . \
-  ':(exclude)uv.lock' ':(exclude)relay/package-lock.json' \
-  ':(exclude)requirements*.txt' ':(exclude)agent/gen/**')"
+  ':(exclude)uv.lock' ':(exclude)requirements*.txt' ':(exclude)agent/gen/**')"
 CHANGED="$(echo "$STAT" | awk '{ins=0; del=0; for(i=1;i<=NF;i++){if($(i+1)~/insertion/)ins=$i; if($(i+1)~/deletion/)del=$i} print ins+del}')"
 CHANGED="${CHANGED:-0}"
 

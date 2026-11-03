@@ -16,25 +16,29 @@ emit() { # $1 = target file, $2 = provenance line; body on stdin
   { echo "$HEADER"; echo "# $2"; cat; } > "$1.tmp" && mv "$1.tmp" "$1"
 }
 
-base() { "${EXPORT[@]}" --no-default-groups; }
+AGENT=(--no-dev --group agent) # the requirements.txt selection
 
-# uv 0.11 has no --only-extra: export base+extra and drop every package the
-# base closure already pins. Pins come from the same lock, so the add-on set
-# is consistent with requirements.txt (DECISIONS D-012).
-only_extra() {
+# Add-on files are installed ON TOP of requirements.txt, so they must come
+# from the same resolution fork: export the agent selection plus the add-on
+# (`addon --extra X` / `addon --group dev`) and drop every package
+# requirements.txt already pins. The lock declares agent/ingest as
+# conflicting, so a selection without the agent group resolves in another
+# fork with different pins (DECISIONS D-012, corrected in the Phase-1 fixes).
+addon() {
   local names
   names="$(mktemp)"
-  base | sed -E 's/[=<>!~ ;].*//' | tr 'A-Z' 'a-z' > "$names"
-  "${EXPORT[@]}" --no-default-groups --extra "$1" \
+  "${EXPORT[@]}" "${AGENT[@]}" | sed -E 's/[=<>!~ ;].*//' | tr 'A-Z' 'a-z' > "$names"
+  "${EXPORT[@]}" --group agent "$@" \
     | awk 'NR==FNR { seen[$0] = 1; next }
            { n = tolower($0); sub(/[=<>!~ ;].*/, "", n); if (!(n in seen)) print }' "$names" -
   rm -f "$names"
 }
+only_extra() { addon --no-dev --extra "$1"; }
 
-"${EXPORT[@]}" --no-dev --group agent \
+"${EXPORT[@]}" "${AGENT[@]}" \
   | emit requirements.txt "uv export --no-dev --group agent (agent image: base + aider)"
-"${EXPORT[@]}" --only-group dev \
-  | emit requirements-dev.txt "uv export --only-group dev"
+addon --group dev \
+  | emit requirements-dev.txt "group 'dev' — add-on to requirements.txt (same resolution)"
 "${EXPORT[@]}" --only-group ingest \
   | emit requirements-ingest.txt "uv export --only-group ingest (ingest image; never with the agent group)"
 

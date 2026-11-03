@@ -4,18 +4,29 @@
 # backend agent, inject one synthetic task through the outbox, and assert the
 # task row reaches status 'done'.
 #
-# Prerequisites on the runtime host (owner, docs/loop/OWNER_STOP.md): a
-# Forgejo bot token stored at OpenBao secret/data/swarm/forgejo and a repo the
-# bot can push feature/* branches to. LITE_SMOKE_TIMEOUT_S (default 1800).
+# Prerequisites on the runtime host (owner, docs/loop/OWNER_STOP.md):
+#   LITE_SMOKE_FORGEJO_TOKEN  the Forgejo bot token (required). OpenBao runs
+#                             in dev mode (in memory), so the smoke stores it
+#                             at secret/data/swarm/forgejo after bootstrap.
+#   a repo swarm/sandbox-repo (FORGEJO_OWNER/FORGEJO_REPO defaults of
+#   agent/sandbox.py) in the Forgejo, pushable by that bot on feature/*.
+# LITE_SMOKE_TIMEOUT_S (default 1800), LITE_SMOKE_MODEL.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 RUNTIME="$(command -v podman || command -v docker || true)"
 TIMEOUT="${LITE_SMOKE_TIMEOUT_S:-1800}"
 MODEL="${LITE_SMOKE_MODEL:-maxwell1500/ornith-9b:Q4_K_M}"
 [ -n "$RUNTIME" ] || { echo "lite-smoke: neither podman nor docker found" >&2; exit 1; }
+[ -n "${LITE_SMOKE_FORGEJO_TOKEN:-}" ] || {
+  echo "lite-smoke: set LITE_SMOKE_FORGEJO_TOKEN to the Forgejo bot token (see header)" >&2
+  exit 1
+}
 
 make --no-print-directory up-lite || exit 1
 make --no-print-directory bootstrap || exit 1
+jq -n --arg t "$LITE_SMOKE_FORGEJO_TOKEN" '{data: {token: $t}}' \
+  | curl -sf -X POST "${OPENBAO_ADDR:-http://localhost:8200}/v1/secret/data/swarm/forgejo" \
+      -H "X-Vault-Token: ${OPENBAO_TOKEN:-dev-root}" -d @- >/dev/null || exit 1
 make --no-print-directory ollama || exit 1
 "$RUNTIME" exec "$("$RUNTIME" ps -qf name=ollama | head -1)" ollama pull "$MODEL" || exit 1
 make --no-print-directory forgejo || exit 1

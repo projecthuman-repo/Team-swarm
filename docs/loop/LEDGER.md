@@ -104,3 +104,10 @@ where it went) or `generated` (the file stays, with a header saying so).
 | `conventions/licensing.md` | generated (new) | L3.1 — zones, services, built images, added dependencies (also closes Phase-1 review finding "no licensing record") |
 | README rule 9 / AGENTS.md rule 4 / guardrails.md 9 | extended | L3.1 — three zones; fail-closed wording kept for what ships |
 | CI / ci-local / `make gate` license steps | extended | L3.1 — zone C + zone B |
+| `.forgejo/scripts/diff_size_gate.sh` | extended | Phase-1 fixes — no clone shortening, refspec fetch, merge-base guard; `relay/package-lock.json` now counted |
+| `scripts/lock_export.sh` add-on exports | extended | Phase-1 fixes — same resolution fork as requirements.txt (all files still generated, same names) |
+| `scripts/check_gen.sh` | generated (new) | Phase-1 fixes — CI + ci-local step |
+| `agent/gen/` | kept | regenerated with the locked protoc (version header only) |
+| `scripts/bootstrap.sh` secret seeding | extended | Phase-1 fixes — placeholders only where no secret exists |
+| `scripts/lite_smoke.sh` | extended | Phase-1 fixes — LITE_SMOKE_FORGEJO_TOKEN |
+| `tests/test_requirements_consistency.py` | generated (new) | Phase-1 fixes |
