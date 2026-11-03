@@ -54,4 +54,12 @@ a defect, adopted because the spec says `npm ci`). 4 refuted (scope/egress claim
 
 ## Deferred commands by phase
 
-(filled at each phase close-out)
+### Phase 0 — closed 2026-11-03 (tag `lean-phase-0`)
+
+Unit protocol green: `ruff check .`, `pytest -q` (73 passed, Python 3.12.13). Deferred to the
+runtime host, all inside `make verify-integration`:
+
+- `make footprint` with a running container runtime (image sizes, `system df`, SLA latency lines)
+- `$(RUNTIME) build -f deploy/Containerfile.ingest -t swarm-ingest:dev .` (L0.2)
+- `$(RUNTIME) build -f deploy/Containerfile.relay -t swarm-relay:dev .` (L0.4)
+- license gate: needs syft (`uv run --no-sync python .forgejo/scripts/license_gate.py`)
