@@ -40,6 +40,8 @@ CREATE TABLE IF NOT EXISTS lessons (
   task_id    uuid REFERENCES tasks,
   text       text NOT NULL,
   tag        text,                    -- retrieval flywheel (v4.1 T0.2 restore)
+  source     text,                    -- L2.4 codex-index: relative source path
+  content_sha text,                   -- L2.4 sha256 of the indexed record
   embedding  vector(384),             -- all-MiniLM-L6-v2 dim
   created_at timestamptz DEFAULT now()
 );
@@ -47,6 +49,13 @@ CREATE TABLE IF NOT EXISTS lessons (
 CREATE INDEX IF NOT EXISTS lessons_embedding_idx
   ON lessons USING hnsw (embedding vector_cosine_ops);
 CREATE INDEX IF NOT EXISTS lessons_tag_idx ON lessons(tag);
+
+-- Lean & Precise L2.4 — incremental codex index (mirrors 008_lessons_source.sql;
+-- the ALTER keeps a re-applied schema.sql safe on a pre-L2.4 database).
+ALTER TABLE lessons ADD COLUMN IF NOT EXISTS source text,
+  ADD COLUMN IF NOT EXISTS content_sha text;
+CREATE UNIQUE INDEX IF NOT EXISTS lessons_codex_source_idx
+  ON lessons(source) WHERE tag = 'codex-index';
 
 -- Lean & Precise L2.2 — hybrid retrieval (mirrors db/migrations/007_lessons_fts.sql).
 ALTER TABLE lessons ADD COLUMN IF NOT EXISTS fts tsvector

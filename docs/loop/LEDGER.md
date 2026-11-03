@@ -90,3 +90,8 @@ where it went) or `generated` (the file stays, with a header saying so).
 | `shadow_eval.py --single / --require-not-worse`, context pack in golden runs | extended | L2.3 — default two-config run unchanged |
 | `scripts/embeddings_shadow.sh` | generated (new) | L2.3 — `verify-integration` |
 | `tests/test_embeddings.py` | generated (new) | L2.3 |
+| `extract_signatures` | extended | L2.4 — `.py` ast path unchanged (+ `source:` header); TS/TSX/JS/MJS/Go/Rust/Java via tree-sitter, regex fallback |
+| `index_repo` | extended | L2.4 — incremental upsert on `source`, sha skip, vanished-source delete; returns counts |
+| `--reembed`, `--query`, knowledge seeding | kept | L2.4 — unchanged |
+| `db/migrations/008_lessons_source.sql` (+ schema.sql) | generated (new) | L2.4 |
+| `tests/test_codex_index.py` | generated (new) | L2.4 |

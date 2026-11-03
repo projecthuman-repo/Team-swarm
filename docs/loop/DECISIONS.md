@@ -247,3 +247,24 @@ re-embeds and runs each embedder in its own process, then
 one process would compare a model against itself. (e) HuggingFace is
 denied by this session's egress policy (403), so no model weights were
 downloaded in-session.
+
+**D-025 · Codex index details (L2.4).** (a) `content_sha` is the sha256 of
+the stored record text, not of the raw file: a body-only edit that leaves
+every signature unchanged is correctly a no-op, and an extractor upgrade
+re-indexes. (b) Legacy pre-L2.4 codex rows (no `source`) are deleted on
+the next index run — they would otherwise sit beside their replacements
+as duplicates; knowledge-pack lessons (other tags) are untouched. (c) The
+unique index is on `source` alone, as specified, so one database indexes
+one repository (the swarm's `FORGEJO_REPO`); indexing a second repo would
+replace and then prune the first's rows. (d) `schema.sql` mirrors 008 with
+`ALTER TABLE … ADD COLUMN IF NOT EXISTS` before the index, so
+`make bootstrap` re-applying `schema.sql` to a pre-L2.4 database does not
+fail on the index. (e) Records keep the v4.1 `file:` line under the new
+`source:` header (existing consumers/tests read it). (f) Skipped dirs now
+also include `venv`, `dist`, `__pycache__` and are matched on paths
+relative to the repo root (v4.1 matched absolute paths, so a repo under a
+directory named `gen` indexed nothing). (g) Operational note: with the
+`embeddings` extra installed and no cached model and no egress, fastembed
+retries the download for ~36 s and raises — as sentence-transformers did
+before. Agent images do not install the extra; a host that does must
+pre-cache the model (`FASTEMBED_CACHE_PATH`) — recorded in OWNER_STOP.
