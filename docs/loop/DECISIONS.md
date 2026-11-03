@@ -35,3 +35,16 @@ ruff-pre-commit `v0.17.3` · uv-pre-commit `0.11.32` ·
 pre-commit-hooks `v6.0.0`. Confirmed fact §3: `headroom-ai==0.31.0`
 requires `litellm>=1.86.2` while `aider-chat==0.86.2` pins
 `litellm==1.81.10`; aider ships `tree-sitter-language-pack==0.13.0`.
+
+**D-006 · Ingest image contents (L0.2).** `ingest/` imports
+`agent.openbao` (secret leasing) and `agent.router` (optional RouteLLM
+tier proposal), both lazily, plus the generated protobuf package — but not
+`agent.lessons`. `Containerfile.ingest` therefore copies
+`agent/__init__.py`, `agent/openbao.py`, `agent/router.py` and
+`agent/gen/`; omitting the first two would crash the issue sync and every
+chat loop at runtime. `requirements-ingest.txt` is written by hand now and
+becomes a generated artifact in L1.1.
+
+**D-007 · `make ingest-container`.** Builds the ingest image through the
+compose `chat` profile and runs one Forgejo issue-sync pass inside it, so
+the target exercises the image rather than only building it.

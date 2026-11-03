@@ -9,7 +9,7 @@ COMPOSE := $(RUNTIME) compose -f deploy/compose.yaml
         graph crew verify-diff ingest inject qualify dlq dlq-replay sla seed \
         index-repo shadow-eval morning speculative test lint gate gen \
         models models-35b models-bf16 migrate logs footprint \
-        verify-integration
+        verify-integration tools ingest-container
 
 quickstart: up bootstrap ## start infra and bootstrap everything
 
@@ -66,6 +66,13 @@ crew: ## CrewAI role-modeling option (declarative planning crew)
 
 ingest: ## one issue-sync pass (Forgejo swarm-ready issues -> tasks)
 	python -m ingest.forgejo_issue_sync
+
+ingest-container: ## build the ingest image (headroom-ai inside) and run one issue sync in it
+	$(COMPOSE) --profile chat build chat-ingress
+	$(COMPOSE) --profile chat run --rm chat-ingress python -m ingest.forgejo_issue_sync
+
+tools: ## isolated CLI tools: headroom (learn loop) — never installed into the agent env
+	uv tool install headroom-ai==0.31.0
 
 inject: ## inject a synthetic task through the outbox
 	python scripts/inject_task.py --role backend --title "synthetic task"

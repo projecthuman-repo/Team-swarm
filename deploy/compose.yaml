@@ -177,7 +177,7 @@ services:
   chat-ingress:
     build:
       context: ..
-      dockerfile: deploy/Containerfile.agent
+      dockerfile: deploy/Containerfile.ingest # headroom-ai lives here (L0.2)
     profiles: [chat]
     command: ["python", "-m", "ingest.chat_ingress"]
     environment:

@@ -1,0 +1,15 @@
+# Ingest image runtime (Lean & Precise L0.2) — deploy/Containerfile.ingest.
+#
+# headroom-ai lives HERE, not in the agent set: headroom-ai==0.31.0 needs
+# litellm>=1.86.2 while aider-chat pins litellm==1.81.10, so the two can
+# never share one environment. Ingest (chat ingress, issue sync) uses the
+# library's compress()/SmartCrusher; the agent reaches Headroom only through
+# the proxy (HEADROOM_ENABLED=1), which needs no library.
+#
+# Licences: asyncpg Apache-2.0 · requests Apache-2.0 · protobuf BSD-3 ·
+# valkey MIT · headroom-ai Apache-2.0.
+asyncpg>=0.29
+requests>=2.32
+protobuf>=7.35,<8  # matches the checked-in gencode under agent/gen/
+valkey>=6.0
+headroom-ai==0.31.0

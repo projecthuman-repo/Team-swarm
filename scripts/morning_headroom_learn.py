@@ -36,6 +36,10 @@ DATABASE_URL = os.environ.get(
     "DATABASE_URL", "postgres://postgres:dev@localhost:5432/swarm"
 )
 TARGET_FILE = "conventions/learned.md"
+# The `headroom` CLI lives in an isolated uv tool env (`make tools`), never
+# in the agent env (headroom-ai and aider-chat cannot co-resolve). uv puts
+# the binary on PATH (~/.local/bin/headroom); override with HEADROOM_BIN.
+HEADROOM_BIN = os.environ.get("HEADROOM_BIN", "headroom")
 
 
 def run_learn(dry_run: bool = True, fixture_log: str | None = None) -> str:
@@ -45,7 +49,7 @@ def run_learn(dry_run: bool = True, fixture_log: str | None = None) -> str:
     """
     if fixture_log is not None:
         return parse_learn_output(fixture_log)
-    cmd = ["headroom", "learn", "--target", TARGET_FILE]
+    cmd = [HEADROOM_BIN, "learn", "--target", TARGET_FILE]
     if dry_run:
         cmd.append("--dry-run")
     try:
@@ -54,7 +58,8 @@ def run_learn(dry_run: bool = True, fixture_log: str | None = None) -> str:
         ).stdout
     except FileNotFoundError:
         raise SystemExit(
-            "headroom CLI not installed: pip install -r requirements-elevation.txt"
+            f"headroom CLI not found at {HEADROOM_BIN!r}: run `make tools` "
+            "(uv tool install headroom-ai==0.31.0) or set HEADROOM_BIN"
         ) from None
     return parse_learn_output(out)
 

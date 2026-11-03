@@ -1,0 +1,24 @@
+# Ingest image (Lean & Precise L0.2): chat ingress + Forgejo issue sync,
+# with the headroom-ai library for compress()/SmartCrusher (T1.8).
+#
+# Separate from the agent image because headroom-ai==0.31.0 and aider-chat
+# cannot co-resolve (litellm >=1.86.2 vs ==1.81.10). No git, no aider.
+# ingest/ imports only agent.openbao and agent.router (both lazily) plus
+# the generated protobuf code — agent.lessons is NOT imported, so it is
+# not copied.
+FROM python:3.12-slim
+
+WORKDIR /app
+COPY requirements-ingest.txt .
+RUN pip install --no-cache-dir -r requirements-ingest.txt
+
+COPY ingest/ ingest/
+COPY agent/__init__.py agent/openbao.py agent/router.py agent/
+COPY agent/gen/ agent/gen/
+
+RUN useradd --create-home --uid 10001 swarm
+USER swarm
+
+# No-egress posture for the library path too (DR-3): never phone PyPI.
+ENV PYTHONUNBUFFERED=1 HEADROOM_UPDATE_CHECK=off
+CMD ["python", "-m", "ingest.chat_ingress"]

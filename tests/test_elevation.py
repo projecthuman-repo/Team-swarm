@@ -213,6 +213,16 @@ def test_learn_pr_body_never_direct_write():
     assert "headroom-learn" in body
 
 
+def test_learn_uses_isolated_headroom_bin(monkeypatch):
+    # L0.2: the CLI comes from the isolated tool env via HEADROOM_BIN, never
+    # the agent env; a missing binary fails with the `make tools` hint.
+    monkeypatch.setattr(learn, "HEADROOM_BIN", "/nonexistent/headroom-xyz")
+    with pytest.raises(SystemExit) as exc:
+        learn.run_learn(dry_run=True)
+    assert "make tools" in str(exc.value)
+    assert "/nonexistent/headroom-xyz" in str(exc.value)
+
+
 # ---- proto append-only fields (T3.1 AC) ---------------------------------
 
 def test_task_proto_new_fields_are_append_only():

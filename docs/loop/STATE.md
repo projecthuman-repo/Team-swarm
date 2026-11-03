@@ -24,7 +24,7 @@ whose status is not `DONE` / `DONE-DEFERRED-INTEGRATION`.
 | id | task | status | evidence / deferred command |
 |---|---|---|---|
 | L0.1 | Baseline + verify-integration target | DONE | `make footprint` printed the wheel table in-session (routing 3,213.9 MB, embeddings 3,083.6 MB, agent 131.2 MB/113 pkgs — matches §3); committed as `docs/footprint-baseline.md`. Image/disk/SLA lines run in `make verify-integration`. |
-| L0.2 | Headroom isolation | TODO | |
+| L0.2 | Headroom isolation | DONE | `uv pip compile` (py3.12/manylinux_2_28): agent set `requirements.txt`+`requirements-elevation.txt` resolves (114 pins, aider-chat 0.86.2, litellm 1.81.10, no headroom-ai); `requirements-ingest.txt` resolves (68 pins, headroom-ai 0.31.0, litellm 1.106.6); the old aider+headroom-ai co-install is unsatisfiable. `make tools` installed `headroom, version 0.31.0` at `~/.local/bin/headroom`; agent env cannot `import headroom`. `test_learn_*` 3/3 pass. Image build deferred: `make ingest-container` (in `verify-integration` via L1.4). |
 | L0.3 | Cross-process hand-off via Valkey | TODO | |
 | L0.4 | Relay build hygiene | TODO | |
 | L1.1 | uv is the source of truth | TODO | |

@@ -2,11 +2,11 @@
 # granular-requirements convention. Run `make gate` after installing:
 # the fail-closed license gate must stay green (no copyleft in the tree).
 #
-# headroom-ai: Apache-2.0 (chopratejas/headroom — the compression layer,
-#   NOT gglucass/headroom-desktop). Kompress-v2-base model + bundled RTK
-#   binary licenses are verified at pin time by the syft gate (fail-closed
-#   either way).
-headroom-ai==0.31.0
+# headroom-ai (Apache-2.0, chopratejas/headroom) MOVED (Lean & Precise L0.2)
+#   to requirements-ingest.txt (ingest image) and to the isolated tool env
+#   (`make tools` -> HEADROOM_BIN). It cannot co-resolve with aider-chat:
+#   headroom-ai==0.31.0 needs litellm>=1.86.2, aider pins litellm==1.81.10.
+#   The agent reaches Headroom only through the proxy (HEADROOM_ENABLED=1).
 # litellm: MIT core only — the enterprise/ directory is not used.
 litellm>=1.60,<2
 # capacity probe (T4.1)
