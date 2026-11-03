@@ -6,7 +6,9 @@ FROM node:22-alpine
 
 WORKDIR /app
 COPY relay/package.json relay/package-lock.json relay/tsconfig.json ./
-RUN npm ci --omit=optional && npm cache clean --force
+# Plain `npm ci`: --omit=optional would drop esbuild's lockfile-pinned
+# platform binary (tsx -> esbuild) and make it fetch one outside the lock.
+RUN npm ci && npm cache clean --force
 COPY relay/relay.ts relay/relay_cdc.ts ./
 
 RUN adduser -D -u 10001 swarm

@@ -43,6 +43,15 @@ whose status is not `DONE` / `DONE-DEFERRED-INTEGRATION`.
 | L3.3 | Golden pack to ten tasks | TODO | |
 | L3.4 | Docs and runbook | TODO | |
 
+## Phase-0 review (adversarial, 13 agents: 4 finder dimensions, 1 skeptic per finding)
+
+9 findings, 5 confirmed and fixed in `lean(L0.x): fix …`: wheel-report failures did not fail
+`make footprint`/`verify-integration`; the CDC `command` comment sat inside the relay's
+`environment:` map; the SLA filter dropped the `publish->claim` line; the image builds described as
+deferred were not in `verify-integration`. Also fixed: bandit B310 in `footprint_wheels.py`
+(found by `make ci-local`, missed by the review) and plain `npm ci` in the relay image (refuted as
+a defect, adopted because the spec says `npm ci`). 4 refuted (scope/egress claims).
+
 ## Deferred commands by phase
 
 (filled at each phase close-out)

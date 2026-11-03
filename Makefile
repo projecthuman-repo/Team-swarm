@@ -151,3 +151,6 @@ footprint: ## wheel sizes per requirement set (+ image sizes when a runtime is u
 verify-integration: ## run every deferred integration check (runtime host)
 	@echo "==> [L0.1] footprint baseline (wheels + images + disk + SLA latency)"
 	$(MAKE) --no-print-directory footprint
+	@echo "==> [L0.2/L0.4] ingest + relay images build from their Containerfiles"
+	$(RUNTIME) build -f deploy/Containerfile.ingest -t swarm-ingest:dev .
+	$(RUNTIME) build -f deploy/Containerfile.relay -t swarm-relay:dev .

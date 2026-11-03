@@ -29,3 +29,6 @@ where it went) or `generated` (the file stays, with a header saying so).
 | `tests/test_handoff.py` | generated (new) | L0.3 — cross-process acceptance tests |
 | `deploy/Containerfile.relay` | extended | L0.4 — copies `package-lock.json`, `npm ci`, ships `relay.ts` + `relay_cdc.ts` |
 | CDC relay option (`relay_cdc.ts` in-container) | extended | L0.4 — now runnable via the compose `command` comment |
+| `scripts/footprint_report.sh` / `footprint_wheels.py` | extended | L0.x fix — wheel failures and partial size lookups now fail the report; both SLA latency lines kept |
+| relay CDC `command` comment | extended | L0.x fix — moved from inside `environment:` to service level; uncommenting now switches the entrypoint |
+| `make verify-integration` | extended | L0.x fix — builds the ingest and relay images |

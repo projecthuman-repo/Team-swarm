@@ -126,13 +126,13 @@ services:
       context: ..
       dockerfile: deploy/Containerfile.relay
     profiles: [swarm]
+    # CDC relay option (runbook §7): tail logical replication instead of
+    # polling. relay_cdc.ts ships in the image next to relay.ts
+    # (Containerfile.relay, L0.4); uncomment to switch the entrypoint:
+    # command: ["npx", "tsx", "relay_cdc.ts"]
     environment:
       NATS_URL: nats://nats:4222
       DATABASE_URL: postgres://postgres:dev@postgres:5432/swarm
-      # CDC relay option (runbook §7): switch the command to tail logical
-      # replication instead of polling. relay_cdc.ts ships in the image
-      # next to relay.ts (Containerfile.relay, L0.4), so this just works:
-      # command: ["npx", "tsx", "relay_cdc.ts"]
     depends_on:
       postgres:
         condition: service_healthy

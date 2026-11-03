@@ -84,7 +84,7 @@ def wheel_score(filename: str) -> int:
 def package_size(name: str, version: str) -> tuple[int, bool]:
     """(compressed bytes, is_sdist_fallback) for one pinned package."""
     url = f"https://pypi.org/pypi/{name}/{version}/json"
-    with urllib.request.urlopen(url, timeout=30) as resp:  # noqa: S310 - fixed https host
+    with urllib.request.urlopen(url, timeout=30) as resp:  # nosec B310 - fixed https://pypi.org host
         files = json.load(resp).get("urls", [])
     wheels = sorted(
         ((wheel_score(f["filename"]), f["size"]) for f in files),
@@ -155,7 +155,9 @@ def main() -> int:
     files = args.files or sorted(glob.glob(os.path.join(ROOT, "requirements*.txt")))
     data = report(files)
     print(json.dumps(data, indent=2) if args.json else to_markdown(data))
-    return 0
+    # A table with missing sizes understates the footprint: never report
+    # it as a success (§1 "never mark green what did not run").
+    return 1 if data["failed"] else 0
 
 
 if __name__ == "__main__":
