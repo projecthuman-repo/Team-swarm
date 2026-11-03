@@ -83,6 +83,11 @@ async def test_incremental_reindex_in_real_postgres(pg, tmp_path, monkeypatch):
     row = await pg.fetchrow("SELECT lesson_id, text FROM lessons WHERE source='a.py'")
     assert row["lesson_id"] == old_id and "def alpha(x, y)" in row["text"]
 
+    (tmp_path / "a.py").write_text("def alpha(x, y:\n")  # half-finished edit
+    broken = await seed.index_repo(pg, str(tmp_path))
+    assert broken["deleted"] == 0 and await count(pg, "a.py") == 1  # last good row kept
+    (tmp_path / "a.py").write_text("def alpha(x, y):\n    return x + y\n")
+
     os.remove(tmp_path / "b.ts")
     gone = await seed.index_repo(pg, str(tmp_path))
     assert gone["deleted"] == 1 and await count(pg, "b.ts") == 0

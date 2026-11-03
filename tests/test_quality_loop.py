@@ -139,3 +139,31 @@ async def test_verify_cmd_runs_in_stage2(tmp_path, recorded):
     green, out = await sandbox.check_workspace(str(repo), env, "false", {})
     assert green is False
     assert ["false"] in recorded and "$ false" in out
+
+
+async def test_committed_engine_edit_still_hits_stage1(tmp_path, recorded):
+    """Phase-2 review fix: aider auto-commits; stage 1 diffs against the base."""
+    repo, env = git_repo(tmp_path)
+    base = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True,
+                          text=True, check=True).stdout.strip()  # fmt: skip
+    (repo / "app.py").write_text("def add(a, b)\n    return a + b\n")
+    (repo / "new_mod.py").write_text("X = 1\n")
+    subprocess.run(["git", "add", "-A"], cwd=repo, env=env, check=True)
+    subprocess.run(["git", "commit", "-qm", "aider: edit"], cwd=repo, env=env, check=True)
+    assert await sandbox.changed_python_files(str(repo), env) == []  # what HEAD would see
+    timings = {}
+    green, out = await sandbox.check_workspace(str(repo), env, "", timings, base)
+    assert green is False and out.startswith("$ ruff check app.py new_mod.py")
+    assert not any(c[0] == "pytest" for c in recorded)
+    assert isinstance(timings["stage1_ms"], int)
+
+
+async def test_fast_check_default_respects_ruff_excludes(tmp_path, monkeypatch):
+    assert sandbox.QUALITY_FAST_CHECK == "ruff check --force-exclude"
+    repo, env = git_repo(tmp_path)
+    (repo / "pyproject.toml").write_text('[tool.ruff]\nextend-exclude = ["gen"]\n')
+    (repo / "gen").mkdir()
+    (repo / "gen" / "pb2.py").write_text("import os\n")  # F401 — but excluded
+    monkeypatch.setattr(sandbox, "QUALITY_CHECKS", "ruff check .")
+    green, out = await sandbox.check_workspace(str(repo), env, "", {})
+    assert green is True, out

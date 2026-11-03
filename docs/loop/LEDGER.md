@@ -122,3 +122,8 @@ where it went) or `generated` (the file stays, with a header saying so).
 | `prometheus-client` | generated (new) | L3.2 — base dependency 0.26.0 |
 | `scripts/observability_smoke.sh`, VI steps | generated (new) | L3.2 |
 | `tests/test_observability.py` | generated (new) | L3.2 |
+| `changed_python_files` / `check_workspace` | extended | Phase-2 fixes — diff against the task's base commit (`base`, default HEAD) |
+| `QUALITY_FAST_CHECK` default | extended | Phase-2 fixes — `ruff check --force-exclude` (`.env.example` too) |
+| legacy `EMBEDDING_MODEL=all-MiniLM-L6-v2` | kept | Phase-2 fixes — served by fastembed via `FASTEMBED_ALIASES` |
+| `index_repo` pruning | extended | Phase-2 fixes — only vanished/unindexable sources |
+| `scripts/qualify_stage1.py` orphan check | extended | Phase-2 fixes — within OUTBOX_RETENTION_DAYS |

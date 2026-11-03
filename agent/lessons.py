@@ -48,6 +48,12 @@ _model = None
 _model_loaded = False
 
 
+# v4.1 configs set EMBEDDING_MODEL=all-MiniLM-L6-v2 explicitly; fastembed
+# ships the same model (ONNX export) under its hub id. Same model, same
+# vector space — existing lessons keep matching without a re-embed.
+FASTEMBED_ALIASES = {"all-MiniLM-L6-v2": "sentence-transformers/all-MiniLM-L6-v2"}
+
+
 def _fastembed_model():
     """fastembed TextEmbedding; BAAI/bge-m3 is registered from its ONNX export."""
     from fastembed import TextEmbedding
@@ -66,7 +72,7 @@ def _fastembed_model():
                 model_file="onnx/model.onnx",
                 additional_files=["onnx/model.onnx_data"],
             )
-    return TextEmbedding(model_name=EMBEDDING_MODEL)
+    return TextEmbedding(model_name=FASTEMBED_ALIASES.get(EMBEDDING_MODEL, EMBEDDING_MODEL))
 
 
 def _embedder():
@@ -85,6 +91,10 @@ def _embedder():
                 _model = _fastembed_model()
             except ImportError:  # embeddings optional on the laptop tier
                 log.warning("fastembed not installed; text-only lessons")
+            except Exception as err:  # unknown model id, model not cached + no egress
+                log.error(
+                    "fastembed model %r unavailable (%s); text-only lessons", EMBEDDING_MODEL, err
+                )
         else:
             raise ValueError(f"unknown EMBEDDING_BACKEND {EMBEDDING_BACKEND!r}")
     return _model

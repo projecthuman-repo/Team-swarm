@@ -62,7 +62,9 @@ QUALITY_CHECKS = os.environ.get("QUALITY_CHECKS", "ruff check .;pytest -q")
 # Two-stage gate (Lean & Precise L2.1): a fast lint of the changed Python
 # files first; red there returns at once (seconds, not a pytest run) and the
 # repair prompt carries only that output. Green -> QUALITY_CHECKS + verify_cmd.
-QUALITY_FAST_CHECK = os.environ.get("QUALITY_FAST_CHECK", "ruff check")
+# --force-exclude keeps stage 1 a subset of stage 2: ruff ignores its
+# exclude/extend-exclude for explicitly passed paths without it.
+QUALITY_FAST_CHECK = os.environ.get("QUALITY_FAST_CHECK", "ruff check --force-exclude")
 
 # Reproduction-test-first policy (v4.1 T2.2)
 REPRO_TEST_POLICY = os.environ.get("REPRO_TEST_POLICY", "1") == "1"
@@ -236,10 +238,15 @@ async def _run(
     return proc.returncode or 0, out
 
 
-async def changed_python_files(repo: str, env: dict) -> list[str]:
-    """Python files the engine added/copied/modified/renamed, plus untracked ones."""
+async def changed_python_files(repo: str, env: dict, base: str = "HEAD") -> list[str]:
+    """Python files added/copied/modified/renamed since `base`, plus untracked ones.
+
+    `base` is the commit the task branch started from: aider auto-commits
+    its edits, so a diff against HEAD would miss them (DECISIONS D-030).
+    The diff covers committed and uncommitted changes alike.
+    """
     _, diff = await _run(
-        ["git", "diff", "--name-only", "--diff-filter=ACMR", "HEAD"], repo, env, 60, check=False
+        ["git", "diff", "--name-only", "--diff-filter=ACMR", base], repo, env, 60, check=False
     )
     _, untracked = await _run(
         ["git", "ls-files", "--others", "--exclude-standard"], repo, env, 60, check=False
@@ -257,11 +264,16 @@ def _ms_since(start: float) -> int:
 
 
 async def check_workspace(
-    repo: str, env: dict, verify_cmd: str = "", timings: dict | None = None
+    repo: str,
+    env: dict,
+    verify_cmd: str = "",
+    timings: dict | None = None,
+    base: str = "HEAD",
 ) -> tuple[bool, str]:
     """Run the two-stage quality gate (T2.1, L2.1). Returns (green, output).
 
-    Stage 1: QUALITY_FAST_CHECK on the changed .py files only; red returns
+    Stage 1: QUALITY_FAST_CHECK on the .py files changed since `base` (the
+    task's starting commit); red returns
     immediately with just that output. Skipped when no Python changed.
     Stage 2: every QUALITY_CHECKS command, then verify_cmd (T3.1).
     pytest exit code 5 (no tests collected) counts as green; a check
@@ -271,7 +283,7 @@ async def check_workspace(
     timings = {} if timings is None else timings
     timings["stage1_ms"] = timings["stage2_ms"] = None
 
-    files = await changed_python_files(repo, env) if QUALITY_FAST_CHECK.strip() else []
+    files = await changed_python_files(repo, env, base) if QUALITY_FAST_CHECK.strip() else []
     if files:
         start = time.monotonic()
         argv = shlex.split(QUALITY_FAST_CHECK) + files
@@ -334,6 +346,8 @@ async def run_sandboxed_aider(task, secret: str, budget: ValkeyBudget) -> RunRes
         await _run(["git", "clone", "--depth", "1", remote, "repo"], workdir, env, 300)
         repo = os.path.join(workdir, "repo")
         await _run(["git", "checkout", "-b", branch], repo, env, 60)
+        _, base = await _run(["git", "rev-parse", "HEAD"], repo, env, 60)
+        base = base.strip()  # the gate's stage 1 diffs against this (D-030)
 
         prompt = message
         green = False
@@ -346,7 +360,7 @@ async def run_sandboxed_aider(task, secret: str, budget: ValkeyBudget) -> RunRes
 
             _heartbeat(workdir)
             timings: dict = {}
-            green, check_out = await check_workspace(repo, env, task.verify_cmd, timings)
+            green, check_out = await check_workspace(repo, env, task.verify_cmd, timings, base)
             if cycle == 0:
                 result.first_pass_green = green
                 result.gate_stage1_ms = timings["stage1_ms"]

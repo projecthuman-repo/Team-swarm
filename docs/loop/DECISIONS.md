@@ -365,3 +365,37 @@ ports for containers attached only to internal networks. If `make up` +
 host `make bootstrap` cannot reach :5432, that is the cause —
 `verify-integration` (lite smoke) will show it on the runtime host; noted
 in OWNER_STOP.
+
+**D-030 · Phase-2 review fixes.** Seven confirmed findings, five defects:
+(1) *Stage 1 never ran in production* (high): the spec's
+`git diff --name-only --diff-filter=ACMR HEAD` sees only uncommitted work,
+and aider auto-commits every edit (its default and `.aider.conf.yml`), so
+the file list was always empty and every gate went straight to pytest. The
+L2.1 tests left edits uncommitted and passed anyway. `run_sandboxed_aider`
+now records the branch's starting commit (`git rev-parse HEAD` right after
+`git checkout -b`) and `changed_python_files`/`check_workspace` diff
+against it — committed and uncommitted changes alike — keeping the
+untracked listing. The deviation from the spec's literal `HEAD` is the
+fix. New test commits the broken edit first (fails on the old code).
+(2) *Stage 1 ignored ruff's excludes*: explicit paths bypass
+`exclude`/`extend-exclude` without `--force-exclude`, so a regenerated
+`agent/gen` file could go red in stage 1 while `ruff check .` is green.
+Default is now `ruff check --force-exclude` (shown: plain → rc 1,
+force-exclude → rc 0 on an excluded file). (3) *Legacy embedding config
+crashed*: a v4.1 `.env` sets `EMBEDDING_MODEL=all-MiniLM-L6-v2`
+explicitly; under the fastembed default that id is unknown to fastembed
+and `TextEmbedding` raised through `write_lesson`/`search_lessons`. The
+id now maps to fastembed's `sentence-transformers/all-MiniLM-L6-v2` (the
+same model, ONNX export — checked against the installed fastembed list,
+384-dim), and any model-construction failure (unknown id, model not cached
+with no egress) logs an error and degrades to text-only, like a missing
+library. This supersedes D-025(g)'s "raises". (4) *A file that failed to
+parse lost its codex row*: pruning now removes only sources that no
+longer exist (or are no longer indexable), so a half-finished edit keeps
+the last good signatures (test fails on the old code). (5) *`make qualify`
+false dual-write losses after pruning*: orphan tasks are counted only
+within `OUTBOX_RETENTION_DAYS` (checked on the local Postgres: a 10-day-old
+orphan is ignored, a fresh one still fails the stage). Five refuted (two
+were duplicates of confirmed ones; second-repo indexing is D-025(c);
+OWNER_STOP is a close-out artifact; the `pg` fixture publication concern
+needs a database where `schema.sql` was never applied to `public`).

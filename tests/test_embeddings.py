@@ -137,3 +137,37 @@ def test_shadow_eval_require_not_worse(tmp_path):
     assert (
         worse.returncode == 1 and "FAIL: first-pass green rate 50% < baseline 67%" in worse.stdout
     )
+
+
+def test_legacy_v41_model_id_maps_to_fastembed(fresh):
+    seen = []
+    fresh.setitem(sys.modules, "fastembed", fake_fastembed(384, seen))
+    fresh.setattr(lessons, "EMBEDDING_BACKEND", "fastembed")
+    fresh.setattr(lessons, "EMBEDDING_MODEL", "all-MiniLM-L6-v2")  # v4.1 .env value
+    assert len(lessons.embed("hello")) == 384
+    assert seen == ["sentence-transformers/all-MiniLM-L6-v2"]
+
+
+def test_unavailable_fastembed_model_degrades_to_text_only(fresh):
+    mod = types.ModuleType("fastembed")
+
+    class TextEmbedding:
+        def __init__(self, model_name):
+            raise ValueError(f"Could not load model {model_name} from any source.")
+
+        @staticmethod
+        def list_supported_models():
+            return []
+
+    mod.TextEmbedding = TextEmbedding
+    fresh.setitem(sys.modules, "fastembed", mod)
+    fresh.setattr(lessons, "EMBEDDING_BACKEND", "fastembed")
+    fresh.setattr(lessons, "EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")
+    assert lessons.embed("hello") is None
+
+
+def test_legacy_alias_is_a_real_fastembed_model():
+    fastembed = pytest.importorskip("fastembed")
+    known = {m["model"]: m["dim"] for m in fastembed.TextEmbedding.list_supported_models()}
+    for alias in lessons.FASTEMBED_ALIASES.values():
+        assert known[alias] == 384

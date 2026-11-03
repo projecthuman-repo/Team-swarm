@@ -190,6 +190,16 @@ def extract_signatures(source: str, filename: str) -> str:
     return "\n".join(header + body)
 
 
+def _indexable(root: pathlib.Path, rel: str) -> bool:
+    path = root / rel
+    parts = pathlib.PurePosixPath(rel).parts
+    return (
+        path.is_file()
+        and path.suffix in INDEX_SUFFIXES
+        and not any(part in SKIP_DIRS for part in parts)
+    )
+
+
 def collect_records(root: pathlib.Path) -> dict[str, str]:
     """{relative source path: codex-index record text} for every indexable file."""
     records = {}
@@ -212,7 +222,8 @@ async def index_repo(pool: asyncpg.Pool, repo_path: str) -> dict[str, int]:
     skipped, changed ones replaced in place, rows whose source vanished
     deleted — as are legacy pre-L2.4 rows without a source.
     """
-    records = collect_records(pathlib.Path(repo_path))
+    root = pathlib.Path(repo_path)
+    records = collect_records(root)
     known = {
         r["source"]: r["content_sha"]
         for r in await pool.fetch(
@@ -239,7 +250,9 @@ async def index_repo(pool: asyncpg.Pool, repo_path: str) -> dict[str, int]:
             sha,
         )
         counts["updated" if source in known else "inserted"] += 1
-    gone = [s for s in known if s not in records]
+    # Only sources that are gone (or no longer indexable) are pruned; a file
+    # that exists but fails to parse keeps its last good row.
+    gone = [s for s in known if s not in records and not _indexable(root, s)]
     deleted = await pool.fetch(
         "DELETE FROM lessons WHERE tag = 'codex-index' "
         "AND (source IS NULL OR source = ANY($1::text[])) RETURNING lesson_id",
