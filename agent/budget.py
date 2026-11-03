@@ -26,6 +26,17 @@ def client() -> valkey.Valkey:
     return _client
 
 
+def sync_client():
+    """Blocking client on the same VALKEY_URL, for sync callers (the
+    hand-off store behind the `python -m agent.verifier` CLI). Short
+    timeouts so an unreachable Valkey degrades fast instead of hanging."""
+    import valkey as valkey_sync
+
+    return valkey_sync.Valkey.from_url(
+        VALKEY_URL, socket_connect_timeout=2, socket_timeout=5
+    )
+
+
 class BudgetExceeded(Exception):
     """Raised when a task's token spend crosses its budget."""
 

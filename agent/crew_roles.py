@@ -68,7 +68,7 @@ def build_crew(task_title: str):
         "concerns before any code is written.",
     )
     # v4.1 T2.3 — independent verifier template: reviews ONLY the diff +
-    # task spec (via SharedContext), never the author's conversation, so
+    # task spec (via the Valkey hand-off store), never the author's conversation, so
     # author biases don't leak into verification.
     verifier = role_agent(
         "verifier",

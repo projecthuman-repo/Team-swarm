@@ -48,3 +48,14 @@ becomes a generated artifact in L1.1.
 **D-007 · `make ingest-container`.** Builds the ingest image through the
 compose `chat` profile and runs one Forgejo issue-sync pass inside it, so
 the target exercises the image rather than only building it.
+
+**D-008 · Sync Valkey client for the hand-off store (L0.3).** The prompt
+says to reuse `agent.budget.client()`, but that is the `valkey.asyncio`
+client, while `put_handoff`/`get_handoff` and the `python -m
+agent.verifier` CLI are synchronous: driving the async client there would
+need `asyncio.run` per call, binds the cached singleton to a dead loop on
+the second call, and fails outright inside a running loop. So
+`agent/budget.py` gains `sync_client()` — a blocking client on the same
+`VALKEY_URL` (2 s connect / 5 s socket timeouts so an unreachable Valkey
+degrades fast at import). One source of Valkey configuration is kept; the
+TTL reuses `budget.MAX_TASK_WALL_S`.

@@ -20,3 +20,10 @@ where it went) or `generated` (the file stays, with a header saying so).
 | `make ingest-container` / `make tools` | extended (new targets) | Makefile |
 | `scripts/morning_headroom_learn.py` | extended | L0.2 — `HEADROOM_BIN` (default `headroom`, uv-tool path) |
 | `HEADROOM_BIN` | extended (new env var) | `.env.example` |
+| `agent/shared_context.py` | extended | L0.3 — Valkey `handoff:<task_id>` (TTL `MAX_TASK_WALL_S`); in-memory dict only when `VALKEY_URL` unset/unreachable |
+| Headroom `SharedContext` compression | moved | L0.3 — compression now happens in flight at the Headroom proxy (`VERIFIER_API_BASE` defaults to `HEADROOM_URL` when `HEADROOM_ENABLED=1`) |
+| `agent/budget.py` | extended | L0.3 — `sync_client()` beside `client()` on the same `VALKEY_URL` |
+| `agent/verifier.py` | extended | L0.3 — `VERIFIER_API_BASE` default resolution |
+| `VERIFIER_API_BASE` | extended (env var documented) | `.env.example` |
+| `conventions/context.md` hand-off row | extended | L0.3 — "Valkey hand-off store, compressed in flight by the Headroom proxy" |
+| `tests/test_handoff.py` | generated (new) | L0.3 — cross-process acceptance tests |

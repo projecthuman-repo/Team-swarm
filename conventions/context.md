@@ -8,7 +8,7 @@ working context small and grounded.
 |---|---|
 | Shrink tool/JSON traffic | Headroom compaction (proxy sidecar, `HEADROOM_ENABLED=1`) |
 | Remember durable facts | structured note-taking via `lessons` (tagged; see T0.2) |
-| Hand off to a sub-agent / verifier | Headroom SharedContext (`agent/shared_context.py`) — diff + spec only, never the author conversation |
+| Hand off to a sub-agent / verifier | Valkey hand-off store, compressed in flight by the Headroom proxy (`agent/shared_context.py` → `handoff:<task_id>`, TTL `MAX_TASK_WALL_S`) — diff + spec only, never the author conversation |
 | Hand off large artifacts | SeaweedFS + `spec_ref` (store the blob, pass the reference) |
 | Repo knowledge | bounded retrieval pack (`agent/context_pack.py`): files + signatures under a hard cap (`CONTEXT_PACK_TOKENS`); similar-snippet retrieval is banned (degrades results up to 15%) |
 
