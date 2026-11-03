@@ -27,3 +27,5 @@ where it went) or `generated` (the file stays, with a header saying so).
 | `VERIFIER_API_BASE` | extended (env var documented) | `.env.example` |
 | `conventions/context.md` hand-off row | extended | L0.3 — "Valkey hand-off store, compressed in flight by the Headroom proxy" |
 | `tests/test_handoff.py` | generated (new) | L0.3 — cross-process acceptance tests |
+| `deploy/Containerfile.relay` | extended | L0.4 — copies `package-lock.json`, `npm ci`, ships `relay.ts` + `relay_cdc.ts` |
+| CDC relay option (`relay_cdc.ts` in-container) | extended | L0.4 — now runnable via the compose `command` comment |
