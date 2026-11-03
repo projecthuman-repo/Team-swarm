@@ -52,6 +52,18 @@ deferred were not in `verify-integration`. Also fixed: bandit B310 in `footprint
 (found by `make ci-local`, missed by the review) and plain `npm ci` in the relay image (refuted as
 a defect, adopted because the spec says `npm ci`). 4 refuted (scope/egress claims).
 
+## Phase-1 review (adversarial, 17 agents: 4 finder dimensions, 1 skeptic per finding)
+
+13 findings, 10 confirmed (6 distinct defects) and fixed in `lean(L1.x): fix phase-1 review
+findings` (DECISIONS D-028): the diff-size gate shortened full clones and crashed with exit 128
+on old branch points; add-on requirements files were exported from another uv fork and could not
+be pip-installed with requirements.txt; `agent/gen` and `relay/package-lock.json` were excluded
+from the diff size without proof (gen now regenerated and diffed in CI, the npm lock counted);
+the lite smoke could never pass because bootstrap overwrote the Forgejo token; no licensing
+record (now `conventions/licensing.md`); the agent image is forecast over 700 MB (recorded as a
+known deviation, target kept). 3 refuted. The review ran concurrently with L2.1–L2.5 and L3.1
+(two agents at a time on this host), so the fix commit lands after them.
+
 ## Deferred commands by phase
 
 ### Phase 0 — closed 2026-11-03 (tag `lean-phase-0`)
@@ -63,3 +75,19 @@ runtime host, all inside `make verify-integration`:
 - `$(RUNTIME) build -f deploy/Containerfile.ingest -t swarm-ingest:dev .` (L0.2)
 - `$(RUNTIME) build -f deploy/Containerfile.relay -t swarm-relay:dev .` (L0.4)
 - license gate: needs syft (`uv run --no-sync python .forgejo/scripts/license_gate.py`)
+
+### Phase 1 — closed 2026-11-03 (tag `lean-phase-1`)
+
+Unit protocol green: `make ci-local` passed end to end (locked env, torch-free embeddings,
+pre-commit, generated requirements + protobuf match their sources, ruff, pytest 127 passed /
+1 skipped — the real-fastembed test, skipped because ci-local syncs agent+dev only — coverage
+floor, bandit, diff-size, headroom gate; license gate DEFERRED without syft). Footprint table
+refreshed in `docs/footprint-baseline.md`. Deferred to the runtime host, all inside
+`make verify-integration`:
+
+- `./scripts/image_sizes.sh` — agent ≤ 700 MB (forecast ≈ 755, D-028), ingest ≤ 300 MB (at risk,
+  D-017), relay ≤ 160 MB
+- `make torch-cpu-lock` (needs download.pytorch.org, D-011)
+- `uv run --no-sync python .forgejo/scripts/license_gate.py --zone C` and `--zone B` (syft)
+- `LITE_SMOKE_FORGEJO_TOKEN=<bot token> ./scripts/lite_smoke.sh` (lite spine → one task reaches
+  `done`; needs a `swarm/sandbox-repo` in Forgejo)
