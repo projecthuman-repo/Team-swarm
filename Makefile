@@ -153,8 +153,10 @@ ci-local: ## the gates of .forgejo/workflows/ci.yaml, same commands (license gat
 hooks: ## install the developer pre-commit hooks (ruff, ruff-format, uv-lock, hygiene)
 	uv run --no-sync pre-commit install
 
-gate: ## run the fail-closed license gate locally (needs syft)
-	python .forgejo/scripts/license_gate.py
+gate: ## license gate zones C (fail-closed) + B (denylist), Zone A table (needs syft)
+	python .forgejo/scripts/license_gate.py --zone C
+	python .forgejo/scripts/license_gate.py --zone B
+	python .forgejo/scripts/license_gate.py --zone A
 
 gen: ## regenerate protobuf code from proto/ (needs grpcio-tools; or use buf)
 	python -m grpc_tools.protoc -Iproto \
@@ -190,7 +192,8 @@ verify-integration: ## run every deferred integration check (runtime host)
 	@$(VI) "L0.1 footprint (wheels + images + disk + SLA latency)" $(MAKE) --no-print-directory footprint
 	@$(VI) "L0.2/L0.4/L1.4 images build within size targets" ./scripts/image_sizes.sh
 	@$(VI) "L1.1 CPU-only torch for the torch extras" $(MAKE) --no-print-directory torch-cpu-lock
-	@$(VI) "L1.2 license gate (syft)" uv run --no-sync python .forgejo/scripts/license_gate.py
+	@$(VI) "L1.2/L3.1 license gate zone C (syft, fail-closed)" uv run --no-sync python .forgejo/scripts/license_gate.py --zone C
+	@$(VI) "L3.1 license gate zone B (syft, denylist)" uv run --no-sync python .forgejo/scripts/license_gate.py --zone B
 	@$(VI) "L1.5 lite spine: boot, bootstrap, one task reaches done" ./scripts/lite_smoke.sh
 	@$(VI) "L2.2+ real-Postgres tests (hybrid retrieval SQL) on the spine" env REQUIRE_POSTGRES=1 uv run --no-sync pytest -q
 	@$(VI) "L2.3 fastembed embeds: embed('hello') is a 384-vector" uv run --frozen --group agent --extra embeddings python -c "from agent.lessons import embed; v = embed('hello'); assert v is not None and len(v) == 384, v; print('384-dim ok')"

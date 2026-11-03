@@ -82,8 +82,14 @@ jobs:
           uv pip install --python /tmp/headroom-env/bin/python headroom-ai==0.31.0
           /tmp/headroom-env/bin/python .forgejo/scripts/headroom_gate.py
 
-      - name: license gate (fail-closed)
-        run: uv run --no-sync python .forgejo/scripts/license_gate.py
+      # Three zones (conventions/licensing.md, L3.1): C = shipped code and
+      # image contents, permissive-only, fail-closed; B = everything linked
+      # anywhere in the repo, AGPL/SSPL/BUSL/Commons-Clause denylist.
+      - name: license gate zone C (image contents, fail-closed)
+        run: uv run --no-sync python .forgejo/scripts/license_gate.py --zone C
+
+      - name: license gate zone B (linked code, denylist)
+        run: uv run --no-sync python .forgejo/scripts/license_gate.py --zone B
 
   proto-compat:
     runs-on: docker

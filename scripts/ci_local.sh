@@ -43,9 +43,10 @@ uv venv -q --python 3.12 "$HV"
 uv pip install -q --python "$HV/bin/python" headroom-ai==0.31.0
 "$HV/bin/python" .forgejo/scripts/headroom_gate.py
 
-step "license gate (fail-closed)"
+step "license gate zones C (fail-closed) and B (denylist)"
 if command -v syft >/dev/null 2>&1; then
-  uv run --no-sync python .forgejo/scripts/license_gate.py
+  uv run --no-sync python .forgejo/scripts/license_gate.py --zone C
+  uv run --no-sync python .forgejo/scripts/license_gate.py --zone B
 else
   echo "DEFERRED: syft not installed here — the gate runs in CI and in make verify-integration"
 fi

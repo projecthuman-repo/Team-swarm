@@ -120,7 +120,12 @@ scripts/               # bootstrap, schema registration, task injection, qualifi
    `--network=none --read-only --cap-drop=ALL` + seccomp on Tier A).
 7. Secrets are **leased from OpenBao**, never baked into images or env files.
 8. Test environments use **synthetic data only**.
-9. **Fail-closed license gate** on every PR: Apache/MIT/BSD/MPL only.
+9. **Three-zone license gate** on every PR (`conventions/licensing.md`):
+   everything that ships — our code and every image's contents (Zone C) — is
+   Apache/MIT/BSD/MPL/ISC/0BSD only, and that gate is **fail-closed**; nothing
+   linked anywhere in the repo may be AGPL/SSPL/BUSL/Commons Clause (Zone B);
+   network services we only call over a socket, unmodified in their own
+   container (Forgejo, OpenObserve, Grafana …), may carry any OSI license (Zone A).
 
 ## Failure semantics
 

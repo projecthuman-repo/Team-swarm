@@ -277,3 +277,16 @@ pool, no transaction). The deleted-row count comes from
 `WITH gone AS (DELETE … RETURNING 1) SELECT count(*)`, one statement. The
 SLA "outbox rows" line also shows how many are unpublished (relay lag),
 which the pruning never touches.
+
+**D-027 · Zone boundaries (L3.1).** (a) Zone C keeps the v4.0 rules
+byte-for-byte (allowlist, substring denylist, `normalize`) so no package
+that blocked before passes now; only the scanned paths narrow from `dir:.`
+to the shipped paths — the rest of the repo moves to Zone B, which is also
+scanned on every PR. (b) Zone B matches the denylist per atomic SPDX id
+and treats bare `BSL` as Business Source but `BSL-1.0` (Boost, permissive)
+as allowed; GPL/LGPL pass B (linking them is outside the denylist the spec
+names). (c) Debian/distroless base layers are platform aggregates, not
+Zone C contents (stated in licensing.md); image *application* contents are
+Zone C. (d) Any scan failure or missing path exits 2 — never a pass.
+(e) Grafana is not a compose service; it is listed as an operator-run
+Zone A option because `deploy/observability/grafana-sla.json` is kept.

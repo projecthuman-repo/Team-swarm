@@ -18,7 +18,9 @@ attempt to work around them (runbook §1).
 8. **Synthetic data only** in every test environment.
 9. **License gate.** Only Apache-2.0 / MIT / BSD / MPL-2.0 / ISC / 0BSD
    dependencies. AGPL, SSPL, BUSL/BSL, Commons Clause, and Elastic-2.0
-   block the merge — the gate is fail-closed.
+   block the merge — the gate is fail-closed. This is Zone C (everything
+   that ships, image contents included); Zone B (linked code) and Zone A
+   (isolated network services) are defined in `conventions/licensing.md`.
 
 Escalation: if completing a task would require violating any rule above,
 fail the task with the reason. A human will re-scope it.

@@ -100,3 +100,7 @@ where it went) or `generated` (the file stays, with a header saying so).
 | SLA "outbox rows" line | generated (new) | L2.5 — `scripts/sla_report.py` |
 | `.env.example` OUTBOX_RETENTION_DAYS | generated (new) | L2.5 |
 | `tests/test_db_maintenance.py` | generated (new) | L2.5 |
+| license gate (fail-closed allowlist) | extended | L3.1 — now Zone C (default, unchanged rules) + `--zone B` denylist + `--zone A` table + `--paths` |
+| `conventions/licensing.md` | generated (new) | L3.1 — zones, services, built images, added dependencies (also closes Phase-1 review finding "no licensing record") |
+| README rule 9 / AGENTS.md rule 4 / guardrails.md 9 | extended | L3.1 — three zones; fail-closed wording kept for what ships |
+| CI / ci-local / `make gate` license steps | extended | L3.1 — zone C + zone B |
