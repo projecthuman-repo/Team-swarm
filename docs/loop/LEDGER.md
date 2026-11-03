@@ -95,3 +95,8 @@ where it went) or `generated` (the file stays, with a header saying so).
 | `--reembed`, `--query`, knowledge seeding | kept | L2.4 — unchanged |
 | `db/migrations/008_lessons_source.sql` (+ schema.sql) | generated (new) | L2.4 |
 | `tests/test_codex_index.py` | generated (new) | L2.4 |
+| `scripts/db_maintenance.py` | generated (new) | L2.5 |
+| `scripts/morning_routine.sh` | extended | L2.5 — steps 1–4 unchanged (relabelled n/5) + step 5 storage hygiene |
+| SLA "outbox rows" line | generated (new) | L2.5 — `scripts/sla_report.py` |
+| `.env.example` OUTBOX_RETENTION_DAYS | generated (new) | L2.5 |
+| `tests/test_db_maintenance.py` | generated (new) | L2.5 |

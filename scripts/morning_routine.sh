@@ -4,20 +4,24 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-echo "=== 1/4 DLQ triage (failed tasks -> needs-human issues) ==="
+echo "=== 1/5 DLQ triage (failed tasks -> needs-human issues) ==="
 python scripts/dlq_triage.py || true
 
 echo
-echo "=== 2/4 SLA report (completion, latency, green rate, headroom savings) ==="
+echo "=== 2/5 SLA report (completion, latency, green rate, headroom savings) ==="
 python scripts/sla_report.py || true
 
 echo
-echo "=== 3/4 Morning verifier audit (re-audit last night's merges) ==="
+echo "=== 3/5 Morning verifier audit (re-audit last night's merges) ==="
 python scripts/morning_audit.py || true
 
 echo
-echo "=== 4/4 headroom learn (dry-run; --pr to propose corrections) ==="
+echo "=== 4/5 headroom learn (dry-run; --pr to propose corrections) ==="
 python scripts/morning_headroom_learn.py || true
+
+echo
+echo "=== 5/5 storage hygiene (prune published outbox rows, VACUUM ANALYZE) ==="
+python scripts/db_maintenance.py || true
 
 echo
 echo "Routine complete. Remember: fix the rule/guardrail/skill — not the code."

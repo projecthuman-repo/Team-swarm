@@ -125,6 +125,11 @@ async def report(hours: int) -> int:
         hours,
     )
 
+    # Lean & Precise L2.5 — outbox size (pruned by scripts/db_maintenance.py)
+    outbox_rows, outbox_pending = await pool.fetchrow(
+        "SELECT count(*), count(*) FILTER (WHERE published_at IS NULL) FROM outbox"
+    )
+
     rate = (done_in_window / total * 100) if total else 100.0
     avg_pickup = latency["avg_pickup"]
     p95_s = latency["p95_s"]
@@ -149,6 +154,7 @@ async def report(hours: int) -> int:
         "  (Stage 3: flat 4 -> 16 agents)"
     )
 
+    print(f"outbox rows           : {outbox_rows} ({outbox_pending} unpublished)")
     print_headroom_savings()
 
     breached = rate < 70 or (avg_pickup is not None and avg_pickup.total_seconds() > 600)

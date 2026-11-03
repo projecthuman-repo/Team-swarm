@@ -268,3 +268,12 @@ directory named `gen` indexed nothing). (g) Operational note: with the
 retries the download for ~36 s and raises — as sentence-transformers did
 before. Agent images do not install the extra; a host that does must
 pre-cache the model (`FASTEMBED_CACHE_PATH`) — recorded in OWNER_STOP.
+
+**D-026 · Autocommit with asyncpg (L2.5).** asyncpg has no autocommit
+flag: a connection is in autocommit unless a `transaction()` block is
+open. `maintain()` therefore checks `conn.is_in_transaction()` and refuses
+before running anything, and `main()` uses a bare `asyncpg.connect` (no
+pool, no transaction). The deleted-row count comes from
+`WITH gone AS (DELETE … RETURNING 1) SELECT count(*)`, one statement. The
+SLA "outbox rows" line also shows how many are unpublished (relay lag),
+which the pruning never touches.
