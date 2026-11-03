@@ -66,3 +66,9 @@ where it went) or `generated` (the file stays, with a header saying so).
 | `scripts/lite_smoke.sh` | generated (new) | L1.5 — lite boot → task reaches `done`; run by `verify-integration` |
 | README "Lite path" | generated (new) | L1.5 — quickstart block |
 | `tests/test_compose_lite.py` | generated (new) | L1.5 |
+| agent tmpfs (`/tmp`, `/home/swarm`) | extended | L1.6 — compose size caps (`SANDBOX_TMPFS_SIZE`, default 4g; home 1g) |
+| k8s agent `tmp` emptyDir | extended | L1.6 — sizeLimit 2Gi → 4Gi (home 1Gi kept) in agent-backend.yaml + agent-roles.yaml |
+| `agent/sandbox.py` workdir | extended | L1.6 — under `SANDBOX_WORKDIR`; mtime heartbeat; `reap_orphans()` |
+| `agent_worker.main` | extended | L1.6 — reaps orphaned workdirs on boot |
+| `.env.example` SANDBOX_WORKDIR / SANDBOX_TMPFS_SIZE | generated (new) | L1.6 |
+| `tests/test_sandbox_workspace.py` | generated (new) | L1.6 |

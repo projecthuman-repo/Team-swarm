@@ -43,8 +43,8 @@ spec:
             - { name: tmp, mountPath: /tmp }
             - { name: home, mountPath: /home/swarm }
       volumes:
-        - name: tmp
-          emptyDir: { sizeLimit: 2Gi }
+        - name: tmp # L1.6: /tmp workspace cap (compose: SANDBOX_TMPFS_SIZE, default 4g)
+          emptyDir: { sizeLimit: 4Gi }
         - name: home
           emptyDir: { sizeLimit: 1Gi }
 ---
@@ -89,8 +89,8 @@ spec:
             - { name: tmp, mountPath: /tmp }
             - { name: home, mountPath: /home/swarm }
       volumes:
-        - name: tmp
-          emptyDir: { sizeLimit: 2Gi }
+        - name: tmp # L1.6: /tmp workspace cap (compose: SANDBOX_TMPFS_SIZE, default 4g)
+          emptyDir: { sizeLimit: 4Gi }
         - name: home
           emptyDir: { sizeLimit: 1Gi }
 ---
@@ -135,7 +135,7 @@ spec:
             - { name: tmp, mountPath: /tmp }
             - { name: home, mountPath: /home/swarm }
       volumes:
-        - name: tmp
-          emptyDir: { sizeLimit: 2Gi }
+        - name: tmp # L1.6: /tmp workspace cap (compose: SANDBOX_TMPFS_SIZE, default 4g)
+          emptyDir: { sizeLimit: 4Gi }
         - name: home
           emptyDir: { sizeLimit: 1Gi }

@@ -44,7 +44,7 @@ from agent.budget import (  # noqa: E402
 )
 from agent.health import serve_health  # noqa: E402
 from agent.openbao import lease_secret  # noqa: E402
-from agent.sandbox import PoisonError, run_sandboxed_aider  # noqa: E402
+from agent.sandbox import PoisonError, reap_orphans, run_sandboxed_aider  # noqa: E402
 from agent.tracing import emit_trace  # noqa: E402
 
 log = logging.getLogger("agent")
@@ -145,6 +145,7 @@ async def main() -> None:
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
     log.info("worker %s starting (role=%s)", WORKER_ID, ROLE)
+    reap_orphans()  # L1.6: workdirs left behind by a crashed or killed worker
 
     pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=4)
     nc = await nats.connect(NATS_URL)

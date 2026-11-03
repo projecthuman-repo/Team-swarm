@@ -26,6 +26,7 @@ import re
 import shlex
 import shutil
 import tempfile
+import time
 from dataclasses import dataclass, field
 
 from agent.budget import ValkeyBudget
@@ -40,6 +41,13 @@ MODEL = os.environ.get("AIDER_MODEL", "ollama/maxwell1500/ornith-9b:Q4_K_M")
 EDITOR_MODEL = os.environ.get("AIDER_EDITOR_MODEL", MODEL)
 OLLAMA_API_BASE = os.environ.get("OLLAMA_API_BASE", "http://localhost:11434")
 TASK_TIMEOUT_S = int(os.environ.get("TASK_TIMEOUT_S", "1800"))
+
+# Workspace policy (Lean & Precise L1.6): every task works in a fresh
+# `task-*` dir under SANDBOX_WORKDIR (the size-capped tmpfs in the agent
+# containers). The dir's mtime is a heartbeat, refreshed before every
+# bounded step, so reap_orphans() on worker boot removes only dirs that no
+# live task has touched for TASK_TIMEOUT_S (crashed or killed workers).
+SANDBOX_WORKDIR = os.environ.get("SANDBOX_WORKDIR") or tempfile.gettempdir()
 
 # Headroom token-compression proxy (v4.1 W1). When enabled, the engine's
 # OpenAI-compatible traffic goes agent -> headroom -> (LiteLLM ->) model.
@@ -60,6 +68,45 @@ ENGINE_CMD = os.environ.get("AGENT_ENGINE_CMD", "")
 
 # aider prints e.g. "Tokens: 4.2k sent, 1.1k received."
 _TOKENS_RE = re.compile(r"Tokens:\s*([\d.]+)(k?)\s*sent,\s*([\d.]+)(k?)\s*received")
+
+
+def reap_orphans(
+    root: str | None = None, max_age_s: float | None = None, now: float | None = None
+) -> list[str]:
+    """Remove `task-*` workdirs under `root` untouched for `max_age_s`.
+
+    Defaults: SANDBOX_WORKDIR and TASK_TIMEOUT_S. Symlinks are never
+    followed. Returns the removed paths.
+    """
+    root = root or SANDBOX_WORKDIR
+    max_age_s = TASK_TIMEOUT_S if max_age_s is None else max_age_s
+    now = time.time() if now is None else now
+    removed = []
+    try:
+        entries = list(os.scandir(root))
+    except FileNotFoundError:
+        return removed
+    for entry in entries:
+        if not entry.name.startswith("task-") or not entry.is_dir(follow_symlinks=False):
+            continue
+        try:
+            age = now - entry.stat(follow_symlinks=False).st_mtime
+        except FileNotFoundError:
+            continue  # removed concurrently
+        if age > max_age_s:
+            shutil.rmtree(entry.path, ignore_errors=True)
+            removed.append(entry.path)
+    if removed:
+        log.warning("reaped %d orphaned task workdir(s) under %s", len(removed), root)
+    return removed
+
+
+def _heartbeat(workdir: str) -> None:
+    """Mark a live workdir so reap_orphans() leaves it alone."""
+    try:
+        os.utime(workdir)
+    except FileNotFoundError:
+        pass
 
 
 class PoisonError(Exception):
@@ -217,7 +264,8 @@ async def run_sandboxed_aider(task, secret: str, budget: ValkeyBudget) -> RunRes
         f"{FORGEJO_URL.split('://', 1)[0]}://{FORGEJO_BOT_USER}:{secret}@"
         f"{FORGEJO_URL.split('://', 1)[1]}/{FORGEJO_OWNER}/{FORGEJO_REPO}.git"
     )
-    workdir = tempfile.mkdtemp(prefix=f"task-{task.task_id[:8]}-")
+    os.makedirs(SANDBOX_WORKDIR, exist_ok=True)
+    workdir = tempfile.mkdtemp(prefix=f"task-{task.task_id[:8]}-", dir=SANDBOX_WORKDIR)
     env = build_env()
     message = build_message(task)
     result = RunResult(branch=branch)
@@ -231,12 +279,15 @@ async def run_sandboxed_aider(task, secret: str, budget: ValkeyBudget) -> RunRes
         green = False
         check_out = ""
         for cycle in range(MAX_REPAIR_CYCLES + 1):
+            _heartbeat(workdir)
             _, out = await _run(engine_cmd(prompt), repo, env, TASK_TIMEOUT_S)
             result.tokens_spent += max(_parse_tokens(out), 1)
             await budget.spend(max(_parse_tokens(out), 1))
 
+            _heartbeat(workdir)
             green, check_out = await check_workspace(repo, env)
             if task.verify_cmd:  # per-subtask verification (T3.1)
+                _heartbeat(workdir)
                 code, vout = await _run(
                     shlex.split(task.verify_cmd),
                     repo,
@@ -272,6 +323,7 @@ async def run_sandboxed_aider(task, secret: str, budget: ValkeyBudget) -> RunRes
         # integration happens via the Forgejo API after checks pass.
         if not branch.startswith("feature/"):
             raise PoisonError(f"refusing to push non-feature branch {branch!r}")
+        _heartbeat(workdir)
         await _run(["git", "push", "-u", "origin", branch], repo, env, 300)
         return result
     except (RuntimeError, FileNotFoundError) as err:

@@ -48,7 +48,8 @@ x-agent-base: &agent-base
     AIDER_MODEL: ollama/maxwell1500/ornith-9b:Q4_K_M
     FORGEJO_URL: http://forgejo:3000
   read_only: true
-  tmpfs: ["/tmp", "/home/swarm"] # writable HOME for git/aider state only
+  # L1.6: size-capped tmpfs; task workdirs live in /tmp (SANDBOX_WORKDIR)
+  tmpfs: ["/tmp:size=${SANDBOX_TMPFS_SIZE:-4g}", "/home/swarm:size=1g"] # writable HOME for git/aider state only
   cap_drop: [ALL]
   security_opt: ["no-new-privileges=true"]
   networks: [swarm-internal] # internal-only: no egress, Hard Rule 1

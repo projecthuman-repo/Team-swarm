@@ -184,3 +184,17 @@ and forgejo containers the lite path started are stopped with it; volumes
 are kept. (e) Lite and full files share the compose project (`deploy`) and
 identical service definitions, so `make up` after `make up-lite` reuses
 the same containers and data.
+
+**D-021 · Workdir reaping is heartbeat-based (L1.6).** "Older than
+TASK_TIMEOUT_S" is measured on the workdir's mtime, which
+`run_sandboxed_aider` refreshes before every bounded step (engine run,
+quality checks, verify_cmd, push). A task can live longer than
+TASK_TIMEOUT_S in total (repair cycles), so a creation-time age would let
+a booting worker on a shared host (`make agent` ×N sharing /tmp) delete a
+live task's tree; the heartbeat keeps a live dir younger than any single
+step. In containers each worker has its own tmpfs, so the boot reaper only
+ever sees dirs from a previous, dead process. Symlinks are never followed.
+k8s keeps disk-backed `emptyDir` with `sizeLimit` (4Gi/1Gi) rather than
+`medium: Memory`: a 4Gi RAM tmpfs would not fit the 2Gi memory limit.
+`SANDBOX_TMPFS_SIZE` is a compose interpolation; raw k8s manifests cannot
+read it, so the k8s value is documented next to it.
