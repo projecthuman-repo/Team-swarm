@@ -55,7 +55,7 @@ LENSES = {
     ),
 }
 VERDICT_INSTRUCTIONS = (
-    'End with exactly one line: VERDICT: PASS or VERDICT: BLOCK — <reason>. '
+    "End with exactly one line: VERDICT: PASS or VERDICT: BLOCK — <reason>. "
     "You have ONLY the spec and diff below; do not assume any other context."
 )
 

@@ -23,9 +23,7 @@ HERE = os.path.dirname(__file__)
 shadow = _load("shadow_eval", os.path.join(HERE, "..", "scripts", "shadow_eval.py"))
 sla = _load("sla_report", os.path.join(HERE, "..", "scripts", "sla_report.py"))
 seedk = _load("seed_knowledge", os.path.join(HERE, "..", "scripts", "seed_knowledge.py"))
-spec_patch = _load(
-    "speculative_patch", os.path.join(HERE, "..", "scripts", "speculative_patch.py")
-)
+spec_patch = _load("speculative_patch", os.path.join(HERE, "..", "scripts", "speculative_patch.py"))
 learn = _load(
     "morning_headroom_learn",
     os.path.join(HERE, "..", "scripts", "morning_headroom_learn.py"),
@@ -33,6 +31,7 @@ learn = _load(
 
 
 # ---- T5.3 circuit breaker ---------------------------------------------
+
 
 def test_wall_clock_cap_trips():
     b = CircuitBreaker("t", created_at_unix=0, max_wall_s=100)
@@ -45,6 +44,7 @@ def test_snowball_is_distinct_from_poison():
 
 
 # ---- T4.2 tier subjects ------------------------------------------------
+
 
 def test_default_tier_preserves_v40_subject():
     assert subject_for("backend", "") == "swarm.tasks.backend"
@@ -62,12 +62,14 @@ def test_tier_label_parsing():
 
 # ---- T4.4 router -------------------------------------------------------
 
+
 def test_router_heuristic_tiers():
     assert heuristic_tier("fix typo in readme") == "9b-q4"
     assert heuristic_tier("refactor the auth architecture") == "35b-q4"
 
 
 # ---- T2.3 verifier -----------------------------------------------------
+
 
 def test_verdict_parsing_fail_closed():
     assert parse_verdict("looks fine\nVERDICT: PASS") == "PASS"
@@ -92,6 +94,7 @@ def test_aggregate_error_blocks_fail_closed():
 
 # ---- T6.1 shadow-eval report -------------------------------------------
 
+
 def _summary(label, green, tokens):
     return {
         "label": label,
@@ -104,22 +107,20 @@ def _summary(label, green, tokens):
 
 
 def test_shadow_report_adopts_only_on_win():
-    report = shadow.markdown_report(_summary("default", 0.5, 1000),
-                                    _summary("cand", 0.8, 900))
+    report = shadow.markdown_report(_summary("default", 0.5, 1000), _summary("cand", 0.8, 900))
     assert "ADOPT" in report
-    report = shadow.markdown_report(_summary("default", 0.8, 1000),
-                                    _summary("cand", 0.5, 900))
+    report = shadow.markdown_report(_summary("default", 0.8, 1000), _summary("cand", 0.5, 900))
     assert "KEEP default" in report
 
 
 def test_shadow_report_rejects_token_blowup():
     # better green rate but >10% more tokens is not a clean win
-    report = shadow.markdown_report(_summary("default", 0.5, 1000),
-                                    _summary("cand", 0.8, 2000))
+    report = shadow.markdown_report(_summary("default", 0.5, 1000), _summary("cand", 0.8, 2000))
     assert "KEEP default" in report
 
 
 # ---- T1.6 measured-vs-estimated savings --------------------------------
+
 
 def test_headroom_savings_labelled_measured_with_holdout():
     lines = sla.headroom_savings_lines(
@@ -142,6 +143,7 @@ def test_headroom_savings_na_when_proxy_down():
 
 # ---- T2.4 RAG index: signatures only, never bodies ---------------------
 
+
 def test_extract_signatures_only():
     src = (
         '"""Module doc."""\n\nSECRET = "x"\n\n'
@@ -163,6 +165,7 @@ def test_clamp_to_cap():
 
 
 # ---- T2.5 speculative selection ----------------------------------------
+
 
 def test_select_sole_green_candidate():
     results = [
@@ -225,14 +228,14 @@ def test_learn_uses_isolated_headroom_bin(monkeypatch):
 
 # ---- proto append-only fields (T3.1 AC) ---------------------------------
 
+
 def test_task_proto_new_fields_are_append_only():
     import sys
 
     sys.path.insert(0, os.path.join(HERE, "..", "agent", "gen"))
     from swarm.v1 import task_pb2
 
-    t = task_pb2.Task(task_id="x", parent_task_id="p", verify_cmd="make test",
-                      tier="9b-q4")
+    t = task_pb2.Task(task_id="x", parent_task_id="p", verify_cmd="make test", tier="9b-q4")
     parsed = task_pb2.Task.FromString(t.SerializeToString())
     assert parsed.parent_task_id == "p"
     assert parsed.verify_cmd == "make test"
@@ -243,10 +246,9 @@ def test_task_proto_new_fields_are_append_only():
 
 # ---- T6.2 morning audit mapping -----------------------------------------
 
+
 def test_morning_audit_flags_seeded_bad_merge():
-    audit = _load(
-        "morning_audit", os.path.join(HERE, "..", "scripts", "morning_audit.py")
-    )
+    audit = _load("morning_audit", os.path.join(HERE, "..", "scripts", "morning_audit.py"))
     pr = {"number": 7, "title": "sneaky merge"}
     blocked = {
         "verdict": "BLOCK",

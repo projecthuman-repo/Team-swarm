@@ -215,14 +215,14 @@ resolution-markers = [
     "sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "aiohappyeyeballs", version = "2.7.1", source = { registry = "https://pypi.org/simple" } },
-    { name = "aiosignal" },
-    { name = "attrs", version = "26.1.0", source = { registry = "https://pypi.org/simple" } },
-    { name = "frozenlist" },
-    { name = "multidict", version = "7.2.1", source = { registry = "https://pypi.org/simple" } },
-    { name = "propcache", version = "0.5.4", source = { registry = "https://pypi.org/simple" } },
+    { name = "aiohappyeyeballs", version = "2.7.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "aiosignal", marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "attrs", version = "26.1.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "frozenlist", marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "multidict", version = "7.2.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "propcache", version = "0.5.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
     { name = "typing-extensions", version = "4.16.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
-    { name = "yarl", version = "1.25.1", source = { registry = "https://pypi.org/simple" } },
+    { name = "yarl", version = "1.25.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/6c/4c/bdccd81e9ee225b69c60e7766c9a5b05364f118f4d383713b89a682d772d/aiohttp-3.14.5.tar.gz", hash = "sha256:5558a7f5a05af9ecf744af91e5baefc436f93c9333e656c27ec253f9a6bbe178", size = 8078052, upload-time = "2026-10-11T01:05:12.408Z" }
 wheels = [
@@ -575,9 +575,9 @@ name = "boto3"
 version = "1.43.123"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "botocore" },
-    { name = "jmespath" },
-    { name = "s3transfer" },
+    { name = "botocore", marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "jmespath", marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "s3transfer", marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/fc/8a/64b46f075149f9160da44aa7e1052dd18431b9ad4435beb0cfb02cc48624/boto3-1.43.123.tar.gz", hash = "sha256:055fabb990c5d2f31fce4ca569255bd640cdd11a3ca68c9ecad35f4f8a5b83b5", size = 112638, upload-time = "2026-10-30T19:18:50.085Z" }
 wheels = [
@@ -589,9 +589,9 @@ name = "botocore"
 version = "1.43.123"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "jmespath" },
-    { name = "python-dateutil" },
-    { name = "urllib3", version = "2.8.0", source = { registry = "https://pypi.org/simple" } },
+    { name = "jmespath", marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "python-dateutil", marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "urllib3", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/e0/de/011fc2a47fb066c47064b122498d2fd21f55bc90ea514acbddc37ca0f8c1/botocore-1.43.123.tar.gz", hash = "sha256:80948cb9b1cdf1a1a25809089a42e3a1bc4af0258d198222db6e97dcc660dd0c", size = 16486269, upload-time = "2026-10-30T19:18:44.609Z" }
 wheels = [
@@ -720,6 +720,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/80/fb/0bb75b7039588c074b37ae99f40d9bfddf990ecb2fbc346ebccd2e56b9be/cffi-2.1.1-cp312-cp312-win32.whl", hash = "sha256:046bfc24911b37851ee1b51aab8bffe713d89c68c6a057b09484ce9fd5f69b4e", size = 175292, upload-time = "2026-08-03T21:19:55.566Z" },
     { url = "https://files.pythonhosted.org/packages/d9/79/615cc094e2fb508cade7de88d3b4f6c4ec2bab695c97bce9153dc65aadf5/cffi-2.1.1-cp312-cp312-win_amd64.whl", hash = "sha256:f53e442b08449d42821fa4a4fba000095af9f62742a500f978a9f557ec44339a", size = 185919, upload-time = "2026-08-03T21:19:56.89Z" },
     { url = "https://files.pythonhosted.org/packages/70/c6/d0ea84713fe46b243a436a18fcd47d639732747e21635c8a27191b06dc30/cffi-2.1.1-cp312-cp312-win_arm64.whl", hash = "sha256:7bde5e4cc5c10140859842b9d383af292b22639a4dffb725314baf45968cef80", size = 180093, upload-time = "2026-08-03T21:19:58.155Z" },
+]
+
+[[package]]
+name = "cfgv"
+version = "3.5.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/4e/b5/721b8799b04bf9afe054a3899c6cf4e880fcf8563cc71c15610242490a0c/cfgv-3.5.0.tar.gz", hash = "sha256:d5b1034354820651caa73ede66a6294d6e95c1b00acc5e9b098e917404669132", size = 7334, upload-time = "2025-11-19T20:55:51.612Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/db/3c/33bac158f8ab7f89b2e59426d5fe2e4f63f7ed25df84c036890172b412b5/cfgv-3.5.0-py2.py3-none-any.whl", hash = "sha256:a8dc6b26ad22ff227d2634a65cb388215ce6cc96bbcc5cfde7641ae87e8dacc0", size = 7445, upload-time = "2025-11-19T20:55:50.744Z" },
 ]
 
 [[package]]
@@ -1184,7 +1193,7 @@ name = "cuda-bindings"
 version = "13.4.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cuda-pathfinder" },
+    { name = "cuda-pathfinder", marker = "(sys_platform != 'emscripten' and sys_platform != 'win32') or (sys_platform == 'emscripten' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d7/38/87909f62598d02d9e5c536326aed1755f6bfa190285507b962bb601e0005/cuda_bindings-13.4.4-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:b346bfe1dda49537537c06cc4727b2210d949d8aee883cb591bca46581629d00", size = 6488222, upload-time = "2026-10-14T12:35:20.703Z" },
@@ -1211,40 +1220,40 @@ wheels = [
 
 [package.optional-dependencies]
 cublas = [
-    { name = "nvidia-cublas", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'linux' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
-    { name = "nvidia-cuda-nvrtc", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'linux' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
+    { name = "nvidia-cublas", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (sys_platform != 'linux' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
+    { name = "nvidia-cuda-nvrtc", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (sys_platform != 'linux' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
 ]
 cudart = [
-    { name = "nvidia-cuda-runtime", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'linux' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
+    { name = "nvidia-cuda-runtime", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (sys_platform != 'linux' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
 ]
 cufft = [
-    { name = "nvidia-cufft", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'linux' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
-    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'linux' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
+    { name = "nvidia-cufft", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (sys_platform != 'linux' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
+    { name = "nvidia-nvjitlink", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (sys_platform != 'linux' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
 ]
 cufile = [
     { name = "nvidia-cufile", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (sys_platform != 'linux' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
 ]
 cupti = [
-    { name = "nvidia-cuda-cupti", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'linux' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
+    { name = "nvidia-cuda-cupti", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (sys_platform != 'linux' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
 ]
 cusolver = [
-    { name = "nvidia-cublas", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'linux' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
-    { name = "nvidia-cusolver", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'linux' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
-    { name = "nvidia-cusparse", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'linux' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
-    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'linux' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
+    { name = "nvidia-cublas", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (sys_platform != 'linux' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
+    { name = "nvidia-cusolver", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (sys_platform != 'linux' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
+    { name = "nvidia-cusparse", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (sys_platform != 'linux' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
+    { name = "nvidia-nvjitlink", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (sys_platform != 'linux' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
 ]
 cusparse = [
-    { name = "nvidia-cusparse", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'linux' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
-    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'linux' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
+    { name = "nvidia-cusparse", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (sys_platform != 'linux' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
+    { name = "nvidia-nvjitlink", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (sys_platform != 'linux' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
 ]
 nvjitlink = [
-    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'linux' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
+    { name = "nvidia-nvjitlink", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (sys_platform != 'linux' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
 ]
 nvrtc = [
-    { name = "nvidia-cuda-nvrtc", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'linux' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
+    { name = "nvidia-cuda-nvrtc", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (sys_platform != 'linux' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
 ]
 nvtx = [
-    { name = "nvidia-nvtx", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'linux' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
+    { name = "nvidia-nvtx", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (sys_platform != 'linux' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
 ]
 
 [[package]]
@@ -1342,6 +1351,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/3f/21/1c1ffc1a039ddcc459db43cc108658f32c57d271d7289a2794e401d0fdb6/diskcache-5.6.3.tar.gz", hash = "sha256:2c3a3fa2743d8535d832ec61c2054a1641f41775aa7c556758a109941e33e4fc", size = 67916, upload-time = "2023-08-31T06:12:00.316Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3f/27/4570e78fc0bf5ea0ca45eb1de3818a23787af9b390c0b0a0033a1b8236f9/diskcache-5.6.3-py3-none-any.whl", hash = "sha256:5e31b2d5fbad117cc363ebaf6b689474db18a1f6438bc82358b024abd4c2ca19", size = 45550, upload-time = "2023-08-31T06:11:58.822Z" },
+]
+
+[[package]]
+name = "distlib"
+version = "0.4.4"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/68/bc/d36966de7304047a1001a7559fbf266c464bb5d8cc85464536ef8c9bcc32/distlib-0.4.4.tar.gz", hash = "sha256:ca4175b4ac7f71223cc30ed7248c45d2b38c2439d8ee6e498ab67ed63cf3508d", size = 621304, upload-time = "2026-10-16T13:56:34.203Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c1/2b/238f02a4927fa2e27aa995371d240a468b52e42eae44a678434aff736b38/distlib-0.4.4-py2.py3-none-any.whl", hash = "sha256:cf09d55b1e85a89576b036aeb71550bfd68320f3f21761ca329eadadad918638", size = 472099, upload-time = "2026-10-16T13:56:32.053Z" },
 ]
 
 [[package]]
@@ -1839,8 +1857,8 @@ resolution-markers = [
     "sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "h11", marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
-    { name = "truststore", marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "h11", marker = "(sys_platform != 'emscripten' and extra != 'group-21-overnight-agent-swarm-agent') or (extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
+    { name = "truststore", marker = "(sys_platform != 'emscripten' and extra != 'group-21-overnight-agent-swarm-agent') or (extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/c0/61/afa9d6b7452f9eca73f73d45324eb0bb52f098fd5e6049bf6b8263be9b4e/httpcore2-2.16.0.tar.gz", hash = "sha256:c72cd0413563b17e1cd8354677dff887466f8ec2551679759e93126534428643", size = 69886, upload-time = "2026-10-21T07:09:45.31Z" }
 wheels = [
@@ -1987,15 +2005,15 @@ resolution-markers = [
     "sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "click", version = "8.5.0", source = { registry = "https://pypi.org/simple" } },
-    { name = "filelock", version = "3.32.7", source = { registry = "https://pypi.org/simple" } },
-    { name = "fsspec", version = "2026.7.0", source = { registry = "https://pypi.org/simple" } },
+    { name = "click", version = "8.5.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "filelock", version = "3.32.7", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "fsspec", version = "2026.7.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
     { name = "hf-xet", version = "1.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine == 'AMD64' and extra != 'group-21-overnight-agent-swarm-agent') or (platform_machine == 'aarch64' and extra != 'group-21-overnight-agent-swarm-agent') or (platform_machine == 'amd64' and extra != 'group-21-overnight-agent-swarm-agent') or (platform_machine == 'arm64' and extra != 'group-21-overnight-agent-swarm-agent') or (platform_machine == 'x86_64' and extra != 'group-21-overnight-agent-swarm-agent') or (extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
-    { name = "httpx" },
-    { name = "packaging", version = "26.3", source = { registry = "https://pypi.org/simple" } },
-    { name = "pyyaml" },
-    { name = "tqdm", version = "4.70.1", source = { registry = "https://pypi.org/simple" } },
-    { name = "typing-extensions", version = "4.16.0", source = { registry = "https://pypi.org/simple" } },
+    { name = "httpx", marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "packaging", version = "26.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "pyyaml", marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "tqdm", version = "4.70.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "typing-extensions", version = "4.16.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/25/2a/484d112c0d8fc5f665d7b65137ac9cdb2953c982391598c3597968a12ee7/huggingface_hub-1.33.0.tar.gz", hash = "sha256:367be21a201db9523eddf8aeac7048f2602c1b308691c97640d5e72ed188007e", size = 1043548, upload-time = "2026-09-24T09:49:29.971Z" }
 wheels = [
@@ -2009,6 +2027,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/02/e7/94f8232d4a74cc99514c13a9f995811485a6903d48e5d952771ef6322e30/hyperframe-6.1.0.tar.gz", hash = "sha256:f630908a00854a7adeabd6382b43923a4c4cd4b821fcb527e6ab9e15382a3b08", size = 26566, upload-time = "2025-01-22T21:41:49.302Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/48/30/47d0bf6072f7252e6521f3447ccfa40b421b6824517f82854703d0f5a98b/hyperframe-6.1.0-py3-none-any.whl", hash = "sha256:b03380493a519fce58ea5af42e4a42317bf9bd425596f7a0835ffce80f1a42e5", size = 13007, upload-time = "2025-01-22T21:41:47.295Z" },
+]
+
+[[package]]
+name = "identify"
+version = "2.6.20"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/53/35/d70c0006c7cee65999ea94a6273e60b2094f600a3d8b71b04318253fc643/identify-2.6.20.tar.gz", hash = "sha256:ad729860a923858d26917c2f4fb0a1d83d27a75b1e090c06440c573f048f3285", size = 99681, upload-time = "2026-09-26T20:29:07.187Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fa/70/fffc9613501877c0a10a1ef73a165e6ded3e53f6e7502227fef56d973933/identify-2.6.20-py2.py3-none-any.whl", hash = "sha256:6a16b69b93187244e0548cbfd25b3e4a6f9a7a2ad784625c3bec2b8d27b81aaa", size = 99506, upload-time = "2026-09-26T20:29:06.054Z" },
 ]
 
 [[package]]
@@ -2066,7 +2093,7 @@ resolution-markers = [
     "sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "zipp", version = "4.1.2", source = { registry = "https://pypi.org/simple" } },
+    { name = "zipp", version = "4.1.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/e7/72/c600ae4f68c28fc19f9c31b9403053e5dbb8cace2e6842c7b7c3e4d42fe9/importlib_metadata-8.9.0.tar.gz", hash = "sha256:58850626cef4bd2df100378b0f2aea9724a7b92f10770d547725b047078f99ee", size = 56140, upload-time = "2026-03-20T16:56:26.362Z" }
 wheels = [
@@ -2712,26 +2739,26 @@ resolution-markers = [
     "sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "aiohttp", version = "3.14.5", source = { registry = "https://pypi.org/simple" } },
-    { name = "boto3" },
-    { name = "certifi", version = "2026.10.23", source = { registry = "https://pypi.org/simple" } },
-    { name = "click", version = "8.5.0", source = { registry = "https://pypi.org/simple" } },
-    { name = "fastuuid" },
-    { name = "filelock", version = "3.32.7", source = { registry = "https://pypi.org/simple" } },
+    { name = "aiohttp", version = "3.14.5", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "boto3", marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "certifi", version = "2026.10.23", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "click", version = "8.5.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "fastuuid", marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "filelock", version = "3.32.7", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
     { name = "httpx", extra = ["http2"], marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
-    { name = "huggingface-hub", version = "1.33.0", source = { registry = "https://pypi.org/simple" } },
-    { name = "importlib-metadata", version = "8.9.0", source = { registry = "https://pypi.org/simple" } },
-    { name = "jinja2" },
-    { name = "jsonschema" },
-    { name = "openai", version = "2.54.0", source = { registry = "https://pypi.org/simple" } },
-    { name = "packaging", version = "26.3", source = { registry = "https://pypi.org/simple" } },
+    { name = "huggingface-hub", version = "1.33.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "importlib-metadata", version = "8.9.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "jinja2", marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "jsonschema", marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "openai", version = "2.54.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "packaging", version = "26.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
     { name = "pydantic", marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
-    { name = "pydantic-settings", version = "2.16.2", source = { registry = "https://pypi.org/simple" } },
-    { name = "python-dotenv", version = "1.2.4", source = { registry = "https://pypi.org/simple" } },
-    { name = "pyyaml" },
+    { name = "pydantic-settings", version = "2.16.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "python-dotenv", version = "1.2.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "pyyaml", marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
     { name = "tiktoken", version = "0.14.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
-    { name = "tokenizers", version = "0.23.3", source = { registry = "https://pypi.org/simple" } },
-    { name = "typing-extensions", version = "4.16.0", source = { registry = "https://pypi.org/simple" } },
+    { name = "tokenizers", version = "0.23.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "typing-extensions", version = "4.16.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/96/6f/fb4af3dc4224807fedbecb24c8c4eec53115ed99325ef74a5fe30a76c9d1/litellm-1.106.6.tar.gz", hash = "sha256:8bf6d33b5ca32a5fc6858784b64c82e7f3bfab462d571d7d0def5596c3e1acc3", size = 21195118, upload-time = "2026-10-28T22:49:16.207Z" }
 wheels = [
@@ -2784,7 +2811,7 @@ resolution-markers = [
     "sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "mdurl" },
+    { name = "mdurl", marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/06/ff/7841249c247aa650a76b9ee4bbaeae59370dc8bfd2f6c01f3630c35eb134/markdown_it_py-4.2.0.tar.gz", hash = "sha256:04a21681d6fbb623de53f6f364d352309d4094dd4194040a10fd51833e418d49", size = 82454, upload-time = "2026-05-07T12:08:28.36Z" }
 wheels = [
@@ -3102,6 +3129,15 @@ wheels = [
 ]
 
 [[package]]
+name = "nodeenv"
+version = "1.12.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e6/99/d27cfc9518f49e4cbc25c683ec7cf8704a9d31311341c291c0e78ddf791b/nodeenv-1.12.0.tar.gz", hash = "sha256:4ea7f88339310afebc3253f2c7a91b94bacf97d73a36a5c108962abdfaca501e", size = 131292, upload-time = "2026-10-31T19:03:18.847Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2d/6a/8a9ac7d5e2f7cf53c459bfef90ebc17a2f8cd54b665af96799d4c534840e/nodeenv-1.12.0-py3-none-any.whl", hash = "sha256:80644d65c10cc2be12e3e4b54b3367ff288c7ad24ae75c2dcc65454fc7449d4d", size = 39442, upload-time = "2026-10-31T19:03:17.427Z" },
+]
+
+[[package]]
 name = "numpy"
 version = "1.26.4"
 source = { registry = "https://pypi.org/simple" }
@@ -3151,7 +3187,7 @@ name = "nvidia-cublas"
 version = "13.4.1.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cuda-nvrtc" },
+    { name = "nvidia-cuda-nvrtc", marker = "(sys_platform != 'emscripten' and sys_platform != 'win32') or (sys_platform == 'emscripten' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d0/a0/5cd9d4b08a8320f7ca150ee0d66c97e98092922e338336cb4b62da7500c3/nvidia_cublas-13.4.1.3-py3-none-manylinux_2_27_aarch64.whl", hash = "sha256:4eb1472bf92b741e7cf24da7978dde251b58ddec2092d9f6a04f3623eb4e9a15", size = 513048232, upload-time = "2026-07-16T09:45:07.751Z" },
@@ -3205,7 +3241,7 @@ name = "nvidia-cudnn-cu13"
 version = "9.26.0.51"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cublas" },
+    { name = "nvidia-cublas", marker = "(sys_platform != 'emscripten' and sys_platform != 'win32') or (sys_platform == 'emscripten' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c5/1c/01e1dd3dec6ffe0baaff7e722b8946d867353d05a01301f128f1730fde0b/nvidia_cudnn_cu13-9.26.0.51-py3-none-manylinux_2_27_aarch64.whl", hash = "sha256:8e5b4f5eccff721416f70ecf4353172fc4d5cdd8ca869fe6f983a4a5b0147b20", size = 595329497, upload-time = "2026-09-10T16:45:39.945Z" },
@@ -3218,7 +3254,7 @@ name = "nvidia-cufft"
 version = "12.2.0.57"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-nvjitlink" },
+    { name = "nvidia-nvjitlink", marker = "(sys_platform != 'emscripten' and sys_platform != 'win32') or (sys_platform == 'emscripten' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/07/8d/f650e6d527f9d22b5ded906c000eaebb037721c06d4ecd906df62f300979/nvidia_cufft-12.2.0.57-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:1ed438568ae1088ba2c25789d10205d4104b8b140b7bd942e39a787947a0fb74", size = 218244742, upload-time = "2026-07-16T09:47:08.76Z" },
@@ -3240,9 +3276,9 @@ name = "nvidia-cusolver"
 version = "12.2.0.11"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cublas" },
-    { name = "nvidia-cusparse" },
-    { name = "nvidia-nvjitlink" },
+    { name = "nvidia-cublas", marker = "(sys_platform != 'emscripten' and sys_platform != 'win32') or (sys_platform == 'emscripten' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
+    { name = "nvidia-cusparse", marker = "(sys_platform != 'emscripten' and sys_platform != 'win32') or (sys_platform == 'emscripten' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
+    { name = "nvidia-nvjitlink", marker = "(sys_platform != 'emscripten' and sys_platform != 'win32') or (sys_platform == 'emscripten' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/60/df/9e6b603f1d64040ce3e076e9bce1b78e2d588d0aabc9783f351cecd861ab/nvidia_cusolver-12.2.0.11-py3-none-manylinux_2_27_aarch64.whl", hash = "sha256:8be097fca28de6be0990ab216ee9b804dd51077e1d1d83acf6c9850650bdc64d", size = 250383075, upload-time = "2026-07-16T09:50:16.355Z" },
@@ -3255,7 +3291,7 @@ name = "nvidia-cusparse"
 version = "12.7.10.12"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-nvjitlink" },
+    { name = "nvidia-nvjitlink", marker = "(sys_platform != 'emscripten' and sys_platform != 'win32') or (sys_platform == 'emscripten' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/60/35/abbd278fb6d039fcfb5175efa10a21007a11878bec59920d84854b47d766/nvidia_cusparse-12.7.10.12-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:597eff2cd83e3ab1d1e3a0dce9c9c879d77cf64ec2659bfdb5af6a5d02e7aaa9", size = 169043093, upload-time = "2026-07-16T09:51:37.058Z" },
@@ -3307,7 +3343,7 @@ name = "nvidia-nvshmem-cu13"
 version = "3.7.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cuda-cccl" },
+    { name = "nvidia-cuda-cccl", marker = "(sys_platform != 'emscripten' and sys_platform != 'win32') or (sys_platform == 'emscripten' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest') or (sys_platform == 'win32' and extra == 'group-21-overnight-agent-swarm-agent' and extra == 'group-21-overnight-agent-swarm-ingest')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/81/11/1767ef120299972822a43aceffbc81ac813aad2089d817e36e4e12aa4c9c/nvidia_nvshmem_cu13-3.7.2-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:0e748308b9e0a8a8d81859353f3e6c98fbe85a85f652a915a2ba60149a0bd124", size = 135174619, upload-time = "2026-07-17T19:24:15.404Z" },
@@ -3387,14 +3423,14 @@ resolution-markers = [
     "sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "anyio", version = "4.16.0", source = { registry = "https://pypi.org/simple" } },
-    { name = "distro" },
-    { name = "httpx" },
-    { name = "jiter", version = "0.14.0", source = { registry = "https://pypi.org/simple" } },
-    { name = "pydantic" },
-    { name = "sniffio" },
-    { name = "tqdm", version = "4.70.1", source = { registry = "https://pypi.org/simple" } },
-    { name = "typing-extensions", version = "4.16.0", source = { registry = "https://pypi.org/simple" } },
+    { name = "anyio", version = "4.16.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "distro", marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "httpx", marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "jiter", version = "0.14.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "pydantic", marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "sniffio", marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "tqdm", version = "4.70.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "typing-extensions", version = "4.16.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/50/9a/8c75e8c8a5b407a0586faeb2afac91674ff955c191ecc1d6d3b6669f6788/openai-2.54.0.tar.gz", hash = "sha256:e3e6f8bc1ba30ddf381ace1a14340eed381cb984a1a59bd0f34b5be3b5d49cfa", size = 1100285, upload-time = "2026-08-11T18:46:59.035Z" }
 wheels = [
@@ -3681,6 +3717,7 @@ agent = [
 dev = [
     { name = "bandit" },
     { name = "grpcio-tools" },
+    { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
@@ -3723,6 +3760,7 @@ agent = [{ name = "aider-chat", specifier = ">=0.86" }]
 dev = [
     { name = "bandit", specifier = ">=1.7" },
     { name = "grpcio-tools", specifier = ">=1.66" },
+    { name = "pre-commit", specifier = ">=4.0" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-asyncio", specifier = ">=0.24" },
     { name = "pytest-cov", specifier = ">=5.0" },
@@ -4053,6 +4091,23 @@ wheels = [
 ]
 
 [[package]]
+name = "pre-commit"
+version = "4.7.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cfgv" },
+    { name = "identify" },
+    { name = "nodeenv" },
+    { name = "pyyaml" },
+    { name = "virtualenv", version = "20.36.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-agent'" },
+    { name = "virtualenv", version = "21.15.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3a/c3/6965c2690ddce885ec75121572d065a5b94c5a5d8d3e657927ecda9fd715/pre_commit-4.7.0.tar.gz", hash = "sha256:1f3deee12b914c8fa184bd2b5953391c2e4f36763e403d4a23dc9983fa7c6e86", size = 198120, upload-time = "2026-10-12T20:45:40.32Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/eb/83/ce0a196e4f7b20b11ce3aa1fc72fb973f64b7628d51c1b8aebad37fb7f81/pre_commit-4.7.0-py2.py3-none-any.whl", hash = "sha256:2e229038ad3656081b70c27913157e4b636ef306f643f024a8a8e3f0f7b2f877", size = 226261, upload-time = "2026-10-12T20:45:38.858Z" },
+]
+
+[[package]]
 name = "prompt-toolkit"
 version = "3.0.52"
 source = { registry = "https://pypi.org/simple" }
@@ -4352,10 +4407,10 @@ resolution-markers = [
     "sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "pydantic" },
-    { name = "python-dotenv", version = "1.2.4", source = { registry = "https://pypi.org/simple" } },
-    { name = "typing-extensions", version = "4.16.0", source = { registry = "https://pypi.org/simple" } },
-    { name = "typing-inspection", version = "0.4.4", source = { registry = "https://pypi.org/simple" } },
+    { name = "pydantic", marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "python-dotenv", version = "1.2.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "typing-extensions", version = "4.16.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "typing-inspection", version = "0.4.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/d0/31/21d21e0e38a8f5f7a7f0cde22820117b6d17d6bc36f348129527f915d7f4/pydantic_settings-2.16.2.tar.gz", hash = "sha256:3dc08ffabed2bbd5dc2dd55ead7b78b4e4c5cd776aecd04310db5f1224caaf46", size = 309225, upload-time = "2026-10-28T11:14:28.066Z" }
 wheels = [
@@ -4547,6 +4602,18 @@ wheels = [
 ]
 
 [[package]]
+name = "python-discovery"
+version = "1.9.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "filelock", version = "3.32.7", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e9/a2/c98905e39dfe464612b8032014fbe7b8b6e939217cd705d0152b981aeba6/python_discovery-1.9.1.tar.gz", hash = "sha256:83e3c0024b93e256809dc9cd053537a37df6d3badc3b68aa03006a224336b21f", size = 126369, upload-time = "2026-11-02T15:58:19.766Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/68/48/098829df5400ca16bea46ba81d1e185069a0efcbd12721c6789ebabb29de/python_discovery-1.9.1-py3-none-any.whl", hash = "sha256:a78322b3b70c5d61dddc2f37ca1beffa9a5ce01cedf3526444e01bfc94f50b35", size = 40027, upload-time = "2026-11-02T15:58:18.222Z" },
+]
+
+[[package]]
 name = "python-dotenv"
 version = "1.2.1"
 source = { registry = "https://pypi.org/simple" }
@@ -4716,10 +4783,10 @@ resolution-markers = [
     "sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "certifi", version = "2026.10.23", source = { registry = "https://pypi.org/simple" } },
-    { name = "charset-normalizer", version = "3.5.2", source = { registry = "https://pypi.org/simple" } },
-    { name = "idna", version = "3.20", source = { registry = "https://pypi.org/simple" } },
-    { name = "urllib3", version = "2.8.0", source = { registry = "https://pypi.org/simple" } },
+    { name = "certifi", version = "2026.10.23", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "charset-normalizer", version = "3.5.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "idna", version = "3.20", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "urllib3", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/ac/c3/e2a2b89f2d3e2179abd6d00ebd70bff6273f37fb3e0cc209f48b39d00cbf/requests-2.34.2.tar.gz", hash = "sha256:f288924cae4e29463698d6d60bc6a4da69c89185ad1e0bcc4104f584e960b9ed", size = 142856, upload-time = "2026-05-14T19:25:27.735Z" }
 wheels = [
@@ -4781,8 +4848,8 @@ resolution-markers = [
     "sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "markdown-it-py", version = "4.2.0", source = { registry = "https://pypi.org/simple" } },
-    { name = "pygments", version = "2.21.0", source = { registry = "https://pypi.org/simple" } },
+    { name = "markdown-it-py", version = "4.2.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "pygments", version = "2.21.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/e9/67/cae617f1351490c25a4b8ac3b8b63a4dda609295d8222bad12242dfdc629/rich-14.3.4.tar.gz", hash = "sha256:817e02727f2b25b40ef56f5aa2217f400c8489f79ca8f46ea2b70dd5e14558a9", size = 230524, upload-time = "2026-04-11T02:57:45.419Z" }
 wheels = [
@@ -4916,7 +4983,7 @@ name = "s3transfer"
 version = "0.19.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "botocore" },
+    { name = "botocore", marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/49/c5/0a5ce655109cb96b8dfad36908a4e108d15f5dc2eff8fbc3146c4312e704/s3transfer-0.19.3.tar.gz", hash = "sha256:8326acc3d056d7f7b8a37110c7d2aea41f67e83f6ae79cd3b5fbcca34c726406", size = 166087, upload-time = "2026-10-19T19:19:49.751Z" }
 wheels = [
@@ -5308,8 +5375,8 @@ resolution-markers = [
     "sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "regex" },
-    { name = "requests", version = "2.34.2", source = { registry = "https://pypi.org/simple" } },
+    { name = "regex", marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "requests", version = "2.34.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/66/62/167a842aa0429d45f5e797354fd4343a96f6043d67d0513c675c7b8d36e6/tiktoken-0.14.0.tar.gz", hash = "sha256:231dec90efcdccf1b565a1416107736f1e09b1a08fe736ef9d6363e626d03874", size = 38898, upload-time = "2026-08-17T19:49:49.514Z" }
 wheels = [
@@ -5363,7 +5430,7 @@ resolution-markers = [
     "sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "huggingface-hub", version = "1.33.0", source = { registry = "https://pypi.org/simple" } },
+    { name = "huggingface-hub", version = "1.33.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/e0/7c/2cabb2174e772636683008f2c5621949b645da7d303c596589e84516a184/tokenizers-0.23.3.tar.gz", hash = "sha256:cded33237c77caeef62944d32aa9a7ef42bdce2b3497e18d137e072a8c4be438", size = 385286, upload-time = "2026-10-09T10:16:55.759Z" }
 wheels = [
@@ -5885,6 +5952,46 @@ wheels = [
 ]
 
 [[package]]
+name = "virtualenv"
+version = "20.36.1"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "sys_platform == 'win32'",
+    "sys_platform == 'emscripten'",
+    "sys_platform != 'emscripten' and sys_platform != 'win32'",
+]
+dependencies = [
+    { name = "distlib", marker = "extra == 'group-21-overnight-agent-swarm-agent'" },
+    { name = "filelock", version = "3.20.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-agent'" },
+    { name = "platformdirs", marker = "extra == 'group-21-overnight-agent-swarm-agent'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/aa/a3/4d310fa5f00863544e1d0f4de93bddec248499ccf97d4791bc3122c9d4f3/virtualenv-20.36.1.tar.gz", hash = "sha256:8befb5c81842c641f8ee658481e42641c68b5eab3521d8e092d18320902466ba", size = 6032239, upload-time = "2026-01-09T18:21:01.296Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6a/2a/dc2228b2888f51192c7dc766106cd475f1b768c10caaf9727659726f7391/virtualenv-20.36.1-py3-none-any.whl", hash = "sha256:575a8d6b124ef88f6f51d56d656132389f961062a9177016a50e4f507bbcc19f", size = 6008258, upload-time = "2026-01-09T18:20:59.425Z" },
+]
+
+[[package]]
+name = "virtualenv"
+version = "21.15.2"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "sys_platform == 'win32'",
+    "sys_platform == 'emscripten'",
+    "sys_platform != 'emscripten' and sys_platform != 'win32'",
+]
+dependencies = [
+    { name = "distlib", marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "filelock", version = "3.32.7", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "packaging", version = "26.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "platformdirs", marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "python-discovery", marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/38/9e/40c7098240cedd3a2f32e42a74b35c4563c617fdd7e41ae6268d4fdd8915/virtualenv-21.15.2.tar.gz", hash = "sha256:dbd886e6e5689eb4dde6a9bbc478ad14b4fc8ed0852690d8273ccfb8c467f635", size = 5520597, upload-time = "2026-10-30T19:18:04.759Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f7/d8/09c9d6df253b2016312dd5ccbb962dfa86a5202f2452604b52e0a9844661/virtualenv-21.15.2-py3-none-any.whl", hash = "sha256:fb8c62c7c328e0238061c721068f06b7bc6bd10f7a0f5987195cef1008837ee6", size = 5559530, upload-time = "2026-10-30T19:18:01.134Z" },
+]
+
+[[package]]
 name = "watchfiles"
 version = "1.1.1"
 source = { registry = "https://pypi.org/simple" }
@@ -6089,9 +6196,9 @@ resolution-markers = [
     "sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "idna", version = "3.20", source = { registry = "https://pypi.org/simple" } },
-    { name = "multidict", version = "7.2.1", source = { registry = "https://pypi.org/simple" } },
-    { name = "propcache", version = "0.5.4", source = { registry = "https://pypi.org/simple" } },
+    { name = "idna", version = "3.20", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "multidict", version = "7.2.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
+    { name = "propcache", version = "0.5.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-21-overnight-agent-swarm-ingest' or extra != 'group-21-overnight-agent-swarm-agent'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/75/16/e8be8e2fb175bbf41a0680381a319f1199fae256588241a2ac8677eafb49/yarl-1.25.1.tar.gz", hash = "sha256:03dd38de09bc213e9a8b29761eec33ee1d5318dac0e49d8af36e4d27830e23a7", size = 246245, upload-time = "2026-09-15T19:35:02.264Z" }
 wheels = [

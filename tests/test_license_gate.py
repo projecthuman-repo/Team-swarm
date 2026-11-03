@@ -6,20 +6,14 @@ import os
 
 spec = importlib.util.spec_from_file_location(
     "license_gate",
-    os.path.join(
-        os.path.dirname(__file__), "..", ".forgejo", "scripts", "license_gate.py"
-    ),
+    os.path.join(os.path.dirname(__file__), "..", ".forgejo", "scripts", "license_gate.py"),
 )
 gate = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(gate)
 
 
 def sbom(*packages):
-    return {
-        "packages": [
-            {"name": name, "licenseConcluded": lic} for name, lic in packages
-        ]
-    }
+    return {"packages": [{"name": name, "licenseConcluded": lic} for name, lic in packages]}
 
 
 def test_permissive_pass():

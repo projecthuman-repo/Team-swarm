@@ -34,8 +34,7 @@ def build_crew(task_title: str):
         from crewai.llm import LLM
     except ImportError as err:
         raise SystemExit(
-            "CrewAI is an optional upgrade: "
-            "pip install -r requirements-orchestration.txt"
+            "CrewAI is an optional upgrade: pip install -r requirements-orchestration.txt"
         ) from err
 
     llm = LLM(model=MODEL, base_url=OLLAMA_API_BASE)
@@ -56,12 +55,8 @@ def build_crew(task_title: str):
         "Turn the inbound request into a well-scoped, testable task spec "
         "with the right role label.",
     )
-    backend = role_agent(
-        "backend", "Plan the server-side implementation for the spec."
-    )
-    frontend = role_agent(
-        "frontend", "Plan any UI changes the spec needs."
-    )
+    backend = role_agent("backend", "Plan the server-side implementation for the spec.")
+    frontend = role_agent("frontend", "Plan any UI changes the spec needs.")
     reviewer = role_agent(
         "review",
         "Review the combined plan; flag risks, missing tests, and diff-size "
@@ -81,8 +76,7 @@ def build_crew(task_title: str):
     tasks = [
         Task(
             description=f"Scope this request into a task spec: {task_title}",
-            expected_output="A concise task spec with acceptance criteria "
-            "and a role:<name> label.",
+            expected_output="A concise task spec with acceptance criteria and a role:<name> label.",
             agent=triage,
         ),
         Task(

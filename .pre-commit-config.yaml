@@ -1,0 +1,30 @@
+# Developer-machine hooks (Lean & Precise L1.3). `make hooks` installs them;
+# CI runs `pre-commit run --all-files`. Swarm agents do NOT run pre-commit
+# (no egress to fetch hook repos) — their in-container ruff gate (green-build
+# gate, agent/sandbox.py) is the equivalent.
+# Revs pinned to verified tags (DECISIONS D-005); uv-pre-commit matches the
+# uv that wrote uv.lock so the hook can never re-lock with another uv.
+exclude: ^agent/gen/  # generated protobuf code — never rewritten by hooks
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.3
+    hooks:
+      - id: ruff
+      - id: ruff-format
+
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.11.32
+    hooks:
+      - id: uv-lock
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+        args: [--maxkb=512]
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]

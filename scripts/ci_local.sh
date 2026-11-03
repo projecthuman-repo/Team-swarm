@@ -13,6 +13,9 @@ step "locked environment"
 uv sync --frozen --group agent --group dev
 uv lock --check
 
+step "pre-commit (developer hooks)"
+uv run --no-sync pre-commit run --all-files --show-diff-on-failure
+
 step "generated requirements match uv.lock"
 sha1sum uv.lock requirements*.txt > "${TMPDIR:-/tmp}/lock.sha"
 ./scripts/lock_export.sh

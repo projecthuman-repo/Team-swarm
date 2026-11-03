@@ -114,8 +114,7 @@ def markdown_report(default: dict, candidate: dict) -> str:
 
     def delta(a: float, b: float, pct: bool = False, lower_better: bool = False) -> str:
         d = b - a
-        arrow = "better" if (d < 0) == lower_better and d != 0 else (
-            "worse" if d != 0 else "same")
+        arrow = "better" if (d < 0) == lower_better and d != 0 else ("worse" if d != 0 else "same")
         val = f"{d:+.1%}" if pct else f"{d:+.1f}"
         return f"{val} ({arrow})"
 
@@ -157,9 +156,7 @@ async def main_async(args: argparse.Namespace) -> int:
     overrides = dict(kv.split("=", 1) for kv in args.candidate)
     log.info("running %d golden tasks x 2 configs", len(pack))
     default = await run_config("default", {}, pack)
-    candidate = await run_config(
-        ",".join(args.candidate) or "candidate", overrides, pack
-    )
+    candidate = await run_config(",".join(args.candidate) or "candidate", overrides, pack)
     report = markdown_report(default, candidate)
     print(report)
     out = os.path.join(os.path.dirname(GOLDEN_DIR), "last_report.md")
@@ -174,10 +171,19 @@ async def main_async(args: argparse.Namespace) -> int:
 def main() -> None:
     logging.basicConfig(level="INFO")
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--candidate", action="append", default=[],
-                   metavar="KEY=VALUE", help="env override(s) for the candidate config")
-    p.add_argument("--report", nargs=2, metavar=("DEFAULT.json", "CANDIDATE.json"),
-                   help="render a report from two saved runs")
+    p.add_argument(
+        "--candidate",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="env override(s) for the candidate config",
+    )
+    p.add_argument(
+        "--report",
+        nargs=2,
+        metavar=("DEFAULT.json", "CANDIDATE.json"),
+        help="render a report from two saved runs",
+    )
     sys.exit(asyncio.run(main_async(p.parse_args())))
 
 

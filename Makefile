@@ -10,7 +10,7 @@ COMPOSE := $(RUNTIME) compose -f deploy/compose.yaml
         index-repo shadow-eval morning speculative test lint gate gen \
         models models-35b models-bf16 migrate logs footprint \
         verify-integration tools ingest-container lock sync torch-cpu-lock \
-        ci-local
+        ci-local hooks
 
 quickstart: up bootstrap ## start infra and bootstrap everything
 
@@ -133,6 +133,9 @@ lint:
 
 ci-local: ## the gates of .forgejo/workflows/ci.yaml, same commands (license gate deferred without syft)
 	./scripts/ci_local.sh
+
+hooks: ## install the developer pre-commit hooks (ruff, ruff-format, uv-lock, hygiene)
+	uv run --no-sync pre-commit install
 
 gate: ## run the fail-closed license gate locally (needs syft)
 	python .forgejo/scripts/license_gate.py

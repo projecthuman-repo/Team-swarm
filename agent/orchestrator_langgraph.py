@@ -37,9 +37,7 @@ from agent.sandbox import run_sandboxed_aider  # noqa: E402
 log = logging.getLogger("langgraph-orchestrator")
 
 NATS_URL = os.environ.get("NATS_URL", "nats://localhost:4222")
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL", "postgres://postgres:dev@localhost:5432/swarm"
-)
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:dev@localhost:5432/swarm")
 HIL = os.environ.get("HIL", "") == "1"  # human-in-the-loop pause before work
 
 
@@ -79,8 +77,7 @@ def build_graph(pool: asyncpg.Pool):
         from langgraph.graph import END, START, StateGraph
     except ImportError as err:
         raise SystemExit(
-            "LangGraph is an optional upgrade: "
-            "pip install -r requirements-orchestration.txt"
+            "LangGraph is an optional upgrade: pip install -r requirements-orchestration.txt"
         ) from err
 
     from agent.planner import (
@@ -114,26 +111,18 @@ def build_graph(pool: asyncpg.Pool):
                     replanned.add(tid)
                     idx = ids.index(tid)
                     log.warning("subtask %s verify-failed; replanning", tid)
-                    new_ids = await emit_subtasks(
-                        pool, task.task_id, [subtasks[idx]]
-                    )
+                    new_ids = await emit_subtasks(pool, task.task_id, [subtasks[idx]])
                     ids[idx] = new_ids[0]
             if all(states.get(t) == "done" for t in ids):
                 return {"decomposed": True, "done": True}
-            if any(
-                states.get(t) == "failed" and t in replanned for t in ids
-            ):
+            if any(states.get(t) == "failed" and t in replanned for t in ids):
                 return {"decomposed": True, "error": "subtask failed after replan"}
             await asyncio.sleep(15)
 
     async def work(state: TaskState) -> TaskState:
         task = task_pb2.Task.FromString(state["task_bytes"])
         budget = ValkeyBudget(ROLE, task.task_id, task.budget_tokens)
-        ttl = (
-            max(60, int(task.deadline_unix - time.time()))
-            if task.deadline_unix
-            else 3600
-        )
+        ttl = max(60, int(task.deadline_unix - time.time())) if task.deadline_unix else 3600
         async with valkey_lock(f"task:{task.task_id}", ttl=ttl):
             secret = lease_secret("forgejo")
             await run_sandboxed_aider(task, secret, budget=budget)
@@ -142,9 +131,7 @@ def build_graph(pool: asyncpg.Pool):
     async def report(state: TaskState) -> TaskState:
         task = task_pb2.Task.FromString(state["task_bytes"])
         if state.get("done"):
-            await emit(
-                pool, task.task_id, event_pb2.AgentEvent.PR_OPENED, status="done"
-            )
+            await emit(pool, task.task_id, event_pb2.AgentEvent.PR_OPENED, status="done")
         return state
 
     g = StateGraph(TaskState)
@@ -153,9 +140,7 @@ def build_graph(pool: asyncpg.Pool):
     g.add_node("work", work)
     g.add_node("report", report)
     g.add_edge(START, "claim")
-    g.add_conditional_edges(
-        "claim", lambda s: "plan" if s.get("claimed") else END, ["plan", END]
-    )
+    g.add_conditional_edges("claim", lambda s: "plan" if s.get("claimed") else END, ["plan", END])
     # decomposed tasks complete via their subtasks; single tasks do the work
     g.add_conditional_edges(
         "plan",

@@ -19,9 +19,7 @@ import sys
 
 import asyncpg
 
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL", "postgres://postgres:dev@localhost:5432/swarm"
-)
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:dev@localhost:5432/swarm")
 
 
 async def main() -> int:
@@ -49,8 +47,7 @@ async def main() -> int:
     # Duplicate execution would show up as a task flapping between owners;
     # with compare-and-set claims each task has at most one claimed_by.
     unclaimed_done = await pool.fetchval(
-        "SELECT count(*) FROM tasks "
-        "WHERE status IN ('claimed','done') AND claimed_by IS NULL"
+        "SELECT count(*) FROM tasks WHERE status IN ('claimed','done') AND claimed_by IS NULL"
     )
     if unclaimed_done:
         failures.append(f"{unclaimed_done} claimed/done task(s) without an owner")

@@ -91,9 +91,7 @@ def compute_tiers(free_vram_mb: int, spill: bool) -> list[str]:
 
 def serveable_tiers(caps: dict) -> list[str]:
     """Subscription tiers for WORKER_TIERS=auto: default + capable tiers."""
-    return DEFAULT_TIERS + [
-        t for t in caps.get("can_serve", []) if t in TIER_VRAM_MB
-    ]
+    return DEFAULT_TIERS + [t for t in caps.get("can_serve", []) if t in TIER_VRAM_MB]
 
 
 async def register_node(pool, node_id: str) -> dict:

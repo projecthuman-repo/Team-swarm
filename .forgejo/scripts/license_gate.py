@@ -52,9 +52,7 @@ def check(sbom: dict) -> list[tuple[str, str]]:
 
 
 def main() -> int:
-    sbom = json.loads(
-        subprocess.check_output(["syft", "packages", "-o", "spdx-json", "dir:."])
-    )
+    sbom = json.loads(subprocess.check_output(["syft", "packages", "-o", "spdx-json", "dir:."]))
     bad = check(sbom)
     if bad:
         print("LICENSE GATE FAILED (fail-closed):")

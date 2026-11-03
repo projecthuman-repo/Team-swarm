@@ -106,10 +106,17 @@ def test_bundle_crosses_process_boundary(servers):
         VERIFIER_API_BASE=f"http://127.0.0.1:{model_port}/v1",
     )
     writer = subprocess.run(
-        [sys.executable, "-c",
-         "from agent.shared_context import put_handoff; "
-         f"print(put_handoff('task-42', 'diff --git a/x b/x\\n+{MARKER}', 'spec'))"],
-        cwd=ROOT, env=env, capture_output=True, text=True, timeout=60,
+        [
+            sys.executable,
+            "-c",
+            "from agent.shared_context import put_handoff; "
+            f"print(put_handoff('task-42', 'diff --git a/x b/x\\n+{MARKER}', 'spec'))",
+        ],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
     )
     assert writer.returncode == 0, writer.stderr
     assert writer.stdout.strip() == "handoff:task-42"
@@ -117,7 +124,11 @@ def test_bundle_crosses_process_boundary(servers):
 
     reader = subprocess.run(
         [sys.executable, "-m", "agent.verifier", "task-42"],
-        cwd=ROOT, env=env, capture_output=True, text=True, timeout=120,
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
     )
     assert reader.returncode == 0, reader.stdout + reader.stderr
     assert json.loads(reader.stdout)["verdict"] == "PASS"
@@ -132,7 +143,11 @@ def test_missing_bundle_is_reported(servers):
     )
     reader = subprocess.run(
         [sys.executable, "-m", "agent.verifier", "task-absent"],
-        cwd=ROOT, env=env, capture_output=True, text=True, timeout=60,
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
     )
     assert reader.returncode != 0
     assert "no hand-off bundle for task task-absent" in reader.stderr
@@ -140,11 +155,17 @@ def test_missing_bundle_is_reported(servers):
 
 def test_unreachable_valkey_degrades_to_memory_with_warning():
     probe = subprocess.run(
-        [sys.executable, "-c",
-         "from agent import shared_context as s; s.put_handoff('t','d','sp'); "
-         "print(s._valkey is None, s.get_handoff('t') is not None)"],
-        cwd=ROOT, env=_env(VALKEY_URL="valkey://127.0.0.1:9"),  # closed port
-        capture_output=True, text=True, timeout=60,
+        [
+            sys.executable,
+            "-c",
+            "from agent import shared_context as s; s.put_handoff('t','d','sp'); "
+            "print(s._valkey is None, s.get_handoff('t') is not None)",
+        ],
+        cwd=ROOT,
+        env=_env(VALKEY_URL="valkey://127.0.0.1:9"),  # closed port
+        capture_output=True,
+        text=True,
+        timeout=60,
     )
     assert probe.returncode == 0, probe.stderr
     assert probe.stdout.split() == ["True", "True"]

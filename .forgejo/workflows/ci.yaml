@@ -30,6 +30,15 @@ jobs:
           uv sync --frozen --group agent --group dev
           uv lock --check
 
+      - name: cache pre-commit hook envs
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: pre-commit (developer hooks, L1.3)
+        run: uv run --no-sync pre-commit run --all-files --show-diff-on-failure
+
       - name: generated requirements match uv.lock
         # requirements*.txt are generated; a hand edit (or a stale export)
         # fails here, which is what lets the diff-size gate skip them.

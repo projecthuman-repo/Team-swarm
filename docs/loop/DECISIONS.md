@@ -125,3 +125,15 @@ script's own header defines it as the agent-PR gate and its original
 default base was `integration`; no agent path is weakened, because agents
 cannot merge into `main`. Without this, a multi-task owner PR such as this
 loop's could never pass `gates`.
+
+**D-016 · pre-commit details (L1.3).** Hook revs are the verified tags in
+D-005; `ruff` is the id the spec names (still present at v0.17.3, same
+entry as `ruff-check`, both `--force-exclude`). Top-level
+`exclude: ^agent/gen/` keeps the hygiene fixers off generated protobuf code.
+`trailing-whitespace` keeps Markdown hard breaks
+(`--markdown-linebreak-ext=md`). `check-added-large-files --maxkb=512`
+only inspects newly *added* files, so the existing 0.7 MB `uv.lock` is
+unaffected. pre-commit joined the `dev` group (MIT), so CI and
+`ci-local` run it from the locked env (`uv run --no-sync`). Hook repos are
+fetched from github.com, so the CI runner allow-list in OWNER_STOP gains
+`github.com`.

@@ -33,9 +33,7 @@ from swarm.v1 import task_pb2  # noqa: E402
 
 log = logging.getLogger("chat-ingress")
 
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL", "postgres://postgres:dev@localhost:5432/swarm"
-)
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:dev@localhost:5432/swarm")
 DEFAULT_BUDGET = int(os.environ.get("DEFAULT_BUDGET_TOKENS", "200000"))
 POLL_S = int(os.environ.get("CHAT_POLL_S", "5"))
 SOURCES = [s.strip() for s in os.environ.get("CHAT_SOURCES", "telegram").split(",") if s.strip()]
@@ -113,9 +111,7 @@ async def telegram_loop(pool: asyncpg.Pool) -> None:
                 msg = upd.get("message") or {}
                 text = (msg.get("text") or "").strip()
                 chat_id = (msg.get("chat") or {}).get("id")
-                if not text or (
-                    TELEGRAM_ALLOWED_CHATS and chat_id not in TELEGRAM_ALLOWED_CHATS
-                ):
+                if not text or (TELEGRAM_ALLOWED_CHATS and chat_id not in TELEGRAM_ALLOWED_CHATS):
                     continue
                 tid = await create_task(pool, f"telegram#{upd['update_id']}", text)
                 if tid:

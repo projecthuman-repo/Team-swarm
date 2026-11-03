@@ -49,6 +49,7 @@ dev = [
   "pytest-asyncio>=0.24",
   "bandit>=1.7",
   "grpcio-tools>=1.66",
+  "pre-commit>=4.0", # MIT; `make hooks`, CI step
 ]
 
 [tool.uv]

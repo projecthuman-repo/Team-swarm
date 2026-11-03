@@ -61,6 +61,8 @@ cp .env.example .env
 uv sync --frozen --group agent --group dev   # pyproject.toml + uv.lock are the source of truth
 #   fallback without uv: pip install -r requirements.txt -r requirements-dev.txt
 #   (the requirements*.txt files are generated from uv.lock by `make lock`)
+make hooks   # pre-commit: ruff, ruff-format, uv-lock, hygiene (developer machines only —
+             # swarm agents have no egress; their in-container ruff gate is the equivalent)
 (cd relay && npm install)
 make relay                # terminal 1 — outbox relay
 make agent ROLE=backend   # terminal 2 — one agent worker

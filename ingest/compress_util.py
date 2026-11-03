@@ -31,9 +31,7 @@ def headroom_compress_text(text: str) -> str | None:
     except ImportError:
         return None
     try:
-        res = headroom.compress(
-            [{"role": "tool", "content": text}], model="gpt-4o"
-        )
+        res = headroom.compress([{"role": "tool", "content": text}], model="gpt-4o")
         return str(res.messages[-1]["content"])
     except Exception as err:  # compression must never block ingestion
         log.warning("headroom compress failed, falling back: %s", err)
@@ -58,9 +56,7 @@ def offload_original(key: str, text: str) -> str | None:
 
 def fetch_original(spec_ref: str) -> str:
     """GET an offloaded original back from SeaweedFS (reversibility)."""
-    resp = requests.get(
-        f"{SEAWEED_FILER_URL.rstrip('/')}/{spec_ref}", timeout=15
-    )
+    resp = requests.get(f"{SEAWEED_FILER_URL.rstrip('/')}/{spec_ref}", timeout=15)
     resp.raise_for_status()
     return resp.text
 

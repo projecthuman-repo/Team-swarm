@@ -34,9 +34,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from agent.lessons import embed, search_lessons, to_pgvector  # noqa: E402
 
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL", "postgres://postgres:dev@localhost:5432/swarm"
-)
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:dev@localhost:5432/swarm")
 KNOWLEDGE_DIR = pathlib.Path(__file__).resolve().parent.parent / "knowledge"
 CHUNK_CHARS = 1200
 
@@ -62,9 +60,7 @@ async def seed(pool: asyncpg.Pool) -> int:
             continue
         for chunk in chunks(path.read_text(errors="replace")):
             text = f"[{path.relative_to(KNOWLEDGE_DIR)}] {chunk}"
-            exists = await pool.fetchval(
-                "SELECT 1 FROM lessons WHERE text = $1", text
-            )
+            exists = await pool.fetchval("SELECT 1 FROM lessons WHERE text = $1", text)
             if exists:
                 continue
             await pool.execute(

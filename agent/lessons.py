@@ -85,9 +85,7 @@ def _qdrant():
 def _chroma():
     import chromadb
 
-    return chromadb.PersistentClient(path=CHROMA_PATH).get_or_create_collection(
-        COLLECTION
-    )
+    return chromadb.PersistentClient(path=CHROMA_PATH).get_or_create_collection(COLLECTION)
 
 
 def _index_upsert(lesson_id: str, text: str, vec: list[float] | None) -> None:
@@ -170,8 +168,7 @@ async def search_lessons(
     if vec is None or tag is not None:  # text/tag path always via Postgres
         if vec is not None:
             rows = await pool.fetch(
-                "SELECT text FROM lessons WHERE tag = $3 "
-                "ORDER BY embedding <=> $1 LIMIT $2",
+                "SELECT text FROM lessons WHERE tag = $3 ORDER BY embedding <=> $1 LIMIT $2",
                 to_pgvector(vec),
                 limit,
                 tag,

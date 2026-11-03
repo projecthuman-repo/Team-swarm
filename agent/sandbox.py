@@ -81,10 +81,7 @@ class RunResult:
 def engine_cmd(message: str) -> list[str]:
     """Build the agent-engine command for this task's message."""
     if ENGINE_CMD:
-        return [
-            message if part == "{message}" else part
-            for part in shlex.split(ENGINE_CMD)
-        ]
+        return [message if part == "{message}" else part for part in shlex.split(ENGINE_CMD)]
     if ENGINE == "nano-claude-code":
         return ["nano-claude-code", "--prompt", message]
     if ENGINE == "aider":
@@ -93,9 +90,12 @@ def engine_cmd(message: str) -> list[str]:
             "--yes-always",
             "--no-analytics",
             "--architect",
-            "--model", MODEL,
-            "--editor-model", EDITOR_MODEL,
-            "--message", message,
+            "--model",
+            MODEL,
+            "--editor-model",
+            EDITOR_MODEL,
+            "--message",
+            message,
         ]
     raise PoisonError(f"unknown AGENT_ENGINE {ENGINE!r}")
 
@@ -194,9 +194,7 @@ async def check_workspace(repo: str, env: dict) -> tuple[bool, str]:
     for check_cmd in [c.strip() for c in QUALITY_CHECKS.split(";") if c.strip()]:
         argv = shlex.split(check_cmd)
         try:
-            code, out = await _run(
-                argv, repo, env, QUALITY_CHECK_TIMEOUT_S, check=False
-            )
+            code, out = await _run(argv, repo, env, QUALITY_CHECK_TIMEOUT_S, check=False)
         except FileNotFoundError:
             outputs.append(f"$ {check_cmd}\n(skipped: {argv[0]} not installed)")
             continue
@@ -256,7 +254,9 @@ async def run_sandboxed_aider(task, secret: str, budget: ValkeyBudget) -> RunRes
             if cycle < MAX_REPAIR_CYCLES:
                 log.warning(
                     "task %s red, repair cycle %d/%d",
-                    task.task_id, cycle + 1, MAX_REPAIR_CYCLES,
+                    task.task_id,
+                    cycle + 1,
+                    MAX_REPAIR_CYCLES,
                 )
                 prompt = repair_message(message, check_out, cycle + 1)
 

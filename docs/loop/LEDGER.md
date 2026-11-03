@@ -44,3 +44,8 @@ where it went) or `generated` (the file stays, with a header saying so).
 | `.forgejo/workflows/ci.yaml` `proto-compat` job | kept | unchanged |
 | `.forgejo/scripts/diff_size_gate.sh` | extended | L1.2 — base resolution, fail-closed, generated files excluded, enforcement scope (D-013) |
 | `make ci-local` / `scripts/ci_local.sh` | extended (new) | L1.2 — mirrors the CI gates |
+| `.pre-commit-config.yaml` | generated (new) | L1.3 — ruff, ruff-format, uv-lock, five hygiene hooks |
+| 29 Python files | extended (formatting only) | L1.3 — `ruff format`; AST-identical |
+| `.forgejo/fixtures/tool_output.json` | extended | L1.3 — final newline added by end-of-file-fixer; headroom gate still PASS |
+| `make hooks`; CI + `ci-local` pre-commit step | extended (new) | L1.3 |
+| `pre-commit` | extended (dev group) | pyproject.toml / uv.lock / requirements-dev.txt |

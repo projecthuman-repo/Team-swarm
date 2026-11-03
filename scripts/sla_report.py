@@ -21,9 +21,7 @@ import sys
 
 import asyncpg
 
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL", "postgres://postgres:dev@localhost:5432/swarm"
-)
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:dev@localhost:5432/swarm")
 HEADROOM_STATS_URL = os.environ.get("HEADROOM_STATS_URL", "http://localhost:8787")
 OUTPUT_HOLDOUT = float(os.environ.get("HEADROOM_OUTPUT_HOLDOUT", "0") or 0)
 
@@ -123,8 +121,7 @@ async def report(hours: int) -> int:
     else:
         print("first-pass green rate : n/a (no measured tasks yet)")
     print(
-        "avg publish->claim    : "
-        f"{avg_pickup if avg_pickup is not None else 'n/a'}  (SLA < 10 min)"
+        f"avg publish->claim    : {avg_pickup if avg_pickup is not None else 'n/a'}  (SLA < 10 min)"
     )
     print(
         "p95 pickup latency    : "
@@ -134,9 +131,7 @@ async def report(hours: int) -> int:
 
     print_headroom_savings()
 
-    breached = rate < 70 or (
-        avg_pickup is not None and avg_pickup.total_seconds() > 600
-    )
+    breached = rate < 70 or (avg_pickup is not None and avg_pickup.total_seconds() > 600)
     if breached:
         print("SLA BREACH — tune consumers/prompts/embeddings (not a hard stop)")
     await pool.close()

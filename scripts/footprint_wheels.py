@@ -39,9 +39,16 @@ def resolve(req_file: str) -> list[tuple[str, str]]:
     """`uv pip compile` one requirements file for the target platform."""
     proc = subprocess.run(
         [
-            "uv", "pip", "compile", "--quiet", "--no-header", "--no-annotate",
-            "--python-version", PYTHON_VERSION,
-            "--python-platform", PLATFORM,
+            "uv",
+            "pip",
+            "compile",
+            "--quiet",
+            "--no-header",
+            "--no-annotate",
+            "--python-version",
+            PYTHON_VERSION,
+            "--python-platform",
+            PLATFORM,
             req_file,
         ],
         capture_output=True,
@@ -119,8 +126,7 @@ def report(req_files: list[str]) -> dict:
             "packages": len(pins),
             "total_bytes": sum(r[0] for r in rows),
             "top": [
-                {"name": n, "version": v, "bytes": b, "sdist": s}
-                for b, n, v, s in rows[:TOP_N]
+                {"name": n, "version": v, "bytes": b, "sdist": s} for b, n, v, s in rows[:TOP_N]
             ],
         }
     return out
@@ -142,8 +148,11 @@ def to_markdown(data: dict) -> str:
         )
         lines.append(f"| `{name}` | {s['packages']} | {mb(s['total_bytes'])} | {top} |")
     if data["failed"]:
-        lines += ["", f"Size lookup failed for {len(data['failed'])} package(s): "
-                  + ", ".join(data["failed"])]
+        lines += [
+            "",
+            f"Size lookup failed for {len(data['failed'])} package(s): "
+            + ", ".join(data["failed"]),
+        ]
     return "\n".join(lines)
 
 
