@@ -1,8 +1,74 @@
 [project]
 name = "overnight-agent-swarm"
-version = "4.0.0"
-description = "Overnight Agent Swarm v4.0 — JetStream + transactional outbox + sandboxed coding agents"
-requires-python = ">=3.12"
+version = "4.1.1"
+description = "Overnight Agent Swarm v4.1.1 — JetStream + transactional outbox + sandboxed coding agents"
+# Every image and CI job runs Python 3.12; the upper bound keeps the
+# universal lock solvable (aider-chat pins numpy==1.26.4, which has no
+# 3.14 wheels while fastembed needs numpy>=2.3 there). See DECISIONS D-009.
+requires-python = ">=3.12,<3.13"
+# Shared runtime: what every swarm process imports.
+dependencies = [
+  "nats-py>=2.9",
+  "asyncpg>=0.29",
+  "valkey>=6.0",
+  "requests>=2.32",
+  "protobuf>=7.35.1,<8", # matches the checked-in gencode under agent/gen/ (protoc 7.35.1)
+  "fastapi>=0.115",
+  "uvicorn>=0.32",
+  "psutil>=6.0",
+  "prometheus-client>=0.26,<1", # /metrics SLA gauges (L3.2)
+  "nvidia-ml-py>=12.560",
+]
+
+[project.optional-dependencies]
+# Default embeddings: fastembed (onnxruntime, no torch) — bge-small-en-v1.5
+# is 384-dim, matching vector(384); bge-m3 (1024) also runs through it.
+embeddings = ["fastembed>=0.9,<1"]
+# torch-based options. torch is listed directly so the (disabled-by-default)
+# CPU-wheel source below can apply to it — uv sources only bind direct deps.
+embeddings-torch = ["sentence-transformers>=3.0", "torch"]
+vector = ["qdrant-client>=1.12", "chromadb>=0.5"]
+orchestration = ["langgraph>=0.2", "crewai>=0.80"]
+routing = ["routellm>=0.2", "torch"]
+ccompat = ["confluent-kafka[protobuf]>=2.6"]
+
+[dependency-groups]
+agent = ["aider-chat>=0.86"]
+# The ingest image installs with `--only-group ingest`, so the group carries
+# everything ingest imports, not just headroom-ai (DECISIONS D-010).
+ingest = [
+  "asyncpg>=0.29",
+  "requests>=2.32",
+  "protobuf>=7.35.1,<8",
+  "valkey>=6.0",
+  "headroom-ai==0.31.0",
+]
+dev = [
+  "ruff>=0.7",
+  "pytest>=8.0",
+  "pytest-cov>=5.0",
+  "pytest-asyncio>=0.24",
+  "bandit>=1.7",
+  "grpcio-tools>=1.66",
+  "pre-commit>=4.0", # MIT; `make hooks`, CI step
+]
+
+[tool.uv]
+package = false
+# headroom-ai==0.31.0 needs litellm>=1.86.2; aider-chat pins litellm==1.81.10.
+conflicts = [[{ group = "agent" }, { group = "ingest" }]]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+# BEGIN torch-cpu-source — enabled by `make torch-cpu-lock` on a host that
+# can reach download.pytorch.org (blocked in the session that wrote this
+# lock; see DECISIONS D-011). Until then torch resolves from PyPI (CUDA).
+# [tool.uv.sources]
+# torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+# END torch-cpu-source
 
 [tool.ruff]
 target-version = "py312"
@@ -17,6 +83,7 @@ ignore = ["E402"]  # gen/ sys.path insertion precedes imports by design
 testpaths = ["tests"]
 pythonpath = ["."]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 
 [tool.coverage.run]
 omit = ["agent/gen/*"]

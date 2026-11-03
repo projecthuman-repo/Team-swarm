@@ -26,6 +26,15 @@ def client() -> valkey.Valkey:
     return _client
 
 
+def sync_client():
+    """Blocking client on the same VALKEY_URL, for sync callers (the
+    hand-off store behind the `python -m agent.verifier` CLI). Short
+    timeouts so an unreachable Valkey degrades fast instead of hanging."""
+    import valkey as valkey_sync
+
+    return valkey_sync.Valkey.from_url(VALKEY_URL, socket_connect_timeout=2, socket_timeout=5)
+
+
 class BudgetExceeded(Exception):
     """Raised when a task's token spend crosses its budget."""
 
@@ -57,9 +66,7 @@ class ValkeyBudget:
         total = await client().incrby(self.key, tokens)
         await client().expire(self.key, 24 * 3600)
         if self.limit and total > self.limit:
-            raise BudgetExceeded(
-                f"{self.key} spent {total} > budget {self.limit} tokens"
-            )
+            raise BudgetExceeded(f"{self.key} spent {total} > budget {self.limit} tokens")
 
     async def spent(self) -> int:
         val = await client().get(self.key)
@@ -104,13 +111,10 @@ class CircuitBreaker:
         attempts = await self.record_attempt()
         if attempts > self.max_attempts:
             raise SnowballError(
-                f"task {self.task_id}: {attempts} cumulative attempts "
-                f"> cap {self.max_attempts}"
+                f"task {self.task_id}: {attempts} cumulative attempts > cap {self.max_attempts}"
             )
         if self.wall_exceeded(now_unix):
-            raise SnowballError(
-                f"task {self.task_id}: wall clock exceeded {self.max_wall_s}s"
-            )
+            raise SnowballError(f"task {self.task_id}: wall clock exceeded {self.max_wall_s}s")
 
 
 @asynccontextmanager

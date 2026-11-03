@@ -3,19 +3,24 @@
 Postgres/pgvector is the canonical store (lessons are transactional with
 tasks). Two documented alternatives are selectable via VECTOR_BACKEND:
 
-  pgvector (baseline)   — search runs in Postgres (HNSW, cosine)
+  pgvector (baseline)   — search runs in Postgres: HNSW cosine + full-text,
+                          fused by RRF (match_lessons_hybrid, L2.2)
   qdrant   (upgrade)    — adopt past ~5-10M vectors / heavy filtered search
   chroma   (local tier) — the retained v3.0 laptop retrieval option
 
 With qdrant/chroma the lesson row still lands in Postgres (source of
 truth); the alternative backend mirrors it as the search index.
 
-Embeddings (EMBEDDING_MODEL / EMBEDDING_DIM):
-  all-MiniLM-L6-v2 (default, 384-dim — db/schema.sql)
-  BAAI/bge-m3 (1024-dim — apply db/migrations/001_bge_m3_embeddings.sql;
-  adopt when retrieval quality > speed)
-Install requirements-embeddings.txt; without it, lessons are stored
-text-only and keyword-searchable.
+Embeddings (EMBEDDING_BACKEND / EMBEDDING_MODEL / EMBEDDING_DIM):
+  fastembed (default, L2.3 — ONNX Runtime, no torch; extra `embeddings`)
+    BAAI/bge-small-en-v1.5 (default, 384-dim — db/schema.sql)
+    BAAI/bge-m3 (EMBEDDING_DIM=1024 — apply db/migrations/001_bge_m3_embeddings.sql;
+    adopt when retrieval quality > speed)
+  sentence-transformers (option; extra `embeddings-torch`, pulls torch)
+    all-MiniLM-L6-v2 (its default, 384-dim) or any ST model id
+Switching backend or model changes the vector space: re-embed with
+`python scripts/seed_knowledge.py --reembed`. Without the selected
+library, lessons are stored text-only and full-text searchable.
 """
 
 from __future__ import annotations
@@ -30,7 +35,10 @@ import asyncpg
 log = logging.getLogger("lessons")
 
 BACKEND = os.environ.get("VECTOR_BACKEND", "pgvector")  # pgvector|qdrant|chroma
-EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+EMBEDDING_BACKEND = os.environ.get("EMBEDDING_BACKEND", "fastembed")  # |sentence-transformers
+EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL") or (
+    "all-MiniLM-L6-v2" if EMBEDDING_BACKEND == "sentence-transformers" else "BAAI/bge-small-en-v1.5"
+)
 EMBEDDING_DIM = int(os.environ.get("EMBEDDING_DIM", "384"))
 QDRANT_URL = os.environ.get("QDRANT_URL", "http://localhost:6333")
 CHROMA_PATH = os.environ.get("CHROMA_PATH", "/tmp/chroma")  # nosec B108 - dev default, override in prod
@@ -40,16 +48,55 @@ _model = None
 _model_loaded = False
 
 
+# v4.1 configs set EMBEDDING_MODEL=all-MiniLM-L6-v2 explicitly; fastembed
+# ships the same model (ONNX export) under its hub id. Same model, same
+# vector space — existing lessons keep matching without a re-embed.
+FASTEMBED_ALIASES = {"all-MiniLM-L6-v2": "sentence-transformers/all-MiniLM-L6-v2"}
+
+
+def _fastembed_model():
+    """fastembed TextEmbedding; BAAI/bge-m3 is registered from its ONNX export."""
+    from fastembed import TextEmbedding
+
+    if EMBEDDING_MODEL.lower() == "baai/bge-m3":
+        from fastembed.common.model_description import ModelSource, PoolingType
+
+        known = {m["model"].lower() for m in TextEmbedding.list_supported_models()}
+        if "baai/bge-m3" not in known:
+            TextEmbedding.add_custom_model(
+                model="BAAI/bge-m3",
+                pooling=PoolingType.CLS,  # bge-m3 dense = normalized [CLS]
+                normalization=True,
+                sources=ModelSource(hf="BAAI/bge-m3"),
+                dim=1024,
+                model_file="onnx/model.onnx",
+                additional_files=["onnx/model.onnx_data"],
+            )
+    return TextEmbedding(model_name=FASTEMBED_ALIASES.get(EMBEDDING_MODEL, EMBEDDING_MODEL))
+
+
 def _embedder():
     global _model, _model_loaded
     if not _model_loaded:
         _model_loaded = True
-        try:
-            from sentence_transformers import SentenceTransformer
+        if EMBEDDING_BACKEND == "sentence-transformers":
+            try:
+                from sentence_transformers import SentenceTransformer
 
-            _model = SentenceTransformer(EMBEDDING_MODEL)
-        except ImportError:  # embeddings optional on the laptop tier
-            log.warning("sentence-transformers not installed; text-only lessons")
+                _model = SentenceTransformer(EMBEDDING_MODEL)
+            except ImportError:  # embeddings optional on the laptop tier
+                log.warning("sentence-transformers not installed; text-only lessons")
+        elif EMBEDDING_BACKEND == "fastembed":
+            try:
+                _model = _fastembed_model()
+            except ImportError:  # embeddings optional on the laptop tier
+                log.warning("fastembed not installed; text-only lessons")
+            except Exception as err:  # unknown model id, model not cached + no egress
+                log.error(
+                    "fastembed model %r unavailable (%s); text-only lessons", EMBEDDING_MODEL, err
+                )
+        else:
+            raise ValueError(f"unknown EMBEDDING_BACKEND {EMBEDDING_BACKEND!r}")
     return _model
 
 
@@ -57,7 +104,11 @@ def embed(text: str) -> list[float] | None:
     model = _embedder()
     if model is None:
         return None
-    return model.encode(text, normalize_embeddings=True).tolist()
+    if EMBEDDING_BACKEND == "sentence-transformers":
+        return model.encode(text, normalize_embeddings=True).tolist()
+    vec = [float(x) for x in next(iter(model.embed([text])))]
+    norm = sum(x * x for x in vec) ** 0.5 or 1.0  # cosine-ready, like ST's normalize
+    return [x / norm for x in vec]
 
 
 def to_pgvector(vec: list[float] | None) -> str | None:
@@ -85,9 +136,7 @@ def _qdrant():
 def _chroma():
     import chromadb
 
-    return chromadb.PersistentClient(path=CHROMA_PATH).get_or_create_collection(
-        COLLECTION
-    )
+    return chromadb.PersistentClient(path=CHROMA_PATH).get_or_create_collection(COLLECTION)
 
 
 def _index_upsert(lesson_id: str, text: str, vec: list[float] | None) -> None:
@@ -160,43 +209,39 @@ async def search_lessons(
     limit: int = 5,
     tag: str | None = None,
 ) -> list[str]:
-    """Nearest-neighbour search over lessons via the selected backend.
+    """Search lessons via the selected backend.
 
-    `tag` filters to one lesson family (pgvector path; the alternative
-    index backends return untagged results, so tagged retrieval always
-    goes through Postgres — the canonical store).
+    pgvector (canonical, L2.2): hybrid retrieval — `match_lessons_hybrid`
+    fuses the dense (embedding) and sparse (full-text) rankings with RRF
+    whenever an embedding is available; without one, the sparse branch
+    alone. `tag` filters to one lesson family. Qdrant/Chroma mirrors keep
+    their dense path for untagged queries; tagged retrieval always goes
+    through Postgres (they return untagged results).
     """
     vec = embed(query)
-    if vec is None or tag is not None:  # text/tag path always via Postgres
-        if vec is not None:
-            rows = await pool.fetch(
-                "SELECT text FROM lessons WHERE tag = $3 "
-                "ORDER BY embedding <=> $1 LIMIT $2",
-                to_pgvector(vec),
-                limit,
-                tag,
-            )
-        else:
-            rows = await pool.fetch(
-                "SELECT text FROM lessons WHERE ($3::text IS NULL OR tag = $3) "
-                "AND text ILIKE '%' || $1 || '%' "
-                "ORDER BY created_at DESC LIMIT $2",
-                query,
-                limit,
-                tag,
-            )
-        return [r["text"] for r in rows]
-
-    if BACKEND == "qdrant":
+    if vec is not None and tag is None and BACKEND == "qdrant":
         hits = _qdrant().query_points(COLLECTION, query=vec, limit=limit).points
         return [h.payload["text"] for h in hits]
-    if BACKEND == "chroma":
+    if vec is not None and tag is None and BACKEND == "chroma":
         res = _chroma().query(query_embeddings=[vec], n_results=limit)
         return res["documents"][0] if res["documents"] else []
 
-    rows = await pool.fetch(
-        "SELECT text FROM lessons ORDER BY embedding <=> $1 LIMIT $2",
-        to_pgvector(vec),
-        limit,
-    )
+    if vec is not None:
+        rows = await pool.fetch(
+            "SELECT lesson_text AS text FROM match_lessons_hybrid($1, $2, $3, $4)",
+            query,
+            to_pgvector(vec),
+            tag,
+            limit,
+        )
+    else:
+        rows = await pool.fetch(
+            "SELECT text FROM lessons "
+            "WHERE fts @@ websearch_to_tsquery('simple', $1) "
+            "AND ($3::text IS NULL OR tag = $3) "
+            "ORDER BY ts_rank_cd(fts, websearch_to_tsquery('simple', $1)) DESC LIMIT $2",
+            query,
+            limit,
+            tag,
+        )
     return [r["text"] for r in rows]

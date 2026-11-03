@@ -31,9 +31,7 @@ log = logging.getLogger("morning-audit")
 FORGEJO = os.environ.get("FORGEJO_URL", "http://localhost:3000")
 OWNER = os.environ.get("FORGEJO_OWNER", "swarm")
 REPO = os.environ.get("FORGEJO_REPO", "sandbox-repo")
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL", "postgres://postgres:dev@localhost:5432/swarm"
-)
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:dev@localhost:5432/swarm")
 
 
 def merged_integration_prs(token: str, since: datetime.datetime) -> list[dict]:
@@ -50,9 +48,7 @@ def merged_integration_prs(token: str, since: datetime.datetime) -> list[dict]:
             continue
         if pr.get("base", {}).get("ref") != "integration":
             continue
-        merged_at = datetime.datetime.fromisoformat(
-            pr["merged_at"].replace("Z", "+00:00")
-        )
+        merged_at = datetime.datetime.fromisoformat(pr["merged_at"].replace("Z", "+00:00"))
         if merged_at >= since:
             out.append(pr)
     return out
@@ -72,13 +68,8 @@ def finding_actions(pr: dict, result: dict) -> tuple[str | None, str | None]:
     """(lesson text, issue title) for one audited merge; (None, None) = clean."""
     if result["verdict"] == "PASS":
         return None, None
-    reasons = "; ".join(
-        f"[{f['lens']}] {f['notes'][-200:]}" for f in result["blocking"]
-    )
-    lesson = (
-        f"Morning audit flagged merged PR #{pr['number']} "
-        f"({pr.get('title', '')!r}): {reasons}"
-    )
+    reasons = "; ".join(f"[{f['lens']}] {f['notes'][-200:]}" for f in result["blocking"])
+    lesson = f"Morning audit flagged merged PR #{pr['number']} ({pr.get('title', '')!r}): {reasons}"
     issue = f"[morning-audit] PR #{pr['number']} needs human review"
     return lesson, issue
 
@@ -96,9 +87,7 @@ async def audit(since_hours: int) -> int:
     from agent.openbao import lease_secret
 
     token = lease_secret("forgejo")
-    since = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
-        hours=since_hours
-    )
+    since = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=since_hours)
     prs = merged_integration_prs(token, since)
     log.info("auditing %d merge(s) since %s", len(prs), since.isoformat())
 
@@ -120,8 +109,7 @@ async def audit(since_hours: int) -> int:
             pr.get("head", {}).get("ref", ""),
         )
         if task_row:
-            await write_lesson(pool, str(task_row), lesson, "review",
-                               tag="morning-audit")
+            await write_lesson(pool, str(task_row), lesson, "review", tag="morning-audit")
         else:
             import uuid as _uuid
 

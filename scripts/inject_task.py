@@ -21,9 +21,7 @@ import asyncpg
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "agent", "gen"))
 from swarm.v1 import task_pb2  # noqa: E402
 
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL", "postgres://postgres:dev@localhost:5432/swarm"
-)
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:dev@localhost:5432/swarm")
 DEFAULT_BUDGET = int(os.environ.get("DEFAULT_BUDGET_TOKENS", "200000"))
 
 
@@ -62,8 +60,7 @@ async def inject(role: str, title: str, count: int) -> None:
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--role", default="backend",
-                   choices=["backend", "frontend", "review", "triage"])
+    p.add_argument("--role", default="backend", choices=["backend", "frontend", "review", "triage"])
     p.add_argument("--title", default="synthetic qualification task")
     p.add_argument("--count", type=int, default=1)
     args = p.parse_args()

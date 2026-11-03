@@ -40,8 +40,15 @@ def _routellm():
 def heuristic_tier(title: str) -> str:
     """Transparent fallback: route by task-description complexity."""
     text = (title or "").lower()
-    hard_markers = ("refactor", "migrate", "concurren", "race", "architecture",
-                    "security", "[swarm-hard]")
+    hard_markers = (
+        "refactor",
+        "migrate",
+        "concurren",
+        "race",
+        "architecture",
+        "security",
+        "[swarm-hard]",
+    )
     if any(m in text for m in hard_markers) or len(text) > 2000:
         return "35b-q4"
     return "9b-q4"
@@ -54,8 +61,7 @@ def propose_tier(title: str) -> str:
     controller = _routellm()
     if controller:
         try:
-            routed = controller.route(prompt=title, router="mf",
-                                      threshold=ROUTER_THRESHOLD)
+            routed = controller.route(prompt=title, router="mf", threshold=ROUTER_THRESHOLD)
             return "35b-q4" if "35B" in str(routed) else "9b-q4"
         except Exception as err:
             log.warning("routellm failed (%s); heuristic fallback", err)

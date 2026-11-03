@@ -1,12 +1,22 @@
 # Outbox relay image — the only publisher into JetStream (Hard Rule 2).
-FROM node:22-alpine
+# Lean & Precise L1.4: stage 1 installs the locked tree (`npm ci`),
+# typechecks, and bundles relay.ts + relay_cdc.ts with esbuild into
+# self-contained dist/*.js (no node_modules at runtime); stage 2 is
+# distroless Node 22, non-root.
 
+FROM node:22-slim AS builder
 WORKDIR /app
-COPY relay/package.json relay/tsconfig.json ./
-RUN npm install --omit=optional && npm cache clean --force
-COPY relay/relay.ts ./
+COPY relay/package.json relay/package-lock.json relay/tsconfig.json ./
+RUN npm ci
+COPY relay/relay.ts relay/relay_cdc.ts ./
+RUN npm run typecheck && npm run build
 
-RUN adduser -D -u 10001 swarm
-USER swarm
-
-CMD ["npx", "tsx", "relay.ts"]
+FROM gcr.io/distroless/nodejs22-debian12:nonroot
+WORKDIR /app
+# package.json declares "type": "module" so dist/*.js load as ESM
+# explicitly (Node >=22.7 would also detect it; explicit beats heuristic).
+COPY --from=builder /app/package.json ./
+COPY --from=builder /app/dist ./dist
+# distroless entrypoint is node; the CDC variant is selected in compose
+# with command: ["dist/relay_cdc.js"].
+CMD ["dist/relay.js"]

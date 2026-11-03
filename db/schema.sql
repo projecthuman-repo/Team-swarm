@@ -17,6 +17,9 @@ CREATE TABLE IF NOT EXISTS tasks (
   branch        text,
   first_pass_green boolean,                       -- v4.1 T2.1 north-star metric
   repair_cycles int NOT NULL DEFAULT 0,           -- grounded repair loop count
+  gate_stage1_ms int,                             -- L2.1 fast lint (first pass)
+  gate_stage2_ms int,                             -- L2.1 full checks + verify_cmd
+  tokens_spent  bigint,                           -- L3.2 engine tokens (SLA gauge)
   created_at    timestamptz NOT NULL DEFAULT now(), -- SLA tracking (runbook §17)
   updated_at    timestamptz NOT NULL DEFAULT now()
 );
@@ -38,6 +41,8 @@ CREATE TABLE IF NOT EXISTS lessons (
   task_id    uuid REFERENCES tasks,
   text       text NOT NULL,
   tag        text,                    -- retrieval flywheel (v4.1 T0.2 restore)
+  source     text,                    -- L2.4 codex-index: relative source path
+  content_sha text,                   -- L2.4 sha256 of the indexed record
   embedding  vector(384),             -- all-MiniLM-L6-v2 dim
   created_at timestamptz DEFAULT now()
 );
@@ -45,6 +50,46 @@ CREATE TABLE IF NOT EXISTS lessons (
 CREATE INDEX IF NOT EXISTS lessons_embedding_idx
   ON lessons USING hnsw (embedding vector_cosine_ops);
 CREATE INDEX IF NOT EXISTS lessons_tag_idx ON lessons(tag);
+
+-- Lean & Precise L2.4 — incremental codex index (mirrors 008_lessons_source.sql;
+-- the ALTER keeps a re-applied schema.sql safe on a pre-L2.4 database).
+ALTER TABLE lessons ADD COLUMN IF NOT EXISTS source text,
+  ADD COLUMN IF NOT EXISTS content_sha text;
+CREATE UNIQUE INDEX IF NOT EXISTS lessons_codex_source_idx
+  ON lessons(source) WHERE tag = 'codex-index';
+
+-- Lean & Precise L2.2 — hybrid retrieval (mirrors db/migrations/007_lessons_fts.sql).
+ALTER TABLE lessons ADD COLUMN IF NOT EXISTS fts tsvector
+  GENERATED ALWAYS AS (to_tsvector('simple', text)) STORED;
+CREATE INDEX IF NOT EXISTS lessons_fts_idx ON lessons USING gin(fts);
+
+-- The sparse CTE orders before its LIMIT (otherwise LIMIT keeps an
+-- arbitrary k*4 of the matches) and the score is cast to float8 to match
+-- the declared result type (DECISIONS D-023).
+CREATE OR REPLACE FUNCTION match_lessons_hybrid(
+  query_text text, query_embedding vector, want_tag text, k int DEFAULT 5)
+RETURNS TABLE (lesson_id uuid, lesson_text text, score float8)
+LANGUAGE sql STABLE AS $$
+  WITH dense AS (
+    SELECT l.lesson_id, row_number() OVER (ORDER BY l.embedding <=> query_embedding) AS r
+    FROM lessons l
+    WHERE l.embedding IS NOT NULL AND (want_tag IS NULL OR l.tag = want_tag)
+    ORDER BY l.embedding <=> query_embedding LIMIT k * 4),
+  sparse AS (
+    SELECT l.lesson_id,
+           row_number() OVER (ORDER BY ts_rank_cd(l.fts, websearch_to_tsquery('simple', query_text)) DESC) AS r
+    FROM lessons l
+    WHERE l.fts @@ websearch_to_tsquery('simple', query_text)
+      AND (want_tag IS NULL OR l.tag = want_tag)
+    ORDER BY r LIMIT k * 4)
+  SELECT l.lesson_id, l.text,
+         (COALESCE(1.0 / (60 + d.r), 0) + COALESCE(1.0 / (60 + s.r), 0))::float8 AS score
+  FROM lessons l
+  LEFT JOIN dense d USING (lesson_id)
+  LEFT JOIN sparse s USING (lesson_id)
+  WHERE d.lesson_id IS NOT NULL OR s.lesson_id IS NOT NULL
+  ORDER BY score DESC LIMIT k;
+$$;
 
 -- v4.1 T4.1 — per-node hardware capabilities for tier-aware scheduling.
 CREATE TABLE IF NOT EXISTS node_caps (

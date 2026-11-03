@@ -41,6 +41,16 @@ and idempotently by `make bootstrap`.
 **Verify:** `\dt` lists `tasks`, `outbox`, `lessons`; `\d lessons` shows
 `vector(384)` and the hnsw index.
 
+**Embeddings (L2.3).** The default embedder is fastembed (ONNX Runtime, no
+torch — extra `embeddings`) with `BAAI/bge-small-en-v1.5`, 384-dim, matching
+`vector(384)`. Options: `EMBEDDING_MODEL=BAAI/bge-m3 EMBEDDING_DIM=1024`
+(after migration 001; same fastembed path) or
+`EMBEDDING_BACKEND=sentence-transformers` (extra `embeddings-torch`; default
+model all-MiniLM-L6-v2). Any switch of backend or model changes the vector
+space — `python scripts/seed_knowledge.py --reembed` is **mandatory** after
+it, or dense search compares incompatible vectors. The upgrade from the
+v4.1 default (all-MiniLM-L6-v2) to bge-small is such a switch.
+
 ## 3. JetStream
 
 `scripts/bootstrap_jetstream.sh` creates:
@@ -152,9 +162,28 @@ the Headroom compression gate (headroom-ai fixtures), and the fail-closed licens
 
 ## 11. Observability
 
-Emit every agent action/prompt/diff/token-count/check-result to Langfuse
-(traces) and OpenSearch (logs — `make observability`). Optional
-single-binary swap: OpenObserve.
+Emit every agent action/prompt/diff/token-count/check-result to the
+canonical stack (Lean & Precise L3.2), all in the `observability` compose
+profile (`make observability`):
+
+| signal | backend | where |
+|---|---|---|
+| logs | OpenSearch | `OPENSEARCH_URL`, index `swarm-logs` |
+| traces | **Jaeger** (`jaegertracing/jaeger:2.22.0`) | agents export OTLP/HTTP to `http://jaeger:4318` (compose default of `OTEL_EXPORTER_OTLP_ENDPOINT`); one trace per task (trace id = task id), one span per event; UI/API on :16686 |
+| metrics | **Prometheus** (`prom/prometheus:v3.15.1`) | scrapes every agent's `/metrics` (health port 8080 — the SLA gauges of `agent/sla_metrics.py`, refreshed every 60 s) and the relay (`:9464`) — `deploy/observability/prometheus.yml` |
+| dashboards | **Perses** (`persesdev/perses:v0.55.1`) | `deploy/observability/perses-sla.json` provisioned into project `swarm` on :8090 (70 %/24 h and 10-minute SLA thresholds) |
+| LLM traces | Langfuse | `LANGFUSE_HOST` + keys |
+
+Options: OpenObserve (`make openobserve`, single binary; point
+`OTEL_EXPORTER_OTLP_ENDPOINT` at it) and Grafana (import
+`deploy/observability/grafana-sla.json`; AGPL-3.0, Zone A).
+`make perses-migrate` converts the Grafana dashboard with `percli` against
+the compose Perses when refining the Perses one. The gauges:
+`swarm_tasks_done_24h_ratio`, `swarm_pickup_latency_p95_seconds`,
+`swarm_first_pass_green_ratio`, `swarm_tokens_per_merged_pr`,
+`swarm_headroom_savings_ratio`, `swarm_dlq_depth`, `swarm_snowball_total`,
+`swarm_gate_stage1_ms_median`, `swarm_outbox_rows` — `make sla` prints the
+same numbers from the same queries.
 
 **Verify:** for any merged diff you can reconstruct the originating
 prompt, token spend, and check results from the trace.
@@ -171,7 +200,7 @@ prompt, token spend, and check results from the trace.
 | Sandbox | gVisor | Kata/Firecracker | dedicated-kernel threat model | `runtimeClassName: kata` |
 | Observability | OpenSearch+Langfuse | OpenObserve | storage cost / tool sprawl | `make openobserve` + OTLP env |
 | Tracing | Langfuse | OTel (Laminar/OpenLLMetry-style) | vendor-neutral instrumentation | `OTEL_EXPORTER_OTLP_ENDPOINT` |
-| Embeddings | all-MiniLM-L6-v2 | bge-m3 | retrieval quality > speed | migration 001 + `EMBEDDING_MODEL` |
+| Embeddings | fastembed bge-small-en-v1.5 (384) | bge-m3 via fastembed (1024); sentence-transformers (torch) | retrieval quality > speed | migration 001 + `EMBEDDING_MODEL`/`EMBEDDING_DIM` (or `EMBEDDING_BACKEND`), then `seed_knowledge.py --reembed` |
 | Relay | 250ms poll | logical-replication CDC | outbox throughput | `make relay-cdc` |
 | Engine | aider | nano-claude-code | lightweight runtime | `AGENT_ENGINE=nano-claude-code` |
 | Chat ingress | Telegram | +Slack/Discord | team-channel task initiation | `CHAT_SOURCES=telegram,slack,discord` |

@@ -2,13 +2,15 @@
 
 The verified finding: author-model verification preserves author biases —
 so the verifier never sees the author's conversation. It reviews ONLY the
-diff + task spec (delivered via Headroom SharedContext, T1.7) from a
-fresh perspective.
+diff + task spec (delivered through the Valkey hand-off store, T1.7 /
+L0.3) from a fresh perspective. Its model request goes to
+VERIFIER_API_BASE, which defaults to the Headroom proxy when
+HEADROOM_ENABLED=1 — so the bundle is compressed in flight.
 
 Tasks labelled swarm-hard fan out three parallel lenses — Architect /
 Security / QA — whose findings are aggregated; any BLOCK verdict blocks.
 
-    python -m agent.verifier <task_id>            # bundle from SharedContext
+    python -m agent.verifier <task_id>            # bundle from the hand-off store
     python -m agent.verifier --diff d.patch --spec s.md
 """
 
@@ -26,10 +28,15 @@ from agent.shared_context import get_handoff
 
 log = logging.getLogger("verifier")
 
-OPENAI_BASE = os.environ.get(
-    "VERIFIER_API_BASE",
-    os.environ.get("OPENAI_API_BASE", "http://localhost:11434/v1"),
-)
+
+def _default_api_base() -> str:
+    """Headroom proxy when enabled (compresses in flight), else the model."""
+    if os.environ.get("HEADROOM_ENABLED", "") == "1":
+        return os.environ.get("HEADROOM_URL", "http://headroom:8787/v1")
+    return os.environ.get("OPENAI_API_BASE", "http://localhost:11434/v1")
+
+
+OPENAI_BASE = os.environ.get("VERIFIER_API_BASE") or _default_api_base()
 MODEL = os.environ.get("VERIFIER_MODEL", "Ornith-1.0-9B")
 
 LENSES = {
@@ -48,7 +55,7 @@ LENSES = {
     ),
 }
 VERDICT_INSTRUCTIONS = (
-    'End with exactly one line: VERDICT: PASS or VERDICT: BLOCK — <reason>. '
+    "End with exactly one line: VERDICT: PASS or VERDICT: BLOCK — <reason>. "
     "You have ONLY the spec and diff below; do not assume any other context."
 )
 
@@ -100,7 +107,7 @@ def verify(bundle: str, lenses: list[str] | None = None) -> dict:
 def main() -> None:
     logging.basicConfig(level="INFO")
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("task_id", nargs="?", help="fetch bundle from SharedContext")
+    p.add_argument("task_id", nargs="?", help="fetch bundle from the hand-off store")
     p.add_argument("--diff", help="path to a diff file")
     p.add_argument("--spec", help="path to a spec file")
     p.add_argument("--lens", action="append", choices=list(LENSES))

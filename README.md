@@ -54,11 +54,32 @@ make inject         # inject a synthetic task through the outbox
 make logs           # watch it flow: outbox -> relay -> JetStream -> agent
 ```
 
+### Lite path (smallest footprint)
+
+Four spine services instead of seven — no Apicurio, no SeaweedFS, and Ollama
+only when you ask for it. Same images, volumes and networks as the full file
+(`deploy/compose.lite.yaml`), so `make up` later just adds the rest.
+
+```bash
+make up-lite && make bootstrap && make ollama && make forgejo && make agent ROLE=backend
+make relay                # second terminal — the outbox relay is the only JetStream publisher
+make inject               # third terminal — one synthetic task
+```
+
+`make bootstrap` detects the lite spine and skips Protobuf schema registration
+(the `proto-compat` CI job still guards compatibility). `make down-lite` stops
+it; `make disk-usage` shows container disk use and `make clean` prunes it
+(keeping the swarm's own data volumes).
+
 Run components on the host instead of in containers (nicer for hacking):
 
 ```bash
 cp .env.example .env
-pip install -r requirements.txt -r requirements-dev.txt
+uv sync --frozen --group agent --group dev   # pyproject.toml + uv.lock are the source of truth
+#   fallback without uv: pip install -r requirements.txt -r requirements-dev.txt
+#   (the requirements*.txt files are generated from uv.lock by `make lock`)
+make hooks   # pre-commit: ruff, ruff-format, uv-lock, hygiene (developer machines only —
+             # swarm agents have no egress; their in-container ruff gate is the equivalent)
 (cd relay && npm install)
 make relay                # terminal 1 — outbox relay
 make agent ROLE=backend   # terminal 2 — one agent worker
@@ -99,7 +120,12 @@ scripts/               # bootstrap, schema registration, task injection, qualifi
    `--network=none --read-only --cap-drop=ALL` + seccomp on Tier A).
 7. Secrets are **leased from OpenBao**, never baked into images or env files.
 8. Test environments use **synthetic data only**.
-9. **Fail-closed license gate** on every PR: Apache/MIT/BSD/MPL only.
+9. **Three-zone license gate** on every PR (`conventions/licensing.md`):
+   everything that ships — our code and every image's contents (Zone C) — is
+   Apache/MIT/BSD/MPL/ISC/0BSD only, and that gate is **fail-closed**; nothing
+   linked anywhere in the repo may be AGPL/SSPL/BUSL/Commons Clause (Zone B);
+   network services we only call over a socket, unmodified in their own
+   container (Forgejo, OpenObserve, Grafana …), may carry any OSI license (Zone A).
 
 ## Failure semantics
 
@@ -150,7 +176,8 @@ docs ships runnable:
 | nano-claude-code engine | aider | `AGENT_ENGINE=nano-claude-code` (custom: `AGENT_ENGINE_CMD="tool {message}"`) |
 | Qdrant vector store (>5–10M vectors) | pgvector | `make qdrant` + `VECTOR_BACKEND=qdrant` (`pip install -r requirements-vector.txt`) |
 | Chroma local-tier retrieval (retained v3.0 option) | pgvector | `VECTOR_BACKEND=chroma` |
-| bge-m3 embeddings (quality > speed) | all-MiniLM-L6-v2 | apply `db/migrations/001_bge_m3_embeddings.sql`, set `EMBEDDING_MODEL=BAAI/bge-m3 EMBEDDING_DIM=1024`, `scripts/seed_knowledge.py --reembed` |
+| bge-m3 embeddings (quality > speed) | fastembed bge-small-en-v1.5 (384) | apply `db/migrations/001_bge_m3_embeddings.sql`, set `EMBEDDING_MODEL=BAAI/bge-m3 EMBEDDING_DIM=1024` (served by fastembed from the ONNX export), then **mandatory** `scripts/seed_knowledge.py --reembed` |
+| sentence-transformers embeddings (torch) | fastembed (ONNX, no torch) | `make sync EXTRAS="embeddings-torch"` + `EMBEDDING_BACKEND=sentence-transformers` (default model all-MiniLM-L6-v2, 384), then **mandatory** `scripts/seed_knowledge.py --reembed` |
 | LangGraph orchestration (durable graphs, HIL) | bespoke loop | `make graph` (`HIL=1` pauses before work; `requirements-orchestration.txt`) |
 | CrewAI declarative crews | bespoke roles | `make crew TITLE="..."` |
 | CDC outbox relay (higher throughput) | 250ms poll | `make relay-cdc` (publication ships in `db/schema.sql`) |
@@ -177,7 +204,7 @@ and the protected SLAs (dashboard: `deploy/observability/grafana-sla.json`).
 
 | Workstream | What runs |
 |---|---|
-| Headroom compression (T1.1–T1.9) | CI gate on fixtures (`.forgejo/scripts/headroom_gate.py`), proxy sidecar (`make headroom`, offline assets via `scripts/seed_headroom_assets.sh`), agent wiring (`HEADROOM_ENABLED=1`), `headroom learn` → PR (`scripts/morning_headroom_learn.py`), output shaper + measured savings in `make sla`, SharedContext hand-off (`agent/shared_context.py`), ingest compression with SeaweedFS originals (`ingest/compress_util.py`), compression attrs in traces |
+| Headroom compression (T1.1–T1.9) | CI gate on fixtures (`.forgejo/scripts/headroom_gate.py`), proxy sidecar (`make headroom`, offline assets via `scripts/seed_headroom_assets.sh`), agent wiring (`HEADROOM_ENABLED=1`), `headroom learn` → PR (`scripts/morning_headroom_learn.py`), output shaper + measured savings in `make sla`, cross-process Valkey hand-off compressed in flight by the proxy (`agent/shared_context.py`), ingest compression with SeaweedFS originals (`ingest/compress_util.py`), compression attrs in traces |
 | Code quality (T2.1–T2.6) | green-build gate + grounded repair loop in `agent/sandbox.py` (`MAX_REPAIR_CYCLES`, red never pushes), repro-test-first policy (`conventions/repro-tests.md`), independent verifier (`agent/verifier.py`, Architect/Security/QA lenses), bounded repo RAG (`make index-repo`, `CONTEXT_PACK=1`), speculative patches (`make speculative TASK=<id>`), repair-cap → DLQ |
 | Planner–executor–verifier (T3.1–T3.3) | verification-aware DAG in `make graph` (subtasks carry `parent_task_id`+`verify_cmd`; replans on verify-fail), single-agent-default policy (`conventions/orchestration.md`), Postgres checkpoints (`GRAPH_CHECKPOINT=postgres`) |
 | Capacity + routing (T4.1–T4.5) | node capacity probe (`agent/capacity.py`, `WORKER_TIERS=auto`), tier subjects `swarm.tasks.<role>.<tier>` (backward-compatible default), LiteLLM gateway with structural local-primary (`make litellm`, `ROUTE_API_FALLBACK` opt-in), RouteLLM proposal (`ROUTER_ENABLED=1`), hardware lineup above |

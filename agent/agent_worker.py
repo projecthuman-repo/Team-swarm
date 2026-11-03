@@ -44,16 +44,14 @@ from agent.budget import (  # noqa: E402
 )
 from agent.health import serve_health  # noqa: E402
 from agent.openbao import lease_secret  # noqa: E402
-from agent.sandbox import PoisonError, run_sandboxed_aider  # noqa: E402
+from agent.sandbox import PoisonError, reap_orphans, run_sandboxed_aider  # noqa: E402
 from agent.tracing import emit_trace  # noqa: E402
 
 log = logging.getLogger("agent")
 
 ROLE = os.environ.get("AGENT_ROLE", "backend")  # backend|frontend|review|triage
 NATS_URL = os.environ.get("NATS_URL", "nats://localhost:4222")
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL", "postgres://postgres:dev@localhost:5432/swarm"
-)
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:dev@localhost:5432/swarm")
 FETCH_TIMEOUT_S = int(os.environ.get("FETCH_TIMEOUT_S", "30"))
 # v4.1 T4.2 — tier-aware scheduling. "default" keeps the v4.0 subject
 # swarm.tasks.<role>; extra tiers subscribe to swarm.tasks.<role>.<tier>.
@@ -108,9 +106,7 @@ async def emit(
             )
 
 
-async def handle_task(
-    pool: asyncpg.Pool, task: task_pb2.Task, budget: ValkeyBudget
-) -> None:
+async def handle_task(pool: asyncpg.Pool, task: task_pb2.Task, budget: ValkeyBudget) -> None:
     ttl = max(60, int(task.deadline_unix - time.time())) if task.deadline_unix else 3600
     if os.environ.get("CONTEXT_PACK", "") == "1":  # v4.1 T2.4 bounded RAG
         from agent.context_pack import build_context
@@ -121,11 +117,14 @@ async def handle_task(
         result = await run_sandboxed_aider(task, secret, budget=budget)
         async with pool.acquire() as conn:  # v4.1 T2.1 quality metrics
             await conn.execute(
-                "UPDATE tasks SET first_pass_green=$2, repair_cycles=$3 "
-                "WHERE task_id=$1",
+                "UPDATE tasks SET first_pass_green=$2, repair_cycles=$3, "
+                "gate_stage1_ms=$4, gate_stage2_ms=$5, tokens_spent=$6 WHERE task_id=$1",
                 uuid.UUID(task.task_id),
                 result.first_pass_green,
                 result.repair_cycles,
+                result.gate_stage1_ms,
+                result.gate_stage2_ms,
+                result.tokens_spent,
             )
         await emit(
             pool,
@@ -150,6 +149,7 @@ async def main() -> None:
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
     log.info("worker %s starting (role=%s)", WORKER_ID, ROLE)
+    reap_orphans()  # L1.6: workdirs left behind by a crashed or killed worker
 
     pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=4)
     nc = await nats.connect(NATS_URL)
@@ -172,13 +172,11 @@ async def main() -> None:
             subs.append(await js.pull_subscribe(f"swarm.tasks.{ROLE}", durable=ROLE))
         else:
             subs.append(
-                await js.pull_subscribe(
-                    f"swarm.tasks.{ROLE}.{tier}", durable=f"{ROLE}-{tier}"
-                )
+                await js.pull_subscribe(f"swarm.tasks.{ROLE}.{tier}", durable=f"{ROLE}-{tier}")
             )
     log.info("subscribed tiers: %s", tiers)
 
-    health = asyncio.create_task(serve_health(WORKER_ID, ROLE))
+    health = asyncio.create_task(serve_health(WORKER_ID, ROLE, pool))
 
     while True:  # event-driven pull, not fixed-interval poll
         msgs = []
@@ -200,12 +198,8 @@ async def main() -> None:
 
             log.info("claimed task %s (%s)", task.task_id, task.title)
             emit_trace("claimed", task.task_id, ROLE, detail=task.title)
-            budget = ValkeyBudget(
-                agent=ROLE, task_id=task.task_id, limit=task.budget_tokens
-            )
-            breaker = CircuitBreaker(
-                task.task_id, await task_created_at(pool, task.task_id)
-            )
+            budget = ValkeyBudget(agent=ROLE, task_id=task.task_id, limit=task.budget_tokens)
+            breaker = CircuitBreaker(task.task_id, await task_created_at(pool, task.task_id))
             try:
                 await breaker.check(time.time())  # T5.3: trip before spending
                 await handle_task(pool, task, budget)

@@ -38,9 +38,7 @@ from swarm.v1 import task_pb2  # noqa: E402
 log = logging.getLogger("dlq-triage")
 
 NATS_URL = os.environ.get("NATS_URL", "nats://localhost:4222")
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL", "postgres://postgres:dev@localhost:5432/swarm"
-)
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:dev@localhost:5432/swarm")
 FORGEJO = os.environ.get("FORGEJO_URL", "http://localhost:3000")
 OWNER = os.environ.get("FORGEJO_OWNER", "swarm")
 REPO = os.environ.get("FORGEJO_REPO", "sandbox-repo")
@@ -145,8 +143,12 @@ def main() -> None:
     logging.basicConfig(level="INFO", format="%(name)s %(levelname)s %(message)s")
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--watch", action="store_true", help="keep consuming")
-    p.add_argument("--replay", type=int, metavar="STREAM_SEQ",
-                   help="re-inject a fixed task from SWARM_TASKS by sequence")
+    p.add_argument(
+        "--replay",
+        type=int,
+        metavar="STREAM_SEQ",
+        help="re-inject a fixed task from SWARM_TASKS by sequence",
+    )
     args = p.parse_args()
     if args.replay:
         asyncio.run(replay(args.replay))

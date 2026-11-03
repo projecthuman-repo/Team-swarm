@@ -54,9 +54,7 @@ def parse_plan(text: str) -> list[dict]:
         if "::" in rest:
             rest, _, verify_part = rest.partition("::")
             verify = verify_part.replace("verify:", "").strip() or DEFAULT_VERIFY_CMD
-        subtasks.append(
-            {"role": role, "title": rest.strip(), "verify_cmd": verify}
-        )
+        subtasks.append({"role": role, "title": rest.strip(), "verify_cmd": verify})
     return subtasks
 
 
@@ -93,9 +91,7 @@ def plan_subtasks(title: str, spec: str = "") -> list[dict]:
     return [{"role": "backend", "title": title, "verify_cmd": DEFAULT_VERIFY_CMD}]
 
 
-async def emit_subtasks(
-    pool: asyncpg.Pool, parent_task_id: str, subtasks: list[dict]
-) -> list[str]:
+async def emit_subtasks(pool: asyncpg.Pool, parent_task_id: str, subtasks: list[dict]) -> list[str]:
     """Write each subtask (tasks row + outbox row) in ONE tx apiece.
 
     Nothing reaches JetStream except via the relay (Hard Rule 2).
@@ -141,8 +137,7 @@ async def emit_subtasks(
                     task.SerializeToString(),
                 )
         ids.append(tid)
-        log.info("planned subtask %s (%s, verify: %s)",
-                 tid, sub["role"], sub.get("verify_cmd"))
+        log.info("planned subtask %s (%s, verify: %s)", tid, sub["role"], sub.get("verify_cmd"))
     return ids
 
 
