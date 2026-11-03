@@ -8,7 +8,8 @@ COMPOSE := $(RUNTIME) compose -f deploy/compose.yaml
         observability openobserve headroom litellm relay relay-cdc agent \
         graph crew verify-diff ingest inject qualify dlq dlq-replay sla seed \
         index-repo shadow-eval morning speculative test lint gate gen \
-        models models-35b models-bf16 migrate logs
+        models models-35b models-bf16 migrate logs footprint \
+        verify-integration
 
 quickstart: up bootstrap ## start infra and bootstrap everything
 
@@ -132,3 +133,14 @@ gen: ## regenerate protobuf code from proto/ (needs grpcio-tools; or use buf)
 
 logs:
 	$(COMPOSE) logs -f --tail=100
+
+footprint: ## wheel sizes per requirement set (+ image sizes when a runtime is up)
+	./scripts/footprint_report.sh
+
+# Every check that needs a runtime host (Podman, GPU, the running spine).
+# Tasks that cannot prove their acceptance in a dev session append their
+# exact command here; deferred is not skipped — this target must pass on
+# the owner's runtime host.
+verify-integration: ## run every deferred integration check (runtime host)
+	@echo "==> [L0.1] footprint baseline (wheels + images + disk + SLA latency)"
+	$(MAKE) --no-print-directory footprint
