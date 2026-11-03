@@ -59,3 +59,10 @@ where it went) or `generated` (the file stays, with a header saying so).
 | L0.2/L0.4 image-build lines in `verify-integration` | moved | L1.4 — into `scripts/image_sizes.sh` (same builds + size checks) |
 | `scripts/vi_step.sh` / `scripts/vi_summary.sh` | generated (new) | L1.4 — verify-integration recorder + summary (D-019) |
 | `tests/test_containerfiles.py` | generated (new) | L1.4 — static Containerfile checks |
+| `deploy/compose.lite.yaml` | generated (new) | L1.5 — nats, postgres+pgvector, valkey, openbao; copies of the full definitions |
+| `make up-lite` / `down-lite` / `ollama` / `clean` / `disk-usage` | generated (new) | L1.5 — Makefile; `clean` via `scripts/clean.sh` |
+| `make forgejo` | extended | L1.5 — names the `forgejo` service so it no longer starts the default spine as a side effect (D-020) |
+| `scripts/bootstrap.sh` | extended | L1.5 — lite-mode detection (skips schema registration with a message) + `--dry-run`; every full-spine step kept |
+| `scripts/lite_smoke.sh` | generated (new) | L1.5 — lite boot → task reaches `done`; run by `verify-integration` |
+| README "Lite path" | generated (new) | L1.5 — quickstart block |
+| `tests/test_compose_lite.py` | generated (new) | L1.5 |

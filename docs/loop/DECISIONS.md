@@ -166,3 +166,21 @@ PASS/FAIL, never aborts); `scripts/vi_summary.sh` prints the table and
 exits 1 if any step failed or none ran. The log is truncated, never
 deleted, at the start of a run. The L0.2/L0.4 image builds are folded into
 `scripts/image_sizes.sh` (same builds, now with size targets).
+
+**D-020 · Lite path details (L1.5).** (a) `make forgejo` was
+`compose --profile forgejo up -d`, which also starts every un-profiled
+service (apicurio, seaweedfs, ollama) — on the lite path that silently
+undoes "lite". It now names the service (`up -d forgejo`); after `make up`
+the result is identical. (b) The lite chain in the spec
+(`up-lite && bootstrap && ollama && forgejo && agent`) has no relay; the
+relay is the only JetStream publisher (Hard Rule 2), so an injected task
+would never be delivered. The README adds `make relay` in a second
+terminal; the smoke starts the containerized relay + agent-backend.
+(c) `make clean` removes dangling volumes **except** this compose project's
+named volumes: after `make down` `deploy_pg-data` is dangling too and holds
+the tasks and lessons. Dropping swarm data stays explicit
+(`compose down -v`). (d) `down-lite` uses `--remove-orphans` so the ollama
+and forgejo containers the lite path started are stopped with it; volumes
+are kept. (e) Lite and full files share the compose project (`deploy`) and
+identical service definitions, so `make up` after `make up-lite` reuses
+the same containers and data.

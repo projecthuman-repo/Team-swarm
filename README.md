@@ -54,6 +54,23 @@ make inject         # inject a synthetic task through the outbox
 make logs           # watch it flow: outbox -> relay -> JetStream -> agent
 ```
 
+### Lite path (smallest footprint)
+
+Four spine services instead of seven — no Apicurio, no SeaweedFS, and Ollama
+only when you ask for it. Same images, volumes and networks as the full file
+(`deploy/compose.lite.yaml`), so `make up` later just adds the rest.
+
+```bash
+make up-lite && make bootstrap && make ollama && make forgejo && make agent ROLE=backend
+make relay                # second terminal — the outbox relay is the only JetStream publisher
+make inject               # third terminal — one synthetic task
+```
+
+`make bootstrap` detects the lite spine and skips Protobuf schema registration
+(the `proto-compat` CI job still guards compatibility). `make down-lite` stops
+it; `make disk-usage` shows container disk use and `make clean` prunes it
+(keeping the swarm's own data volumes).
+
 Run components on the host instead of in containers (nicer for hacking):
 
 ```bash

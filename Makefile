@@ -3,6 +3,7 @@
 
 RUNTIME := $(shell command -v podman || command -v docker)
 COMPOSE := $(RUNTIME) compose -f deploy/compose.yaml
+COMPOSE_LITE := $(RUNTIME) compose -f deploy/compose.lite.yaml
 
 .PHONY: quickstart up down bootstrap swarm forgejo chat vllm qdrant \
         observability openobserve headroom litellm relay relay-cdc agent \
@@ -10,7 +11,7 @@ COMPOSE := $(RUNTIME) compose -f deploy/compose.yaml
         index-repo shadow-eval morning speculative test lint gate gen \
         models models-35b models-bf16 migrate logs footprint \
         verify-integration tools ingest-container lock sync torch-cpu-lock \
-        ci-local hooks
+        ci-local hooks up-lite down-lite ollama clean disk-usage
 
 quickstart: up bootstrap ## start infra and bootstrap everything
 
@@ -20,6 +21,21 @@ up: ## start the Tier A spine (nats, postgres, apicurio, valkey, seaweedfs, open
 down:
 	$(COMPOSE) down
 
+up-lite: ## lite spine: nats, postgres+pgvector, valkey, openbao (no apicurio/seaweedfs/ollama)
+	$(COMPOSE_LITE) up -d
+
+down-lite: ## stop the lite spine (and the add-ons started on it: ollama, forgejo); keeps volumes
+	$(COMPOSE_LITE) down --remove-orphans
+
+ollama: ## start only the ollama service of the full compose file (lite path)
+	$(COMPOSE) up -d ollama
+
+clean: ## system prune + remove dangling volumes (keeps the swarm's own data volumes)
+	./scripts/clean.sh
+
+disk-usage: ## container disk usage (images, containers, volumes, build cache)
+	$(RUNTIME) system df
+
 bootstrap: ## schema + JetStream streams/consumers + dev secrets + Apicurio schemas
 	./scripts/bootstrap.sh
 
@@ -27,7 +43,7 @@ swarm: ## start the containerized relay + all four role agents
 	$(COMPOSE) --profile swarm up -d --build
 
 forgejo: ## self-hosted git + Actions (GPLv3, isolated service)
-	$(COMPOSE) --profile forgejo up -d
+	$(COMPOSE) --profile forgejo up -d forgejo
 
 chat: ## Telegram/Slack/Discord ingress (CHAT_SOURCES in compose.yaml)
 	$(COMPOSE) --profile chat up -d --build
@@ -175,4 +191,5 @@ verify-integration: ## run every deferred integration check (runtime host)
 	@$(VI) "L0.2/L0.4/L1.4 images build within size targets" ./scripts/image_sizes.sh
 	@$(VI) "L1.1 CPU-only torch for the torch extras" $(MAKE) --no-print-directory torch-cpu-lock
 	@$(VI) "L1.2 license gate (syft)" uv run --no-sync python .forgejo/scripts/license_gate.py
+	@$(VI) "L1.5 lite spine: boot, bootstrap, one task reaches done" ./scripts/lite_smoke.sh
 	@./scripts/vi_summary.sh

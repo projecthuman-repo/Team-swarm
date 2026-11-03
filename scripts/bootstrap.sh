@@ -1,14 +1,51 @@
 #!/usr/bin/env bash
 # One-shot Tier A bootstrap: schema -> streams -> dev secrets -> schemas.
-# Run after `make up` (or `podman compose -f deploy/compose.yaml up -d`).
+# Run after `make up` (or `podman compose -f deploy/compose.yaml up -d`), or
+# after `make up-lite`: lite mode (apicurio/seaweedfs not running) skips the
+# Protobuf schema registration with a message instead of a failed curl.
+#
+#   scripts/bootstrap.sh            bootstrap the running spine
+#   scripts/bootstrap.sh --dry-run  detect the mode, print every step, touch nothing
 set -euo pipefail
 cd "$(dirname "$0")/.."
+
+DRY_RUN=0
+[ "${1:-}" = "--dry-run" ] && DRY_RUN=1
 
 DATABASE_URL="${DATABASE_URL:-postgres://postgres:dev@localhost:5432/swarm}"
 OPENBAO_ADDR="${OPENBAO_ADDR:-http://localhost:8200}"
 OPENBAO_TOKEN="${OPENBAO_TOKEN:-dev-root}"
 APICURIO_URL="${APICURIO_URL:-http://localhost:8081}"
-RUNTIME="$(command -v podman || command -v docker)"
+RUNTIME="$(command -v podman || command -v docker || true)"
+
+running() { # $1 = compose service name; true when a container for it runs
+  [ -n "$RUNTIME" ] && [ -n "$("$RUNTIME" ps -qf "name=$1" 2>/dev/null)" ]
+}
+
+LITE=0
+missing=""
+for svc in apicurio seaweedfs; do
+  running "$svc" || missing="$missing $svc"
+done
+if [ -n "$missing" ]; then
+  LITE=1
+  echo "==> lite mode:${missing} not running (make up-lite) — the steps that need them are skipped"
+else
+  echo "==> full spine detected"
+fi
+
+if [ "$DRY_RUN" = 1 ]; then
+  echo "==> dry run: would wait for postgres, ensure the langfuse database,"
+  echo "    apply db/schema.sql, create JetStream streams + consumers, seed"
+  echo "    OpenBao dev secrets (forgejo telegram slack discord)"
+  if [ "$LITE" = 1 ]; then
+    echo "==> dry run: would SKIP Protobuf schema registration (apicurio absent)"
+  else
+    echo "==> dry run: would register Protobuf schemas with Apicurio ($APICURIO_URL)"
+  fi
+  exit 0
+fi
+[ -n "$RUNTIME" ] || { echo "bootstrap: neither podman nor docker found" >&2; exit 1; }
 
 echo "==> waiting for postgres"
 for _ in $(seq 1 60); do
@@ -44,8 +81,14 @@ for chat in telegram slack discord; do
     -d "{\"data\":{\"token\":\"REPLACE_WITH_${chat^^}_BOT_TOKEN\"}}" >/dev/null
 done
 
-echo "==> registering Protobuf schemas with Apicurio (compatibility-gated)"
-./scripts/register_schemas.sh || echo "    (apicurio not ready yet — rerun scripts/register_schemas.sh)"
+if [ "$LITE" = 1 ]; then
+  echo "==> skipping Protobuf schema registration: apicurio is not running (lite spine)."
+  echo "    The swarm runs without it; the compatibility gate stays in CI (proto-compat)."
+  echo "    For the full spine: make up && ./scripts/register_schemas.sh"
+else
+  echo "==> registering Protobuf schemas with Apicurio (compatibility-gated)"
+  ./scripts/register_schemas.sh || echo "    (apicurio not ready yet — rerun scripts/register_schemas.sh)"
+fi
 
 echo
 echo "Bootstrap complete. Next steps:"
