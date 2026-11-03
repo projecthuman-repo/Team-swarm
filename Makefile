@@ -166,14 +166,13 @@ torch-cpu-lock: ## enable CPU torch wheels for the torch extras and re-lock (nee
 # Every check that needs a runtime host (Podman, GPU, the running spine).
 # Tasks that cannot prove their acceptance in a dev session append their
 # exact command here; deferred is not skipped — this target must pass on
-# the owner's runtime host.
+# the owner's runtime host. Each step runs through scripts/vi_step.sh (one
+# failure never hides the rest); scripts/vi_summary.sh fails at the end.
+VI := ./scripts/vi_step.sh
 verify-integration: ## run every deferred integration check (runtime host)
-	@echo "==> [L0.1] footprint baseline (wheels + images + disk + SLA latency)"
-	$(MAKE) --no-print-directory footprint
-	@echo "==> [L0.2/L0.4] ingest + relay images build from their Containerfiles"
-	$(RUNTIME) build -f deploy/Containerfile.ingest -t swarm-ingest:dev .
-	$(RUNTIME) build -f deploy/Containerfile.relay -t swarm-relay:dev .
-	@echo "==> [L1.1] CPU-only torch for the torch extras (needs download.pytorch.org)"
-	$(MAKE) --no-print-directory torch-cpu-lock
-	@echo "==> [L1.2] license gate (needs syft)"
-	uv run --no-sync python .forgejo/scripts/license_gate.py
+	@$(VI) --reset
+	@$(VI) "L0.1 footprint (wheels + images + disk + SLA latency)" $(MAKE) --no-print-directory footprint
+	@$(VI) "L0.2/L0.4/L1.4 images build within size targets" ./scripts/image_sizes.sh
+	@$(VI) "L1.1 CPU-only torch for the torch extras" $(MAKE) --no-print-directory torch-cpu-lock
+	@$(VI) "L1.2 license gate (syft)" uv run --no-sync python .forgejo/scripts/license_gate.py
+	@./scripts/vi_summary.sh

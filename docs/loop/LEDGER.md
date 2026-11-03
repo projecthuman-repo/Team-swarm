@@ -49,3 +49,13 @@ where it went) or `generated` (the file stays, with a header saying so).
 | `.forgejo/fixtures/tool_output.json` | extended | L1.3 — final newline added by end-of-file-fixer; headroom gate still PASS |
 | `make hooks`; CI + `ci-local` pre-commit step | extended (new) | L1.3 |
 | `pre-commit` | extended (dev group) | pyproject.toml / uv.lock / requirements-dev.txt |
+| `.dockerignore` | generated (new) | L1.4 — repo root |
+| `deploy/Containerfile.agent` | extended | L1.4 — uv builder (`--group agent`, tests/pyc stripped) + slim runtime with git; same app COPY list, uid 10001, same CMD |
+| `deploy/Containerfile.ingest` | extended | L1.4 — uv builder `--only-group ingest`, four unused packages skipped (D-017) |
+| `deploy/Containerfile.relay` | extended | L1.4 — node:22-slim builder (`npm ci`, typecheck, esbuild) + distroless nodejs22 nonroot runtime, `CMD ["dist/relay.js"]` |
+| `relay/package.json` / `package-lock.json` | extended | L1.4 — esbuild 0.25.12 devDependency, `build` script; start/start:cdc/typecheck kept |
+| relay CDC `command` comment | extended | L1.4 — `["dist/relay_cdc.js"]` |
+| `scripts/image_sizes.sh` | generated (new) | L1.4 — builds agent/ingest/relay, targets 700/300/160 MB |
+| L0.2/L0.4 image-build lines in `verify-integration` | moved | L1.4 — into `scripts/image_sizes.sh` (same builds + size checks) |
+| `scripts/vi_step.sh` / `scripts/vi_summary.sh` | generated (new) | L1.4 — verify-integration recorder + summary (D-019) |
+| `tests/test_containerfiles.py` | generated (new) | L1.4 — static Containerfile checks |

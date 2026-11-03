@@ -137,3 +137,32 @@ unaffected. pre-commit joined the `dev` group (MIT), so CI and
 `ci-local` run it from the locked env (`uv run --no-sync`). Hook repos are
 fetched from github.com, so the CI runner allow-list in OWNER_STOP gains
 `github.com`.
+
+**D-017 · Ingest image trimmed by evidence; the 300 MB target is at risk
+(L1.4).** `headroom-ai==0.31.0` pulls boto3, botocore, s3transfer and the
+51 MB `ast-grep` binary. Four compress() probes — the JSON gate fixture, the
+small code fixture, 127 KB of real code, a 4,000-line log — produce
+byte-identical output (same digest) with and without them, so the ingest
+builder skips them with `uv sync --no-install-package` (declarative; uv.lock
+unchanged): 73 MB saved. The ingest venv is then 236 MB apparent, measured
+by building it with the exact RUN line. That leaves 64 MB for the
+`python:3.12-slim` base under the 300 MB cap, so the image is expected to
+land above it (the rest is litellm 117 MB and headroom 42 MB, both used).
+Deleting files from inside installed packages (e.g. litellm's proxy UI) is
+not done: fragile and unverifiable. The target stays as written in
+`scripts/image_sizes.sh`, which reports the real number on the runtime host.
+
+**D-018 · Relay runtime carries package.json (L1.4).** It declares
+`"type": "module"`, so `dist/*.js` load as ESM explicitly. Measured: Node
+22.23 also loads them without it (ESM syntax detection is on by default
+since 22.7), so this is explicitness, not a fix for a crash. The bundles are
+self-contained — both entrypoints ran from a directory holding only
+`dist/`.
+
+**D-019 · `verify-integration` keeps going (L1.4).** With several deferred
+checks, one failure (e.g. the ingest size) must not hide the others. Each
+step runs through `scripts/vi_step.sh "<task> <name>" <command>` (records
+PASS/FAIL, never aborts); `scripts/vi_summary.sh` prints the table and
+exits 1 if any step failed or none ran. The log is truncated, never
+deleted, at the start of a run. The L0.2/L0.4 image builds are folded into
+`scripts/image_sizes.sh` (same builds, now with size targets).
