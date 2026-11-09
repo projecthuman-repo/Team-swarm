@@ -134,3 +134,10 @@ where it went) or `generated` (the file stays, with a header saying so).
 | `eval/golden/README.md` | extended | L3.3 — pack table, verify-command rules |
 | `.gitignore` `eval/*.json` | extended | L3.3 — run outputs of `--single` (golden/*.json stay tracked) |
 | `tests/test_golden_pack.py` | generated (new) | L3.3 |
+| README title / intro / diagram caption | extended | L3.4 — v4.1.1 "Lean & Precise"; three-zone wording; observability line |
+| README v4.1 "Elevation" section, options matrix | kept | L3.4 — unchanged apart from the observability rows (canonical stack + Grafana option) |
+| README v4.1.1 section + targets table | generated (new) | L3.4 |
+| RUNBOOK §2 migrations 006–009, §10 locked CI + zones, Footprint section, version pins | extended | L3.4 |
+| `.env.example` | extended | L3.4 — 22 previously undocumented variables the code reads, with their defaults |
+| `relay/package.json` + lockfile version | extended | L3.4 — 4.0.0 → 4.1.1 |
+| `tests/test_docs_consistency.py` | generated (new) | L3.4 |

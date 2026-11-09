@@ -416,3 +416,17 @@ embedder comparison already replays the entire pack twice with the
 per-role report, so it is labelled L2.3/L3.3 rather than adding a third
 and fourth 10-task run. (f) `eval/last_report.md` is gitignored (v4.1);
 OWNER_STOP asks the owner to commit it with `git add -f`.
+
+**D-032 · Docs scope (L3.4).** (a) "Every env var read by code" is checked
+for the Python packages (`agent ingest scripts skills .forgejo/scripts`)
+and the relay's TypeScript; the knobs of the runtime-host shell scripts
+(`LITE_SMOKE_*`, `OBS_SMOKE_TIMEOUT_S`, `VI_LOG`, …) are documented in each
+script's header instead — they are not swarm configuration. `GITHUB_BASE_REF`
+is set by the CI platform, not the operator. (b) The 22 variables the scan
+found undocumented predate this loop; they are listed commented-out with
+the defaults read from the code, so `.env.example` stays a no-op copy.
+(c) Version strings in file headers that say "v4.0" (Makefile, schema.sql,
+AGENTS.md) describe when the file was introduced and are left alone;
+AGENTS.md is agent context and is only edited where a rule changed (L3.1).
+(d) The relay lockfile's own `version` field was synced with
+`npm install --package-lock-only`; no dependency changed.

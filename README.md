@@ -1,11 +1,12 @@
-# Team-swarm — Overnight Agent Swarm v4.1 "Elevation"
+# Team-swarm — Overnight Agent Swarm v4.1.1 "Lean & Precise"
 
 A self-hosted, licence-clean multi-agent coding swarm: autonomous agents
 (backend / frontend / review / triage) pick up tasks overnight, write code
 with [aider](https://github.com/Aider-AI/aider) + **Ornith-1.0** on local
 inference, open PRs on your own Forgejo, and merge to `integration` only
-when every CI gate is green. No cloud calls, no agent egress, everything
-permissively licensed (Apache/MIT/BSD/MPL — enforced by a fail-closed gate).
+when every CI gate is green. No cloud calls, no agent egress, and everything
+that ships is permissively licensed (Apache/MIT/BSD/MPL — a fail-closed gate;
+the three licence zones are in [conventions/licensing.md](conventions/licensing.md)).
 
 ```
                           ┌─────────────────────────────────────────────┐
@@ -33,7 +34,7 @@ permissively licensed (Apache/MIT/BSD/MPL — enforced by a fail-closed gate).
   └───┬────┘   └────┬────┘    └────┬─────┘    └────┬─────┘  in sandboxed containers
       ▼             ▼              ▼               ▼
   OpenBao (leased secrets)  SeaweedFS (artifacts)  Valkey (locks · budgets)
-                     OpenSearch + Langfuse (logs · traces · token spend)
+   OpenSearch (logs) · Jaeger (traces) · Prometheus + Perses (SLA dashboards) · Langfuse
 ```
 
 ## Quickstart (Tier A — one laptop, Podman, no Kubernetes)
@@ -148,6 +149,7 @@ scripts/               # bootstrap, schema registration, task injection, qualifi
 | 48–80 GB | Ornith-1.0-9B bf16 (`9b-bf16`) / 35B FP8 | `make models-bf16` / vLLM |
 | 8×80 GB or API | Ornith-1.0-397B | vLLM multi-GPU, or hosted via the LiteLLM opt-in fallback |
 | Fallback | gpt-oss:20b or qwen2.5-coder (Apache-2.0) | Ollama |
+| Embeddings (any hardware, CPU) | fastembed `BAAI/bge-small-en-v1.5` (384-dim, ONNX — no torch); option `BAAI/bge-m3` (1024) via the same fastembed path | `make sync EXTRAS="embeddings"` |
 
 KV-cache headroom matters at 256K context: the tier thresholds in
 `agent/capacity.py` (`9b-q4` ≈8 GB, `35b-q4` ≈24 GB, `9b-bf16` ≈22 GB
@@ -181,7 +183,8 @@ docs ships runnable:
 | LangGraph orchestration (durable graphs, HIL) | bespoke loop | `make graph` (`HIL=1` pauses before work; `requirements-orchestration.txt`) |
 | CrewAI declarative crews | bespoke roles | `make crew TITLE="..."` |
 | CDC outbox relay (higher throughput) | 250ms poll | `make relay-cdc` (publication ships in `db/schema.sql`) |
-| Langfuse + OpenSearch (baseline observability) | log lines | `make observability` + `LANGFUSE_*`/`OPENSEARCH_URL` envs (`agent/tracing.py` fans out) |
+| Canonical observability: OpenSearch logs · Jaeger traces · Prometheus + **Perses** SLA dashboard · Langfuse LLM traces | log lines | `make observability` (agents export OTLP to Jaeger and serve `/metrics`; Perses on :8090, Jaeger on :16686) + `LANGFUSE_*`/`OPENSEARCH_URL` envs (`agent/tracing.py` fans out) |
+| Grafana SLA dashboard (AGPL-3.0, Zone A) | Perses | import `deploy/observability/grafana-sla.json` into your Grafana; `make perses-migrate` converts it for Perses |
 | OpenObserve single-binary swap | OpenSearch+Langfuse | `make openobserve` + `OTEL_EXPORTER_OTLP_ENDPOINT` |
 | OTel tracing (Laminar/OpenLLMetry-style) | Langfuse | `OTEL_EXPORTER_OTLP_ENDPOINT` towards any collector |
 | Kata/Firecracker sandbox (dedicated kernel) | gVisor | `runtimeClassName: kata` (`deploy/k8s/runtimeclass-gvisor.yaml` ships both) |
@@ -194,6 +197,50 @@ docs ships runnable:
 | SLA tracking (≥70% / <10 min) | — | `make sla` |
 | Knowledge-pack seeding (Appendix C) | — | `make seed` after dropping docs in `knowledge/` |
 | Karpathy coding guidelines (Appendix D) | — | vendored as `karpathy-guidelines.md`, imported by `AGENTS.md` + aider; refresh with `scripts/update_karpathy.sh` |
+
+## v4.1.1 "Lean & Precise" — smaller footprint, sharper code generation
+
+Nothing from v4.0/v4.1 was removed; every option above still runs. What
+changed (task-by-task evidence: [docs/loop/STATE.md](docs/loop/STATE.md),
+decisions: [docs/loop/DECISIONS.md](docs/loop/DECISIONS.md), ledger:
+[docs/loop/LEDGER.md](docs/loop/LEDGER.md), sizes:
+[docs/footprint-baseline.md](docs/footprint-baseline.md)):
+
+| Area | What runs |
+|---|---|
+| Toolchain | `pyproject.toml` + `uv.lock` are the source of truth (`make lock`, `make sync`); `requirements*.txt` are generated for the pip fallback; CI installs from the lock with a cache; `make ci-local` runs the same gates; `make hooks` installs pre-commit |
+| Images | `.dockerignore`, multi-stage agent/ingest/relay images (uv/npm builders, slim and distroless runtimes); headroom-ai lives only in the ingest image (it cannot co-resolve with aider) |
+| Lite path | `make up-lite` (nats, postgres+pgvector, valkey, openbao) + `make ollama`; `make clean`, `make disk-usage`; capped sandbox tmpfs and orphan-workdir reaping |
+| Quality gate | two stages — a fast lint of the Python files the task changed, then the full checks + the task's verify command (`QUALITY_FAST_CHECK`); stage timings in `make sla` |
+| Retrieval | hybrid lesson search (pgvector + Postgres full-text, RRF); fastembed default embedder (no torch); signature index for Python/TS/JS/Go/Rust/Java, incremental (`make index-repo`) |
+| Storage | morning routine prunes published outbox rows (`OUTBOX_RETENTION_DAYS`) and runs `VACUUM (ANALYZE)` |
+| Licensing | three-zone gate: Zone C (ships) fail-closed permissive, Zone B (linked) denylist, Zone A (network services) any OSI licence — `make gate` |
+| Observability | Jaeger + Prometheus + Perses beside OpenSearch and Langfuse; agents serve the SLA gauges on `/metrics` |
+| Evaluation | ten-task golden pack, two per role (`python scripts/shadow_eval.py --dry-run`), per-role deltas |
+
+Developer and operator targets added in v4.1.1:
+
+| Target | Does |
+|---|---|
+| `make lock` | `uv lock` + regenerate every `requirements*.txt` (idempotent) |
+| `make sync` | `uv sync --frozen` — `GROUPS="agent dev"`, `EXTRAS="embeddings"` (never agent + ingest together) |
+| `make hooks` | install the pre-commit hooks (ruff, ruff-format, uv-lock, hygiene) |
+| `make ci-local` | every CI gate with the same commands |
+| `make up-lite` / `make down-lite` / `make ollama` | the lite spine and on-demand Ollama |
+| `make clean` | prune stopped containers, dangling images and volumes (keeps the swarm's data volumes) |
+| `make disk-usage` | container disk usage |
+| `make footprint` | wheel sizes per requirement set (+ image sizes when a runtime is up) |
+| `make gate` | license gate zones C and B, and the Zone A services table |
+| `make perses-migrate` | convert the Grafana dashboard with `percli` |
+| `make tools` / `make ingest-container` | the isolated `headroom` CLI / one issue sync inside the ingest image |
+| `make torch-cpu-lock` | re-lock the torch extras to CPU-only wheels (needs download.pytorch.org) |
+| `make verify-integration` | every check that needs a container runtime, GPU or the running spine — run it on the runtime host |
+
+Upgrading from v4.1: `make migrate` (migrations 006–009), re-run
+`make bootstrap`, then `python scripts/seed_knowledge.py --reembed` (the
+default embedder changed; a v4.1 `.env` that pins
+`EMBEDDING_MODEL=all-MiniLM-L6-v2` keeps the same vectors and needs no
+re-embed) and `make index-repo REPO=<path>` to rebuild the signature index.
 
 ## v4.1 "Elevation" — best code as output
 

@@ -16,6 +16,9 @@ ends with its **Verify** step. Tier A (Podman) is the dev path; Tier B
 | SeaweedFS | 4.3x |
 | k3s / Istio | 1.36.x / 1.30.x (ambient GA since 1.24) |
 | Node / Python | 22 / 3.12 |
+| uv | 0.11 (lock written by 0.11.32) |
+| Jaeger / Prometheus / Perses | 2.22.0 / v3.15.1 / v0.55.1 |
+| fastembed / prometheus-client | 0.9.x / 0.26.x |
 
 ## 1. Contracts
 
@@ -40,6 +43,19 @@ and idempotently by `make bootstrap`.
 
 **Verify:** `\dt` lists `tasks`, `outbox`, `lessons`; `\d lessons` shows
 `vector(384)` and the hnsw index.
+
+**Migrations (v4.1.1).** Existing databases run `make migrate`; fresh
+installs get everything from `db/schema.sql`. All are idempotent.
+
+| migration | adds |
+|---|---|
+| `006_gate_timing.sql` | `tasks.gate_stage1_ms`, `tasks.gate_stage2_ms` — first-pass timings of the two-stage gate |
+| `007_lessons_fts.sql` | `lessons.fts` (generated tsvector) + GIN index + `match_lessons_hybrid()` (dense + full-text, RRF) |
+| `008_lessons_source.sql` | `lessons.source`, `lessons.content_sha` + a unique index on `source` for `tag='codex-index'` (incremental signature index) |
+| `009_task_tokens.sql` | `tasks.tokens_spent` (source of the `swarm_tokens_per_merged_pr` gauge) |
+
+**Verify:** `\df match_lessons_hybrid` lists the function; `make
+index-repo REPO=.` twice reports every record unchanged the second time.
 
 **Embeddings (L2.3).** The default embedder is fastembed (ONNX Runtime, no
 torch — extra `embeddings`) with `BAAI/bge-small-en-v1.5`, 384-dim, matching
@@ -158,7 +174,32 @@ All required, any non-zero exit blocks auto-merge: `ruff`, `pytest --cov`
 the Headroom compression gate (headroom-ai fixtures), and the fail-closed license gate
 (`.forgejo/scripts/license_gate.py`, needs [syft](https://github.com/anchore/syft)).
 
-**Verify:** add an AGPL dep on a test branch → gate exits 1, merge blocked.
+**Locked CI (v4.1.1).** The `gates` job installs from the lockfile
+(`uv sync --frozen --group agent --group dev`, uv cache keyed on
+`uv.lock`) and fails if the lock is stale (`uv lock --check`), if the
+`embeddings` extra pulls torch, if `requirements*.txt` differ from a fresh
+`make lock`, or if `agent/gen/` differs from a fresh protoc run. Every gate
+runs with `uv run --no-sync`. The Headroom gate runs in its own venv
+(headroom-ai cannot co-resolve with aider). `make ci-local` runs the same
+commands on a developer machine; `make hooks` adds the pre-commit subset.
+Required checks on the protected branches: `gates` and `proto-compat`.
+
+**License zones.** The gate runs twice (`conventions/licensing.md`):
+`--zone C` — everything that ships (`agent ingest relay skills scripts`,
+`pyproject.toml`, `uv.lock`, `relay/package-lock.json`): permissive
+allowlist, fail-closed, a missing path or failed scan is exit 2;
+`--zone B` — the whole repo: AGPL/SSPL/BUSL/Commons Clause denylist.
+`--zone A` prints the network-services table (Forgejo GPL-3.0-or-later,
+OpenObserve and Grafana AGPL-3.0, …) and exits 0. `make gate` runs all
+three.
+
+**Diff size.** Measured against `integration` when it exists, else `main`;
+enforced on the auto-merge path (`integration`), reported for PRs into
+`main`; `uv.lock`, `requirements*.txt` and `agent/gen/` are excluded
+because CI proves they are generated.
+
+**Verify:** add an AGPL dep on a test branch → zone C and zone B both exit
+1, merge blocked; add a GPL-3.0 dep → zone C exits 1, zone B passes.
 
 ## 11. Observability
 
@@ -236,6 +277,30 @@ issues), `make sla` (completion rate, publish→claim latency, p95 pickup),
   (green rate + measured Headroom savings) → verifier audit of last
   night's merges → `headroom learn` dry-run (corrections ship as a
   feature/* PR, never a direct context write).
+
+## Footprint (v4.1.1)
+
+`make footprint` prints compressed wheel sizes per requirement set and,
+with a container runtime, image sizes, `system df` and the SLA latency
+lines; the per-phase tables are in `docs/footprint-baseline.md`.
+
+- **Targets:** agent image ≤ 700 MB, ingest ≤ 300 MB, relay ≤ 160 MB
+  (`scripts/image_sizes.sh`, run by `make verify-integration`).
+- **Keeping it small:** the default embedder is fastembed (the
+  `embeddings` set is ~60 MB of wheels; the torch route is opt-in via
+  `embeddings-torch`, CPU-only wheels with `make torch-cpu-lock`);
+  images are multi-stage with a `.dockerignore`; the relay ships as an
+  esbuild bundle on distroless.
+- **Lite path:** `make up-lite` runs four services instead of seven;
+  `make ollama` adds inference on demand.
+- **Disk hygiene:** `make disk-usage`, `make clean` (never removes the
+  swarm's data volumes), agent `/tmp` capped by `SANDBOX_TMPFS_SIZE`,
+  orphaned task workdirs reaped on worker boot, and the morning routine
+  prunes published outbox rows (`OUTBOX_RETENTION_DAYS`) and vacuums.
+- **Runtime-host checks:** `make verify-integration` runs everything a dev
+  session cannot (image builds and sizes, syft scans, lite and
+  observability smokes, real-Postgres tests, the embedder shadow-eval) and
+  fails if any step fails.
 
 ## Agent coding guidelines (Appendix D)
 
