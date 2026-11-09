@@ -127,3 +127,10 @@ where it went) or `generated` (the file stays, with a header saying so).
 | legacy `EMBEDDING_MODEL=all-MiniLM-L6-v2` | kept | Phase-2 fixes — served by fastembed via `FASTEMBED_ALIASES` |
 | `index_repo` pruning | extended | Phase-2 fixes — only vanished/unindexable sources |
 | `scripts/qualify_stage1.py` orphan check | extended | Phase-2 fixes — within OUTBOX_RETENTION_DAYS |
+| `scripts/torch_cpu_lock.sh` | extended | restores pyproject.toml + uv.lock on failure (follow-up from the Phase-2 close-out) |
+| `eval/golden/001–003` | kept | L3.3 — unchanged |
+| `eval/golden/004–010` | generated (new) | L3.3 — frontend ×2, review ×2, triage ×2, backend swarm-hard ×1 |
+| `shadow_eval.py --dry-run`, per-role deltas | generated (new) | L3.3 — existing modes unchanged |
+| `eval/golden/README.md` | extended | L3.3 — pack table, verify-command rules |
+| `.gitignore` `eval/*.json` | extended | L3.3 — run outputs of `--single` (golden/*.json stay tracked) |
+| `tests/test_golden_pack.py` | generated (new) | L3.3 |

@@ -399,3 +399,20 @@ orphan is ignored, a fresh one still fails the stage). Five refuted (two
 were duplicates of confirmed ones; second-repo indexing is D-025(c);
 OWNER_STOP is a close-out artifact; the `pg` fixture publication concern
 needs a database where `schema.sql` was never applied to `public`).
+
+**D-031 · Golden pack design (L3.3).** (a) `verify_cmd` is exec'd without a
+shell and inside the agent image (Python + git, no Node), so the seven new
+checks are single `python -c` assertion programs over the produced files —
+frontend output is parsed with the standard library instead of a JS
+toolchain. (b) Each check was proven in both directions by a fixture pair
+(correct → 0; wrong and empty → non-zero). (c) The engine sees the verify
+command as its success criterion (T3.1), so review tasks grade format,
+location and severity of the finding rather than blind discovery; stated
+in `eval/golden/README.md`. (d) swarm-hard is carried both as
+`"labels": ["swarm-hard"]` and as the `[swarm-hard]` title marker that
+`agent/planner.py` and `agent/router.py` read (the Task proto has no
+label field). (e) "The full run is in verify-integration": the L2.3
+embedder comparison already replays the entire pack twice with the
+per-role report, so it is labelled L2.3/L3.3 rather than adding a third
+and fourth 10-task run. (f) `eval/last_report.md` is gitignored (v4.1);
+OWNER_STOP asks the owner to commit it with `git add -f`.

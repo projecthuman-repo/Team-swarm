@@ -14,3 +14,4 @@ deploy/headroom-assets/
 eval/last_report.md
 eval/default.json
 eval/candidate.json
+eval/*.json

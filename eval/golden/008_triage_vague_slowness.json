@@ -1,0 +1,5 @@
+{
+  "title": "Triage this inbound request into one well-specified task: \"the app is slow sometimes, pls fix\". Write triage/slow-app.md starting with the lines `role: <backend|frontend|review|triage>`, `title: <imperative summary>`, `verify_cmd: <one deterministic command>`, followed by the sections `## Reproduction`, `## Scope` and `## Out of scope` (each non-empty). Do not change any code.",
+  "role": "triage",
+  "verify_cmd": "python -c 'import pathlib, re\ntext = pathlib.Path(\"triage/slow-app.md\").read_text()\nhead = dict(l.split(\":\", 1) for l in text.splitlines()[:6] if re.match(r\"(role|title|verify_cmd):\", l))\nassert head[\"role\"].strip() in {\"backend\", \"frontend\", \"review\", \"triage\"}, head\nassert len(head[\"title\"].strip()) >= 10 and head[\"verify_cmd\"].strip()\nfor section in (\"Reproduction\", \"Scope\", \"Out of scope\"):\n    body = re.search(rf\"^## {section}\\s*\\n(.*?)(?=^## |\\Z)\", text, re.S | re.M)\n    assert body and body.group(1).strip(), section'"
+}
