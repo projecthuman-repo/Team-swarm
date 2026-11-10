@@ -52,9 +52,11 @@ kubectl create configmap litellm-config -n swarm \
   --dry-run=client -o yaml | kubectl apply -f -
 kubectl apply -f litellm.yaml  # v4.1 T4.3 (local-primary gateway)
 kubectl apply -f headroom.yaml # v4.1 T1.2 (seed the assets PVC first)
-# v4.2 T8.1 — Strix security lane (opt-in, augments bandit). Runs as a Job
-# on demand; apply only when you want the dynamic scan available.
-#   kubectl apply -f strix.yaml
+# v4.2 T8.1 — Strix security lane: not a cluster workload (review R10). It
+# runs the Strix CLI from the locked `security` group on the security-lane
+# host (`make strix`) and in the Forgejo `security` workflow; the v4.2 Job
+# manifest named an image upstream does not publish and needed a privileged
+# Docker-in-Docker sidecar.
 
 echo "Verify:  istioctl ztunnel-config workloads   # agents in ambient, mTLS"
 echo "Verify:  kubectl exec deploy/agent-backend -n swarm -- curl -m5 https://example.com  # must time out"

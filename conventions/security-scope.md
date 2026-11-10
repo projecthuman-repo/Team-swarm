@@ -20,12 +20,18 @@ test what you own" rule, and to keep the swarm ethical and legal:
 
 ## Enforcement
 
-- The Strix service (`deploy/compose.yaml` profile `security`) sits on a
-  dedicated lane, not the sealed coding container, and its target list is
-  restricted to in-org repos by config.
-- `deploy/k8s/strix.yaml` runs in the `swarm` namespace under the same
-  default-deny NetworkPolicy; the only reachable inference is the
-  self-hosted `LLM_API_BASE` (LiteLLM/vLLM serving Ornith).
+- Strix runs as its upstream CLI from the locked `security` dependency
+  group (`make strix` / `make strix-scan`, one script) on a dedicated
+  security-lane host — never in the sealed coding container, and in no image
+  the swarm builds. The target is `STRIX_TARGET` (default: this repository);
+  point it only at in-org repos.
+- The CLI runs the target in its own sandbox container, `STRIX_IMAGE`,
+  pinned to the tag the locked strix-agent declares. No swarm container
+  mounts the host's container socket for it.
+- The only inference it reaches is the self-hosted `LLM_API_BASE`
+  (LiteLLM/vLLM serving Ornith); telemetry is off (`STRIX_TELEMETRY=false`).
+- There is no Strix compose service or Kubernetes Job (review R10): v4.2's
+  named an image upstream does not publish.
 - The CI security workflow (`.forgejo/workflows/security.yaml`) only ever
   scans the repo it runs in.
 

@@ -282,14 +282,98 @@ def test_codex_lane_is_hardened_like_the_agents_but_keeps_its_egress():
         assert services[name]["networks"] == ["swarm-internal"]  # sealed agents unchanged
 
 
-def test_strix_lane_uses_the_variables_strix_reads_and_no_telemetry():
-    env = yaml.safe_load(_text("deploy", "compose.yaml"))["services"]["strix"]["environment"]
-    assert env["STRIX_LLM"] == "openai/swarm-local" and env["STRIX_TELEMETRY"] == "false"
+def test_strix_lane_runs_the_cli_from_the_locked_group():
+    # review R10: one script behind `make strix`, `make strix-scan` and the workflow
+    script = _text("scripts", "strix_quick_scan.sh")
+    assert "uv sync -q --frozen --no-install-project --only-group security" in script
+    assert '"$ENV_DIR/bin/strix" -n -t "$TARGET" -m "$MODE" "$@"' in script
+    for default in ('MODE="${STRIX_SCAN_MODE:-quick}"', 'TARGET="${STRIX_TARGET:-./}"',
+                    'STRIX_TELEMETRY="${STRIX_TELEMETRY:-false}"',
+                    'LLM_API_BASE="${LLM_API_BASE:-http://localhost:4000/v1}"'):  # fmt: skip
+        assert default in script, default
     workflow = _text(".forgejo", "workflows", "security.yaml")
-    assert "--only-group security" in workflow and "pip install --quiet -r" not in workflow
-    assert "--output json" not in workflow and "strix_runs/*/vulnerabilities.json" in workflow
+    assert (
+        "./scripts/strix_quick_scan.sh --scope-mode diff --diff-base origin/integration" in workflow
+    )
+    assert "pip install --quiet -r" not in workflow and "--output json" not in workflow
     assert "continue-on-error: true" in workflow  # still advisory, as v4.2 shipped it
     assert not os.path.isdir(os.path.join(ROOT, ".github", "workflows"))  # Forgejo Actions only
+
+
+def test_make_strix_and_strix_scan_share_the_script():
+    import shutil
+    import subprocess
+
+    if shutil.which("make") is None:
+        pytest.skip("make not installed")
+    for target in ("strix", "strix-scan"):
+        # under `make ci-local` this is a nested make: drop its directory banner
+        out = subprocess.run(
+            ["make", "-n", "--no-print-directory", target],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        assert out.strip() == "./scripts/strix_quick_scan.sh", (target, out)
+
+
+def test_no_compose_or_k8s_file_names_the_unpublished_strix_image():
+    import glob
+
+    files = glob.glob(os.path.join(ROOT, "deploy", "**", "*.y*ml"), recursive=True)
+    assert len(files) > 10
+    for path in files:
+        with open(path) as f:
+            assert "ghcr.io/usestrix/strix:" not in f.read(), path
+    assert not os.path.exists(os.path.join(ROOT, "deploy", "k8s", "strix.yaml"))
+    services = yaml.safe_load(_text("deploy", "compose.yaml"))["services"]
+    assert "strix" not in services
+    # no swarm container mounts the host's container socket any more
+    for name, service in services.items():
+        for volume in service.get("volumes", []):
+            assert "docker.sock" not in str(volume), name
+
+
+@pytest.fixture
+def strix_env():
+    env_dir = os.environ.get("STRIX_ENV")
+    if not env_dir or not os.path.exists(os.path.join(env_dir, "bin", "strix")):
+        reason = "STRIX_ENV is not set to an environment synced with --only-group security"
+        if os.environ.get("REQUIRE_STRIX_ENV") == "1":
+            pytest.fail(f"REQUIRE_STRIX_ENV=1 but {reason}")
+        pytest.skip(f"{reason}; `make ci-local` provides it")
+    return env_dir
+
+
+def test_strix_image_is_the_default_the_locked_package_declares(strix_env):
+    import subprocess
+
+    code = (
+        "from strix.config.settings import RuntimeSettings, TelemetrySettings;"
+        "print(RuntimeSettings.model_fields['image'].default);"
+        "print(RuntimeSettings.model_fields['image'].alias);"
+        "print(TelemetrySettings.model_fields['enabled'].alias)"
+    )
+    out = subprocess.check_output([os.path.join(strix_env, "bin", "python"), "-c", code])
+    image, image_var, telemetry_var = out.decode().split()
+    assert image_var == "STRIX_IMAGE" and telemetry_var == "STRIX_TELEMETRY"
+    assert image.startswith("ghcr.io/usestrix/strix-sandbox:")
+    assert f'STRIX_IMAGE="${{STRIX_IMAGE:-{image}}}"' in _text("scripts", "strix_quick_scan.sh")
+    assert f"#STRIX_IMAGE={image}" in _text(".env.example")
+    assert f"`{image}`" in _text("conventions", "licensing.md")
+
+
+def test_strix_flags_the_lane_uses_exist_in_the_locked_cli(strix_env):
+    import subprocess
+
+    usage = subprocess.run(
+        [os.path.join(strix_env, "bin", "strix"), "--help"], capture_output=True, text=True
+    ).stdout
+    for flag in ("-n", "-t TARGET", "-m {quick,standard,deep}", "--scope-mode {auto,diff,full}",
+                 "--diff-base DIFF_BASE"):  # fmt: skip
+        assert flag in usage, flag
+    assert "--output" not in usage  # v4.2's `--output json` never existed here
 
 
 def test_strix_findings_reads_what_strix_agent_writes():

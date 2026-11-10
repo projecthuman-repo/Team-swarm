@@ -68,6 +68,13 @@ jobs:
           UV_PROJECT_ENVIRONMENT=/tmp/headroom-env \
             uv sync --frozen --no-install-project --only-group headroom-proxy
 
+      - name: strix environment from uv.lock (isolated, review R10)
+        # The locked `security` group — the Strix lane's CLI. Tests read the
+        # sandbox image default and the scan flags from it.
+        run: |
+          UV_PROJECT_ENVIRONMENT=/tmp/strix-env \
+            uv sync --frozen --no-install-project --only-group security
+
       # Every gate runs in the synced env; --no-sync keeps `uv run` from
       # re-syncing to the default groups and dropping the agent group.
       - name: lint (ruff)
@@ -77,6 +84,7 @@ jobs:
         # floor = current honest coverage; ratchet it up as the suite grows
         env:
           HEADROOM_PROXY_ENV: /tmp/headroom-env
+          STRIX_ENV: /tmp/strix-env
         run: uv run --no-sync pytest --cov=agent --cov=ingest --cov-fail-under=20 -q
 
       - name: security scan (bandit)

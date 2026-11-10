@@ -34,6 +34,13 @@ export HEADROOM_PROXY_ENV="${TMPDIR:-/tmp}/headroom-env"
 UV_PROJECT_ENVIRONMENT="$HEADROOM_PROXY_ENV" \
   uv sync -q --frozen --no-install-project --only-group headroom-proxy
 
+step "strix environment from uv.lock (isolated — the security group conflicts with the agent group)"
+# The Strix lane's CLI (review R10). Tests read its defaults (sandbox image,
+# flags) from this environment so the pinned values cannot drift from the lock.
+export STRIX_ENV="${TMPDIR:-/tmp}/strix-env"
+UV_PROJECT_ENVIRONMENT="$STRIX_ENV" \
+  uv sync -q --frozen --no-install-project --only-group security
+
 step "lint (ruff)"
 uv run --no-sync ruff check .
 

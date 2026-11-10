@@ -823,3 +823,40 @@ applies to every scan, acknowledged or not: a package that merely
 reproduces the GPL text is still caught by "GPL", which no sentence
 removal touches. (d) Result on the real lock: unchanged, exit 0; both
 packages now report exactly `LGPL, GPL`.
+
+**D-043 · The Strix lane is the upstream CLI; the container lane moved (R10).**
+(a) *What upstream ships.* strix-agent 1.7.0 (the locked `security`
+group) is a CLI that starts one sandbox image. Its default is read from
+the installed package, `strix/config/settings.py`:
+`RuntimeSettings.image = "ghcr.io/usestrix/strix-sandbox:1.3.0"` (alias
+`STRIX_IMAGE`). That value is pinned in the script, `.env.example` and a
+Zone A row, and a test compares all three with the installed package, so
+a lock bump that changes the default turns the test red.
+(b) *Moved, not dropped.* The compose service `strix` and
+`deploy/k8s/strix.yaml` named a `strix:latest` image in the same ghcr.io
+namespace. Three reasons the job moves to the CLI lane instead of being
+repaired in place: upstream publishes no such image; a swarm-built one
+cannot ship (its closure has `cvss`, LGPL — Zone C blocks it); and the
+service mounted the host's `docker.sock` into a container with egress
+(the k8s Job: a privileged DinD sidecar). The CLI on the security-lane
+host does the same job — a dynamic scan of an in-org target, findings to
+lessons — with the host's own Docker and no swarm container holding the
+socket. Entry points kept: `make strix` (was `compose --profile security
+up -d`) and `make strix-scan` run the same script; the workflow
+`security` runs it with `--scope-mode diff --diff-base origin/integration`.
+(c) *"The `security` profile name keeps working"* is read as: `make strix`
+stays the entry point of that profile, and `docker compose --profile
+security …` still parses (an empty profile is not an error; verified with
+`config -q`). The compose header marks the profile as moved. The uv group
+and the workflow keep the same name.
+(d) *The workflow calls the script.* Since R7 it already installed the
+locked group, but with its own inline copy of the scan and routing
+commands; it now runs the shared script with `--scope-mode diff
+--diff-base origin/integration`, so the lane has one definition. It stays
+advisory (`continue-on-error`), as v4.2 shipped it.
+(e) *Tests need the CLI.* Two tests read the installed package; `ci-local`
+and `ci.yaml` sync the group into its own environment (`STRIX_ENV`, like
+`HEADROOM_PROXY_ENV` — the group conflicts with `agent`). Without it the
+tests skip, or fail under `REQUIRE_STRIX_ENV=1`.
+(f) *Deferred:* the real scan needs Docker and the model gateway —
+`verify-integration`, step "Strix quick scan".

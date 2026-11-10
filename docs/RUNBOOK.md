@@ -383,18 +383,23 @@ Additive to everything above; `aider` stays default, `bandit` stays on.
   Claude key leased into OpenBao (`secret/data/swarm/claude`, field
   `api_key`). The escalated patch re-enters the green-build gate before any
   PR. With the flag off it fails closed to local retry — no egress.
-- **Strix security lane (T8):** `make strix-scan` runs a quick scan of this
-  repository from the locked `security` dependency group (strix-agent,
-  pinned in `uv.lock`; needs Docker and the model gateway, `LLM_API_BASE` /
-  `STRIX_LLM`; telemetry is off). CI runs
-  `.forgejo/workflows/security.yaml` from the same group, **advisory** first
-  (findings posted, PR not blocked); drop `continue-on-error` to promote to
-  blocking once the false-positive rate is acceptable. Strix writes
-  `strix_runs/<run>/vulnerabilities.json`;
-  `make strix-findings REPORT=<that file>` routes validated findings to
-  `lessons(tag='strix')` + needs-human issues. `make strix` (compose profile
-  `security`) and `deploy/k8s/strix.yaml` name a container image this
-  session could not verify — see `conventions/licensing.md`.
+- **Strix security lane (T8):** `make strix` (and `make strix-scan` — one
+  script, `scripts/strix_quick_scan.sh`) runs the Strix CLI from the locked
+  `security` dependency group on the security-lane host: `STRIX_SCAN_MODE`
+  (default `quick`), `STRIX_TARGET` (default this repository), the model
+  gateway `LLM_API_BASE` / `STRIX_LLM`, telemetry off. Needs Docker: the CLI
+  runs the target in its sandbox container, `STRIX_IMAGE`, pinned to the tag
+  the locked strix-agent declares (`ghcr.io/usestrix/strix-sandbox:1.3.0`).
+  CI runs `.forgejo/workflows/security.yaml` through the same script,
+  **advisory** first (findings posted, PR not blocked); drop
+  `continue-on-error` to promote to blocking once the false-positive rate is
+  acceptable. Strix writes `strix_runs/<run>/vulnerabilities.json`; validated
+  findings become `lessons(tag='strix')`, and
+  `make strix-findings REPORT=<that file>` also opens needs-human issues.
+  There is no Strix compose service or Kubernetes Job any more: v4.2's named
+  `ghcr.io/usestrix/strix:latest`, which upstream does not publish, and the
+  compose one mounted the host's container socket into a container with
+  egress (DECISIONS D-043).
   Targets are in-org repos only (`conventions/security-scope.md`).
 - **v4.2 dependencies:** `claude-agent-sdk` is the extra `escalation`,
   `strix-agent` the group `security` (conflicts with `agent`, `ingest` and

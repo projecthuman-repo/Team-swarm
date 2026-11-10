@@ -88,8 +88,8 @@ headroom: ## token-compression proxy sidecar (v4.1; seed assets first)
 litellm: ## model gateway: local primary, opt-in API fallback (v4.1)
 	$(COMPOSE) --profile litellm up -d
 
-strix: ## Strix autonomous pentest lane (v4.2; augments bandit, opt-in)
-	$(COMPOSE) --profile security up -d
+strix: ## Strix security lane (v4.2; augments bandit, opt-in): the Strix CLI from the locked `security` group — STRIX_SCAN_MODE, STRIX_TARGET
+	./scripts/strix_quick_scan.sh
 
 codex-engine: ## Codex engine lane (v4.2 T7.3; if not egress-sealable)
 	$(COMPOSE) --profile codex up -d --build
@@ -166,7 +166,7 @@ codex-audit: ## Codex offline egress audit — sealed vs lane (v4.2 T7.1)
 agents-md-check: ## AGENTS.md <= 32 KiB cross-tool constitution (v4.2 T7.5)
 	python .forgejo/scripts/agents_md_gate.py
 
-strix-scan: ## Strix quick scan of this repo from the locked `security` group (v4.2 T8; needs Docker + the model gateway)
+strix-scan: ## same lane as `make strix` (one script): a quick scan of this repo; needs Docker + the model gateway
 	./scripts/strix_quick_scan.sh
 
 strix-findings: ## route a Strix JSON report -> lessons + issues (REPORT=<f>)

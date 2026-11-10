@@ -22,7 +22,7 @@
 #   --profile openobserve    optional single-binary observability swap
 #   --profile headroom       token-compression proxy sidecar (v4.1 W1)
 #   --profile litellm        model gateway: local primary, opt-in API fallback (v4.1 T4.3)
-#   --profile security       Strix autonomous pentest lane, augments bandit (v4.2 T8.1)
+#   --profile security       MOVED (R10): no compose service; the Strix lane is `make strix` (CLI)
 #   --profile codex          Codex engine lane (fallback if not egress-sealable, v4.2 T7.3)
 
 networks:
@@ -345,35 +345,16 @@ services:
     networks: [swarm-internal]
     ports: ["${SWARM_BIND_ADDR:-127.0.0.1}:5080:5080"]
 
-  # ---- profile: security (Strix autonomous pentest lane, v4.2 T8.1) -----
-  # Augments the always-on bandit static scan with dynamic DAST. Heavier:
-  # needs Docker-in-the-loop and a running target, and it is offensive, so
-  # it runs on a DEDICATED lane against the swarm's own repos only
-  # (conventions/security-scope.md) — never the sealed coding container.
-  # Inference stays self-hosted via LLM_API_BASE -> LiteLLM/vLLM (Ornith).
-  # NOT VERIFIED (review R7): ghcr.io refuses an anonymous pull token for this
-  # image name and Strix's own repository only names
-  # ghcr.io/usestrix/strix-sandbox. The path that is pinned and locked is the
-  # `security` dependency group (strix-agent, uv.lock) used by the advisory
-  # `security` workflow and scripts/strix_quick_scan.sh.
-  strix:
-    image: ghcr.io/usestrix/strix:latest
-    profiles: [security]
-    environment:
-      LLM_API_BASE: http://litellm:4000/v1 # self-hosted Ornith via the gateway
-      STRIX_LLM: openai/swarm-local # the variable strix-agent 1.7.0 reads
-      STRIX_TELEMETRY: "false" # strix posts usage to posthog unless told not to
-      # v4.2 names, kept for an image that reads them (strix-agent 1.7.0 does
-      # not: scan mode and target are CLI flags there, -m / -t).
-      STRIX_MODEL: openai/swarm-local
-      STRIX_SCAN_MODE: quick
-      STRIX_TARGET: /work
-    volumes:
-      # Docker-in-the-loop: Strix runs targets in its own Docker sandbox.
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ./strix-work:/work
-    networks: [swarm-internal, egress] # egress reaches only in-org targets
-    restart: "no"
+  # ---- profile: security — MOVED to the Strix CLI lane (review R10) ------
+  # v4.2's `strix` service named a `strix:latest` image in Strix's ghcr.io
+  # namespace that upstream does not publish (Strix ships a CLI plus one sandbox image,
+  # ghcr.io/usestrix/strix-sandbox), and mounted the host's docker.sock into
+  # a container with egress. A swarm-built Strix image is not an option
+  # either: its closure has cvss (LGPL) — Zone C blocks it. The lane now runs
+  # the CLI from the locked `security` group on the host:
+  #     make strix          (scripts/strix_quick_scan.sh; also `make strix-scan`)
+  # and in the advisory Forgejo workflow `security`. There is no compose
+  # service in this profile any more.
 
   # ---- profile: codex (Codex engine lane — fallback for T7.1-negative) --
   # If scripts/codex_egress_audit.sh shows Codex cannot run egress-free, it

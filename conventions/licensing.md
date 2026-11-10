@@ -85,8 +85,7 @@ Every compose service and Kubernetes image the swarm runs but does not build.
 | Perses | `persesdev/perses:v0.55.1` | Apache-2.0 | A | `--profile observability` (canonical dashboards, L3.2) |
 | OpenObserve | `public.ecr.aws/zinclabs/openobserve:latest` | AGPL-3.0 | A | `--profile openobserve`; optional swap, unmodified, over HTTP |
 | Grafana | `grafana/grafana` (operator-run) | AGPL-3.0 | A | option: import `deploy/observability/grafana-sla.json`; unmodified, over HTTP |
-| Strix | `ghcr.io/usestrix/strix:latest` | Apache-2.0 | A | `--profile security` and `deploy/k8s/strix.yaml` (v4.2 T8). Image name not verified — ghcr.io refuses an anonymous pull token for it; the locked path is the `security` dependency group |
-| Docker-in-Docker | `docker:27-dind` | Apache-2.0 | A | sidecar of the Strix Job in `deploy/k8s/strix.yaml` (v4.2 T8) |
+| Strix sandbox | `ghcr.io/usestrix/strix-sandbox:1.3.0` | Apache-2.0 (Strix) + the licenses of the security tools inside the image | A | started by the Strix CLI on the security-lane host (`make strix`, `STRIX_IMAGE`; v4.2 T8, review R10) — the tag is the default the locked strix-agent 1.7.0 declares. Pulled and run unmodified, never built or redistributed by the swarm, in no compose file |
 
 ## Built images (Zone C contents)
 
