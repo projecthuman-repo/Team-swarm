@@ -11,6 +11,7 @@
  * deploy/compose.yaml) and a slot-tailing relay.
  */
 import { connect, headers, type NatsConnection } from "nats";
+import { createServer } from "node:http";
 import pg from "pg";
 
 const NATS_URL = process.env.NATS_URL ?? "nats://localhost:4222";
@@ -18,6 +19,23 @@ const DATABASE_URL =
   process.env.DATABASE_URL ?? "postgres://postgres:dev@localhost:5432/swarm";
 const POLL_MS = Number(process.env.RELAY_POLL_MS ?? 250);
 const BATCH = Number(process.env.RELAY_BATCH ?? 100);
+// Prometheus scrape target (Lean & Precise L3.2); 0 disables it.
+const METRICS_PORT = Number(process.env.RELAY_METRICS_PORT ?? 9464);
+
+let publishedTotal = 0;
+let tickFailuresTotal = 0;
+
+export function metricsText(): string {
+  return [
+    "# HELP swarm_relay_published_total Outbox rows published to JetStream.",
+    "# TYPE swarm_relay_published_total counter",
+    `swarm_relay_published_total ${publishedTotal}`,
+    "# HELP swarm_relay_tick_failures_total Relay ticks that failed and were retried.",
+    "# TYPE swarm_relay_tick_failures_total counter",
+    `swarm_relay_tick_failures_total ${tickFailuresTotal}`,
+    "",
+  ].join("\n");
+}
 
 const pool = new pg.Pool({ connectionString: DATABASE_URL });
 
@@ -67,11 +85,29 @@ async function main() {
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
 
+  if (METRICS_PORT > 0) {
+    createServer((req, res) => {
+      if (req.url === "/metrics") {
+        res.writeHead(200, { "Content-Type": "text/plain; version=0.0.4" });
+        res.end(metricsText());
+      } else {
+        res.writeHead(404).end();
+      }
+    })
+      // a busy port (a second relay on this host) must not stop publishing
+      .on("error", (err) =>
+        console.error(`relay: /metrics disabled on :${METRICS_PORT} (${err.message})`),
+      )
+      .listen(METRICS_PORT);
+  }
+
   while (!stopping) {
     try {
       const n = await relayOnce(nc);
+      publishedTotal += n;
       if (n > 0) console.log(`relay: published ${n} message(s)`);
     } catch (err) {
+      tickFailuresTotal++;
       console.error("relay: tick failed, retrying:", err);
     }
     await new Promise((r) => setTimeout(r, POLL_MS));

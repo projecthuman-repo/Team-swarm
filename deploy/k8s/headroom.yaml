@@ -22,7 +22,9 @@ spec:
         - name: headroom
           image: localhost:5000/swarm-headroom:latest # deploy/Containerfile.headroom
           env:
-            - { name: OPENAI_BASE_URL, value: http://vllm:8000/v1 }
+            # the upstream the 0.31.0 proxy forwards OpenAI-style requests to; it
+            # does not read OPENAI_BASE_URL (that is the client-side variable)
+            - { name: OPENAI_TARGET_API_URL, value: http://vllm:8000/v1 }
             - { name: HEADROOM_UPDATE_CHECK, value: "off" }
             - { name: HF_HUB_OFFLINE, value: "1" }
             - { name: ORT_STRATEGY, value: system }

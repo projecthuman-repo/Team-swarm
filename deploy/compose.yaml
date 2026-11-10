@@ -5,6 +5,11 @@
 # Hard Rule 1). Only ollama (model pulls), forgejo, and chat ingress sit
 # on `egress`.
 #
+# Host ports (review R5): every published port binds to
+# ${SWARM_BIND_ADDR:-127.0.0.1}. Rootful Podman and Docker do not forward
+# ports of containers that are only on an internal network; on those hosts
+# use `make up HOSTPORTS=1` (deploy/compose.hostports.yaml).
+#
 # Profiles (every documented option is runnable):
 #   (default)        core spine: nats, postgres+pgvector, apicurio, valkey,
 #                    seaweedfs, openbao, ollama
@@ -17,6 +22,8 @@
 #   --profile openobserve    optional single-binary observability swap
 #   --profile headroom       token-compression proxy sidecar (v4.1 W1)
 #   --profile litellm        model gateway: local primary, opt-in API fallback (v4.1 T4.3)
+#   --profile security       MOVED (R10): no compose service; the Strix lane is `make strix` (CLI)
+#   --profile codex          Codex engine lane (fallback if not egress-sealable, v4.2 T7.3)
 
 networks:
   swarm-internal:
@@ -47,8 +54,21 @@ x-agent-base: &agent-base
     OLLAMA_API_BASE: http://ollama:11434
     AIDER_MODEL: ollama/maxwell1500/ornith-9b:Q4_K_M
     FORGEJO_URL: http://forgejo:3000
+    # L3.2: spans + logs to Jaeger when the observability profile runs.
+    # Unset -> Jaeger; set it empty to disable, or point it at OpenObserve.
+    OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT-http://jaeger:4318}
+    # R4: lessons are embedded through the inference server's OpenAI-compatible
+    # /v1/embeddings (the agent image carries no embedder and has no egress).
+    # `make models` pulls the model. Fixed, like HEADROOM_STATS_URL below.
+    EMBEDDING_BACKEND: api
+    EMBEDDING_API_BASE: http://ollama:11434/v1
+    EMBEDDING_MODEL: all-minilm
+    # /metrics reads the Headroom proxy's /stats (swarm_headroom_savings_ratio)
+    # Fixed, not interpolated: a root .env carries the host-side localhost URL.
+    HEADROOM_STATS_URL: http://headroom:8787
   read_only: true
-  tmpfs: ["/tmp", "/home/swarm"] # writable HOME for git/aider state only
+  # L1.6: size-capped tmpfs; task workdirs live in /tmp (SANDBOX_WORKDIR)
+  tmpfs: ["/tmp:size=${SANDBOX_TMPFS_SIZE:-4g}", "/home/swarm:size=1g"] # writable HOME for git/aider state only
   cap_drop: [ALL]
   security_opt: ["no-new-privileges=true"]
   networks: [swarm-internal] # internal-only: no egress, Hard Rule 1
@@ -60,7 +80,7 @@ services:
     command: ["-js", "-sd", "/data"]
     volumes: ["nats-data:/data"]
     networks: [swarm-internal]
-    ports: ["4222:4222", "8222:8222"]
+    ports: ["${SWARM_BIND_ADDR:-127.0.0.1}:4222:4222", "${SWARM_BIND_ADDR:-127.0.0.1}:8222:8222"]
 
   postgres:
     # pgvector must be present for db/schema.sql (CREATE EXTENSION vector)
@@ -73,7 +93,7 @@ services:
       - pg-data:/var/lib/postgresql/data
       - ../db/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
     networks: [swarm-internal]
-    ports: ["5432:5432"]
+    ports: ["${SWARM_BIND_ADDR:-127.0.0.1}:5432:5432"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d swarm"]
       interval: 5s
@@ -92,19 +112,19 @@ services:
       postgres:
         condition: service_healthy
     networks: [swarm-internal]
-    ports: ["8081:8080"]
+    ports: ["${SWARM_BIND_ADDR:-127.0.0.1}:8081:8080"]
 
   valkey:
     image: valkey/valkey:9.0
     networks: [swarm-internal]
-    ports: ["6379:6379"]
+    ports: ["${SWARM_BIND_ADDR:-127.0.0.1}:6379:6379"]
 
   seaweedfs:
     image: chrislusf/seaweedfs:latest
     command: "server -s3"
     volumes: ["seaweed-data:/data"]
     networks: [swarm-internal]
-    ports: ["8333:8333"]
+    ports: ["${SWARM_BIND_ADDR:-127.0.0.1}:8333:8333"]
 
   openbao:
     image: openbao/openbao:2.5.0
@@ -112,13 +132,13 @@ services:
     environment:
       BAO_ADDR: http://127.0.0.1:8200
     networks: [swarm-internal]
-    ports: ["8200:8200"]
+    ports: ["${SWARM_BIND_ADDR:-127.0.0.1}:8200:8200"]
 
   ollama:
     image: ollama/ollama:latest
     volumes: ["ollama:/root/.ollama"]
     networks: [swarm-internal, egress] # egress only for model pulls
-    ports: ["11434:11434"]
+    ports: ["${SWARM_BIND_ADDR:-127.0.0.1}:11434:11434"]
 
   # ---- profile: swarm (relay + one agent per role, Appendix B) --------
   relay:
@@ -126,12 +146,13 @@ services:
       context: ..
       dockerfile: deploy/Containerfile.relay
     profiles: [swarm]
+    # CDC relay option (runbook §7): tail logical replication instead of
+    # polling. The image bundles both entrypoints into dist/ (L1.4) and its
+    # entrypoint is node; uncomment to switch:
+    # command: ["dist/relay_cdc.js"]
     environment:
       NATS_URL: nats://nats:4222
       DATABASE_URL: postgres://postgres:dev@postgres:5432/swarm
-      # CDC relay option (runbook §7): switch the command to tail logical
-      # replication instead of polling.
-      # command: ["npx", "tsx", "relay_cdc.ts"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -171,13 +192,13 @@ services:
       FORGEJO__server__HTTP_PORT: "3000"
     volumes: ["forgejo-data:/data"]
     networks: [swarm-internal, egress]
-    ports: ["3000:3000", "2222:22"]
+    ports: ["${SWARM_BIND_ADDR:-127.0.0.1}:3000:3000", "${SWARM_BIND_ADDR:-127.0.0.1}:2222:22"]
 
   # ---- profile: chat (Telegram baseline; Slack/Discord optional) -------
   chat-ingress:
     build:
       context: ..
-      dockerfile: deploy/Containerfile.agent
+      dockerfile: deploy/Containerfile.ingest # headroom-ai lives here (L0.2)
     profiles: [chat]
     command: ["python", "-m", "ingest.chat_ingress"]
     environment:
@@ -206,7 +227,7 @@ services:
       - --reasoning-parser=qwen3
       - --trust-remote-code
     networks: [swarm-internal, egress] # egress only for model download
-    ports: ["8000:8000"]
+    ports: ["${SWARM_BIND_ADDR:-127.0.0.1}:8000:8000"]
     deploy:
       resources:
         reservations:
@@ -222,13 +243,16 @@ services:
       dockerfile: deploy/Containerfile.headroom
     profiles: [headroom]
     environment:
-      # upstream the proxy forwards to; point at litellm:4000/v1 when the
-      # litellm profile is also up (chain: agent -> headroom -> litellm -> model)
-      OPENAI_BASE_URL: http://ollama:11434/v1
+      # The upstream the proxy forwards OpenAI-style requests to. The 0.31.0
+      # proxy reads OPENAI_TARGET_API_URL (not OPENAI_BASE_URL, the client-side
+      # variable): without it every request goes to api.openai.com, which this
+      # no-egress network answers with a 502. Point it at litellm:4000/v1 when
+      # the litellm profile is also up (agent -> headroom -> litellm -> model).
+      OPENAI_TARGET_API_URL: http://ollama:11434/v1
     volumes:
       - ./headroom-assets:/assets:ro # seeded by scripts/seed_headroom_assets.sh
     networks: [swarm-internal] # NO egress: assets are pre-provisioned (T1.4)
-    ports: ["8787:8787"]
+    ports: ["${SWARM_BIND_ADDR:-127.0.0.1}:8787:8787"]
     restart: unless-stopped
 
   # ---- profile: litellm (gateway — local primary, T4.3) ----------------
@@ -246,7 +270,7 @@ services:
     volumes:
       - ./litellm:/config:ro
     networks: [swarm-internal, egress] # egress used ONLY with the opt-in flag
-    ports: ["4000:4000"]
+    ports: ["${SWARM_BIND_ADDR:-127.0.0.1}:4000:4000"]
     restart: unless-stopped
 
   # ---- profile: qdrant (vector-store upgrade, >5-10M vectors) ----------
@@ -255,7 +279,7 @@ services:
     profiles: [qdrant]
     volumes: ["qdrant-data:/qdrant/storage"]
     networks: [swarm-internal]
-    ports: ["6333:6333"]
+    ports: ["${SWARM_BIND_ADDR:-127.0.0.1}:6333:6333"]
 
   # ---- profile: observability (baseline: OpenSearch + Langfuse) --------
   opensearch:
@@ -267,7 +291,7 @@ services:
       OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
     volumes: ["opensearch-data:/usr/share/opensearch/data"]
     networks: [swarm-internal]
-    ports: ["9200:9200"]
+    ports: ["${SWARM_BIND_ADDR:-127.0.0.1}:9200:9200"]
 
   langfuse:
     image: langfuse/langfuse:2
@@ -282,7 +306,36 @@ services:
       postgres:
         condition: service_healthy
     networks: [swarm-internal]
-    ports: ["3001:3000"]
+    ports: ["${SWARM_BIND_ADDR:-127.0.0.1}:3001:3000"]
+
+  # Canonical observability stack (Lean & Precise L3.2): Jaeger traces ·
+  # Prometheus metrics · Perses dashboards, beside OpenSearch logs and
+  # Langfuse LLM traces. Licences: conventions/licensing.md (Zone A).
+  jaeger:
+    image: jaegertracing/jaeger:2.22.0
+    profiles: [observability]
+    environment:
+      JAEGER_LISTEN_HOST: 0.0.0.0 # OTLP + UI reachable from the other containers
+    networks: [swarm-internal]
+    ports: ["${SWARM_BIND_ADDR:-127.0.0.1}:16686:16686", "${SWARM_BIND_ADDR:-127.0.0.1}:4318:4318"] # UI/API, OTLP/HTTP
+
+  prometheus:
+    image: prom/prometheus:v3.15.1
+    profiles: [observability]
+    volumes: ["./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
+    networks: [swarm-internal]
+    ports: ["${SWARM_BIND_ADDR:-127.0.0.1}:9090:9090"]
+
+  perses:
+    image: persesdev/perses:v0.55.1
+    profiles: [observability]
+    volumes:
+      # the image starts with --config=/etc/perses/config.yaml
+      - ./observability/perses/config.yaml:/etc/perses/config.yaml:ro
+      - ./observability/perses/resources.json:/etc/perses/provisioning/resources.json:ro
+      - ./observability/perses-sla.json:/etc/perses/provisioning/perses-sla.json:ro
+    networks: [swarm-internal]
+    ports: ["${SWARM_BIND_ADDR:-127.0.0.1}:8090:8080"]
 
   # ---- profile: openobserve (single-binary observability swap) ---------
   openobserve:
@@ -293,4 +346,42 @@ services:
       ZO_ROOT_USER_PASSWORD: dev-only-change-me
     volumes: ["openobserve-data:/data"]
     networks: [swarm-internal]
-    ports: ["5080:5080"]
+    ports: ["${SWARM_BIND_ADDR:-127.0.0.1}:5080:5080"]
+
+  # ---- profile: security — MOVED to the Strix CLI lane (review R10) ------
+  # v4.2's `strix` service named a `strix:latest` image in Strix's ghcr.io
+  # namespace that upstream does not publish (Strix ships a CLI plus one sandbox image,
+  # ghcr.io/usestrix/strix-sandbox), and mounted the host's docker.sock into
+  # a container with egress. A swarm-built Strix image is not an option
+  # either: its closure has cvss (LGPL) — Zone C blocks it. The lane now runs
+  # the CLI from the locked `security` group on the host:
+  #     make strix          (scripts/strix_quick_scan.sh; also `make strix-scan`)
+  # and in the advisory Forgejo workflow `security`. There is no compose
+  # service in this profile any more.
+
+  # ---- profile: codex (Codex engine lane — fallback for T7.1-negative) --
+  # If scripts/codex_egress_audit.sh shows Codex cannot run egress-free, it
+  # runs here on a controlled-egress lane (like litellm), consuming the
+  # SAME JetStream subjects but never weakening the sealed container.
+  codex-engine:
+    build:
+      context: ..
+      dockerfile: deploy/Containerfile.codex
+    profiles: [codex]
+    environment:
+      <<: *agent-env
+      AGENT_ROLE: backend
+      AGENT_ENGINE: codex
+      # On the tmpfs below; the worker creates it before the first run (a set
+      # CODEX_HOME that does not exist is exit 1). The offline profile is
+      # baked into the image at /etc/codex/config.toml (deploy/codex/).
+      CODEX_HOME: /home/swarm/.codex
+      # Codex's built-in `ollama` provider talks to localhost unless told
+      # otherwise; OLLAMA_API_BASE is not a variable it reads.
+      CODEX_OSS_BASE_URL: http://ollama:11434/v1
+    read_only: true
+    tmpfs: ["/tmp:size=${SANDBOX_TMPFS_SIZE:-4g}", "/home/swarm:size=1g"] # as the sealed agents (L1.6)
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges=true"]
+    networks: [swarm-internal, egress] # controlled egress for Codex only
+    restart: unless-stopped

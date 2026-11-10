@@ -20,9 +20,12 @@ and any file matching the area you are changing.
 3. Make the smallest change that completes the task. The diff-size CI gate
    blocks oversized changes — split instead of forcing.
 4. Every merge requires green checks: ruff, pytest+coverage, security scan,
-   diff-size, the Headroom compression gate, and the fail-closed license
-   gate. Only permissive
-   licenses (Apache/MIT/BSD/MPL) may be introduced — never AGPL/SSPL/BSL.
+   diff-size, the Headroom compression gate, and the three-zone license
+   gate (`conventions/licensing.md`). Anything that ships — code and image
+   contents, Zone C — may only introduce permissive licenses
+   (Apache/MIT/BSD/MPL/ISC/0BSD), and that gate is fail-closed; nothing linked
+   anywhere may be AGPL/SSPL/BUSL/Commons Clause (Zone B); only network
+   services called over a socket (Zone A) may carry other OSI licenses.
 5. Auto-merge targets `integration` only. A human promotes to `main`.
 6. When you learn something reusable (a failure cause, a repo quirk, a
    better approach), write it to vector memory as a lesson.

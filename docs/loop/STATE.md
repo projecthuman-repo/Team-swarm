@@ -1,0 +1,272 @@
+# Lean & Precise (v4.1 → v4.1.1) — loop state
+
+Resume: re-paste the build-loop prompt; it continues from the first row
+whose status is not `DONE` / `DONE-DEFERRED-INTEGRATION`.
+
+## Environment (recorded on first run, 2026-11-03)
+
+| item | value |
+|---|---|
+| base branch | `main` (no `integration` branch exists) |
+| working branch | `feature/lean-precise` |
+| `uv --version` | `uv 0.11.32` → Containerfiles use `ghcr.io/astral-sh/uv:0.11` |
+| Python | 3.12.13 via `uv python install 3.12` (`UV_PYTHON=3.12`) |
+| node / npm | v22.23.4 / 10.9.9 |
+| container runtime | docker CLI present, daemon **not running**; podman absent → image builds deferred |
+| psql | 16.15 (client only; no server running) |
+| syft | absent — remote installer blocked by session policy → license-gate runs deferred |
+| percli | absent (Go release binary, same policy) → `percli lint` deferred |
+| buf | absent → `buf lint` deferred (CI `proto-compat` job runs it) |
+| pre-commit | 4.7.0 via `uv tool install pre-commit` |
+
+## Tasks
+
+| id | task | status | evidence / deferred command |
+|---|---|---|---|
+| L0.1 | Baseline + verify-integration target | DONE | `make footprint` printed the wheel table in-session (routing 3,213.9 MB, embeddings 3,083.6 MB, agent 131.2 MB/113 pkgs — matches §3); committed as `docs/footprint-baseline.md`. Image/disk/SLA lines run in `make verify-integration`. |
+| L0.2 | Headroom isolation | DONE | `uv pip compile` (py3.12/manylinux_2_28): agent set `requirements.txt`+`requirements-elevation.txt` resolves (114 pins, aider-chat 0.86.2, litellm 1.81.10, no headroom-ai); `requirements-ingest.txt` resolves (68 pins, headroom-ai 0.31.0, litellm 1.106.6); the old aider+headroom-ai co-install is unsatisfiable. `make tools` installed `headroom, version 0.31.0` at `~/.local/bin/headroom`; agent env cannot `import headroom`. `test_learn_*` 3/3 pass. Image build deferred: `make ingest-container` (in `verify-integration` via L1.4). |
+| L0.3 | Cross-process hand-off via Valkey | DONE | `tests/test_handoff.py` (5 tests): a bundle written by one interpreter through the real valkey-py client into an in-test RESP server is read by a fresh `python -m agent.verifier task-42`, which returns PASS from all three lenses (the fake model passes only when the bundle reached the request); missing bundle reported; unreachable Valkey degrades to memory with a warning; `VERIFIER_API_BASE` defaults verified. Existing verifier tests pass. |
+| L0.4 | Relay build hygiene | DONE | Every `COPY` source exists; `npm ci --omit=optional` on a clean copy of exactly the build context installed 24 packages; `tsc --noEmit` passes for `relay.ts` + `relay_cdc.ts`. Image build runs in `verify-integration` (L1.4). |
+| L1.1 | uv is the source of truth | DONE-DEFERRED-INTEGRATION | `uv lock` resolves 344 pkgs; `uv sync --frozen --group agent --group dev` installs; `uv lock --check` passes; a second `make lock` changes nothing (checksums); `uv sync --group agent --group ingest` → `error: Groups agent and ingest are incompatible`; agent closure has 0 torch (`uv export --no-dev --group agent`, D-014); ruff + 73 tests pass in the synced env. **Deferred:** `make torch-cpu-lock` (needs download.pytorch.org — D-011). |
+| L1.2 | Locked CI with cache | DONE | `make ci-local` passed end to end in-session: locked sync + `uv lock --check`, generated files match a fresh `make lock`, ruff, pytest (73, coverage 28.5% ≥ 20%), bandit medium+, diff-size, headroom gate in an isolated venv (PASS), license gate DEFERRED (no syft — in `verify-integration`). `proto-compat` job unchanged. Found two pre-existing gate defects on the way (bandit B310 → fixed in the Phase-0 fix commit; diff-size crash → D-013). |
+| L1.3 | pre-commit for developer machines | DONE | `pre-commit run --all-files`: pass 1 reformatted 29 files (all 28 changed `.py` files AST-identical to before — formatting only) and added a final newline to `.forgejo/fixtures/tool_output.json`; pass 2 exit 0 on every hook. 73 tests pass; headroom gate PASS and its negative test still fails. `make hooks` installed `.git/hooks/pre-commit`; `make ci-local` (with the new pre-commit step) passes. |
+| L1.4 | `.dockerignore` and image split | DONE-DEFERRED-INTEGRATION | `npm run build` produced `dist/relay.js` (720 KB) + `dist/relay_cdc.js` (848 KB); both load with **no node_modules** and fail only at the NATS connect. Builder stages simulated locally with the exact uv flags + strip: agent venv 507 MB apparent, imports agent/ingest modules and runs `aider 0.86.2`; ingest venv 236 MB with the four skipped packages, imports ingest with only the copied files. `tests/test_containerfiles.py` (6) checks keywords, COPY sources vs `.dockerignore`, `--from` stages, relay CMD vs esbuild outputs. **Deferred:** `./scripts/image_sizes.sh` in `verify-integration`. **Forecast:** agent ≈ 785 MB (first estimate ≈ 670, corrected to ≈ 755 in D-028, +28 MB for the gate tools in D-033) — over the original 700 MB target; since review R6 the targets are agent ≤ 850, ingest ≤ 450, relay ≤ 160, headroom ≤ 760 MB (D-040); ingest venv alone 236 MB → image likely OVER 300 MB (D-017); relay ≈ distroless base + 1.6 MB. |
+| L1.5 | Lite spine and disk hygiene | DONE-DEFERRED-INTEGRATION | `deploy/compose.lite.yaml` parses and each of its four services is identical to its `deploy/compose.yaml` definition (networks + volumes too) — `tests/test_compose_lite.py` (4). `bootstrap.sh --dry-run` exits 0 in lite mode (no apicurio/seaweedfs → "would SKIP Protobuf schema registration") and in full mode, with fake runtimes. `make -n` shows `up-lite`/`down-lite`/`ollama`/`clean`/`disk-usage`; `forgejo` now names its service (D-020). README "Lite path" block. **Deferred:** `./scripts/lite_smoke.sh` in `verify-integration` (boot lite, bootstrap, ollama+forgejo+relay+agent, inject one task, assert `done`). |
+| L1.6 | Sandbox workspace policy | DONE | `tests/test_sandbox_workspace.py` (6): an aged fake `task-*` orphan (mtime 1801 s > 1800) is removed while a fresh one, a non-task dir and a symlinked `task-link` target survive; defaults come from `SANDBOX_WORKDIR`/`TASK_TIMEOUT_S`; a heartbeat keeps a live dir; `agent_worker.main` reaps before connecting; compose tmpfs `/tmp:size=${SANDBOX_TMPFS_SIZE:-4g}` + `/home/swarm:size=1g`; k8s emptyDir `tmp` 4Gi / `home` 1Gi in every agent Deployment. 89 tests pass. |
+| L2.1 | Two-stage quality gate | DONE | `tests/test_quality_loop.py` (+5, real git repos + real ruff/pytest through a recording `_run` spy): a syntax error yields a stage-1 red whose output is the `ruff check app.py` run only, the repair prompt carries it, and the recorded command list has **no pytest**; a green change runs `ruff check test_app.py` then `ruff check .` + `pytest -q`, both timings ints; no `.py` change skips stage 1; `verify_cmd` runs in stage 2. `tests/test_gate_timing.py` (3): `handle_task` writes `gate_stage1_ms/gate_stage2_ms`; migration + schema carry the columns; SLA line. **Real Postgres 16 + pgvector 0.6 in-session:** `db/schema.sql` + migrations 002–006 apply cleanly and `scripts/sla_report.py` printed `gate median s1 / s2 : 1.5s / 40.0s` over synthetic rows. 97 tests pass. |
+| L2.2 | Hybrid retrieval | DONE | `tests/test_lessons.py` (+4): with an embedding, `search_lessons` calls `match_lessons_hybrid($1, $2, $3, $4)` with the tag; without one, only `fts @@ websearch_to_tsquery('simple', $1)` (no `<=>`); a Qdrant mirror keeps its dense path untagged and tagged queries go to Postgres. **Pure-SQL test ran in-session on real Postgres 16 + pgvector 0.6** (new `tests/conftest.py` `pg` fixture, throwaway schema with `db/schema.sql` applied): dense alone ranks the "near" lesson first, the hybrid query ranks the exact `parse_outbox_row` lesson first and respects the tag; the text-only path returns it alone. 007 applies twice cleanly (idempotent) and via `db/schema.sql`. 101 tests pass. Also in `verify-integration` with `REQUIRE_POSTGRES=1` (skip → failure) against the spine image. |
+| L2.3 | fastembed default | DONE-DEFERRED-INTEGRATION | `EMBEDDING_BACKEND` (fastembed default, sentence-transformers kept) with `BAAI/bge-small-en-v1.5`/384; bge-m3 served through fastembed from its ONNX export. `tests/test_embeddings.py` (7): defaults per backend (fresh interpreter); fastembed path returns a normalized 384-vector (stubbed model); **without fastembed → `embed()` is None, text-only as before**; ST path intact; unknown backend errors; bge-m3 registers through the **real installed fastembed 0.9.1 API** (dim 1024, idempotent); `shadow_eval --require-not-worse` exits 1 only when the candidate is worse. Torch-free check `scripts/check_torch_free.sh` → 0 torch entries for `embeddings` (negative control: 16 for `embeddings-torch`), now a CI + `ci-local` step. README options rows + RUNBOOK §2 (mandatory `--reembed`) + `.env.example`. **Deferred:** real `embed("hello")` → 384 (HuggingFace is 403 by this session's egress policy — the model cannot download here) and `scripts/embeddings_shadow.sh` (re-embed + golden pack per embedder; fastembed green rate ≥ baseline) in `verify-integration`. |
+| L2.4 | Multi-language incremental signature index | DONE | `tests/test_codex_index.py` (8): indexing this repository yields `source: relay/relay.ts` (`async function relayOnce(nc: NatsConnection): Promise<number>`) and `relay/relay_cdc.ts` records, no bodies, no node_modules/dist/gen; real tree-sitter for Go/Rust/Java/TSX/MJS; regex fallback noted in the record when tree-sitter is absent. **Real Postgres:** temp repo → 2 inserted (+1 legacy source-less row deleted), re-run 2 unchanged, edited function → 1 replaced **in place (same lesson_id), zero duplicates**, deleted file → its row gone. End-to-end on the local Postgres: `--index-repo .` → 54 new, then 54 unchanged (54 rows / 54 distinct sources); `--query relayOnce` ranks relay/relay.ts first (L2.2 sparse path). Migration 008 idempotent; v4.1 `schema.sql` → current `schema.sql` → migrations 002–008 applies with ON_ERROR_STOP. 116 tests pass. |
+| L2.5 | Storage hygiene in the morning routine | DONE | `tests/test_db_maintenance.py` (4): fake connection — the DELETE (published only, `make_interval(days => $1)` with 7), then `VACUUM (ANALYZE)` outbox/lessons/tasks, every statement outside a transaction, a connection inside one is refused before any statement; routine step 5/5 + `.env.example`. **Real Postgres:** old published row deleted, recent published + unpublished kept, second run deletes 0 (idempotent). `scripts/db_maintenance.py` ran twice against the local database (VACUUM succeeded on the real autocommit asyncpg connection); `sla_report.py` prints `outbox rows : 0 (0 unpublished)`. 120 tests pass. |
+| L3.1 | Three-zone license gate | DONE-DEFERRED-INTEGRATION | `tests/test_license_gate.py` (+7, 12 total): AGPL fails C and B; GPL-3.0 fails C, passes B; SSPL/BUSL/Commons-Clause fail B, Boost BSL-1.0 / LGPL / unknown pass B (denylist); Zone C default unchanged; `--zone A` exits 0 and lists Forgejo GPL-3.0-or-later, OpenObserve AGPL-3.0, Grafana AGPL-3.0, all zone A; every compose image has a Zone A row; `--paths` scans one syft source per path (`dir:` dirs, `file:` files), merges and de-dupes, and a missing path fails closed (exit 2); every default Zone C path exists. Without syft the gate itself exits 2 (fail-closed), observed in-session. `conventions/licensing.md` (zones, services, built images, dependencies added in v4.1.1); README rule 9, AGENTS.md rule 4, guardrails.md 9 reworded, fail-closed kept for everything that ships; CI + `ci-local` + `make gate` run C and B. **Deferred:** real syft scans of both zones in `verify-integration`. 127 tests pass. |
+| L3.2 | Jaeger + Prometheus + Perses | DONE-DEFERRED-INTEGRATION | `tests/test_observability.py` (7): `/metrics` served over real HTTP (uvicorn) renders all nine gauges with the values computed from a fake pool + Headroom stats, NaN before the first refresh and for missing data; **`sla_metrics.collect()` on real Postgres** (throwaway schema) gives the expected ratio/median/tokens/DLQ/snowball/outbox values; `emit_trace` now also posts an OTLP span whose trace id is the task id (it previously only sent logs, which Jaeger does not ingest; `emit_span` had no caller); compose pins jaeger 2.22.0 / prometheus v3.15.1 / perses v0.55.1 in the observability profile with existing mount sources; agents default `OTEL_EXPORTER_OTLP_ENDPOINT` to `http://jaeger:4318`; prometheus.yml parses with the four agent targets + relay:9464; perses-sla.json covers every gauge with the 0.7 and 600 s thresholds and resolvable layout refs. `sla_report.py` now imports the queries; it ran against the local Postgres. Relay `/metrics` typechecks and builds (no NATS here to start it). **Deferred:** `scripts/observability_smoke.sh` (gauges scraped by Prometheus, task span in Jaeger API, Perses dashboard) and `percli lint` — running the downloaded Perses release binary was blocked by this session's permission policy. 134 passed, 1 skipped. |
+| L3.3 | Golden pack to ten | DONE-DEFERRED-INTEGRATION | `eval/golden/` now holds ten tasks: backend 4, frontend 2, review 2, triage 2; two labelled swarm-hard (009 triage, 010 backend). `tests/test_golden_pack.py` (17): pack shape; **every new verify command executed** against a correct workspace (exit 0) and against a wrong and an empty one (non-zero) — seven tasks × both directions; `shadow_eval.py --dry-run` lists ten tasks with roles, labels and verify commands (`per role: backend=4, frontend=2, review=2, triage=2`); per-role deltas in the report, including for older saved runs. **Deferred:** the full run — `scripts/embeddings_shadow.sh` in `verify-integration` replays the whole pack once per embedder and prints the per-role report. 157 tests pass. |
+| L3.4 | Docs and version | DONE | `tests/test_docs_consistency.py` (4): every `make <target>` named in README.md and docs/RUNBOOK.md exists in the Makefile; **every env var read by the Python code and the relay (76 names) is in `.env.example`** — the scan found 22 pre-existing gaps, all added with their real defaults; pyproject, `relay/package.json` and `relay/package-lock.json` are 4.1.1 and the README title is `v4.1.1 "Lean & Precise"`; RUNBOOK names migrations 006–009, both gate zones, the locked CI checks, the canonical observability stack and the new Footprint section. README: lite path, v4.1.1 section with the new targets table, Models/options rows (fastembed default, bge-m3 via fastembed, Perses canonical, Grafana option). 161 tests pass. |
+
+## Phase-0 review (adversarial, 13 agents: 4 finder dimensions, 1 skeptic per finding)
+
+9 findings, 5 confirmed and fixed in `lean(L0.x): fix …`: wheel-report failures did not fail
+`make footprint`/`verify-integration`; the CDC `command` comment sat inside the relay's
+`environment:` map; the SLA filter dropped the `publish->claim` line; the image builds described as
+deferred were not in `verify-integration`. Also fixed: bandit B310 in `footprint_wheels.py`
+(found by `make ci-local`, missed by the review) and plain `npm ci` in the relay image (refuted as
+a defect, adopted because the spec says `npm ci`). 4 refuted (scope/egress claims).
+
+## Phase-1 review (adversarial, 17 agents: 4 finder dimensions, 1 skeptic per finding)
+
+13 findings, 10 confirmed (6 distinct defects) and fixed in `lean(L1.x): fix phase-1 review
+findings` (DECISIONS D-028): the diff-size gate shortened full clones and crashed with exit 128
+on old branch points; add-on requirements files were exported from another uv fork and could not
+be pip-installed with requirements.txt; `agent/gen` and `relay/package-lock.json` were excluded
+from the diff size without proof (gen now regenerated and diffed in CI, the npm lock counted);
+the lite smoke could never pass because bootstrap overwrote the Forgejo token; no licensing
+record (now `conventions/licensing.md`); the agent image is forecast over 700 MB (recorded as a
+known deviation, target kept). 3 refuted. The review ran concurrently with L2.1–L2.5 and L3.1
+(two agents at a time on this host), so the fix commit lands after them.
+
+## Phase-2 review (adversarial, 16 agents)
+
+12 findings, 7 confirmed (5 distinct defects) and fixed in `lean(L2.x): fix phase-2 review
+findings` (DECISIONS D-030): stage 1 of the gate never ran with aider (auto-commits; the diff was
+against HEAD) — now against the task's base commit; stage 1 ignored ruff excludes (now
+`--force-exclude`); a v4.1 `.env` model id crashed the fastembed default (aliased, and model
+failures degrade to text-only); an unparsable file lost its codex row; `make qualify` reported false
+dual-write losses after outbox pruning. 5 refuted. The review ran while L3.1–L3.2 were built, so
+the fix commit and the `lean-phase-2` tag land after them.
+
+## Phase-3 review (adversarial, 27 agents: 4 finder dimensions, 1 skeptic per finding)
+
+Range `9327ba1..5d0de86` — Phase 3 plus the Phase-1/2 fix commits no reviewer had seen. 23
+findings, all 23 confirmed, 14 distinct defects, fixed in `lean(L3.x): fix phase-3 review findings`
+(DECISIONS D-033). The two that matter most:
+
+- **The license gate did not judge Python licenses.** It read `licenseConcluded` first (syft leaves
+  it `NOASSERTION` and puts the license in `licenseDeclared`), and Zone C scanned lockfiles that
+  carry no license data, then skipped packages with none. Now both fields are judged, a package
+  with no license blocks in Zone C, every `uv.lock` package must appear in the scan, and syft looks
+  licenses up on pypi.org. **Consequence: the first real Zone C run is expected to be red** —
+  `conventions/licensing.md` lists what an audit of the 352 locked packages found (pillow MIT-CMU
+  and regex CNRI-Python in the agent image; 16 proprietary NVIDIA wheels from the torch extras).
+  The allowlist was not widened; that is an owner decision (OWNER_STOP §5).
+- **The agent image had no ruff or pytest**, so in containers the quality gate skipped every check.
+  They are now installed (group `gate`); the image forecast rises to ≈ 785 MB.
+
+Also fixed: Perses config mounted where the image never reads it; `--reembed` nulling every
+embedding when the model cannot load; `make migrate` applying the optional bge-m3 switch; the
+diff-size gate not counting hand-written files beside generated ones; `verify-integration` never
+writing `eval/last_report.md`; the relay dying on a busy metrics port; the Headroom savings gauge
+unreachable from containers; `torch_cpu_lock.sh` restoring only two of the files it rewrites; the
+bot token on jq's command line; two wrong records. 28 new or changed tests fail on `5d0de86`.
+
+### Second round — the fix commit reviewed (2026-11-10)
+
+`003e9cb` was reviewed the same way. Two of the four reviewers finished before the session's
+usage limit stopped the run (the other two and all eight skeptics did not run), so their eight
+findings were checked by hand instead, against the syft source and by reproduction. Five distinct
+defects, all real, fixed in `lean(L3.x): fix the second review round` (DECISIONS D-034):
+
+- An override row could not clear a free-text license: syft reports PyPI's "MIT License" or "BSD"
+  as `LicenseRef-…`, which counted as a found license. The documented remedy did not work.
+- The forecast was far too small. syft's PyPI lookup never reads classifiers, so 121 lock entries
+  (46 of the 120 agent-image pins) would have blocked, not "pillow, regex and a few". The table
+  now has 87 reviewed rows; a simulation with real PyPI metadata leaves 23 entries blocked, all
+  owner decisions.
+- The "scan found nothing" check could not fire on real syft output (it always adds a root entry).
+- `.env.example` still pointed at the moved migration; a LEDGER count was wrong.
+- A root `.env` copied from `.env.example` undid the Headroom stats fix under podman-compose.
+
+No third review round ran: the limit prevents it. The second-round fixes have regression tests
+and `make ci-local` passes, but no independent reviewer has read them.
+
+## Deferred commands by phase
+
+### Phase 0 — closed 2026-11-03 (tag `lean-phase-0`)
+
+Unit protocol green: `ruff check .`, `pytest -q` (73 passed, Python 3.12.13). Deferred to the
+runtime host, all inside `make verify-integration`:
+
+- `make footprint` with a running container runtime (image sizes, `system df`, SLA latency lines)
+- `$(RUNTIME) build -f deploy/Containerfile.ingest -t swarm-ingest:dev .` (L0.2)
+- `$(RUNTIME) build -f deploy/Containerfile.relay -t swarm-relay:dev .` (L0.4)
+- license gate: needs syft (`uv run --no-sync python .forgejo/scripts/license_gate.py`)
+
+### Phase 1 — closed 2026-11-03 (tag `lean-phase-1`)
+
+Unit protocol green: `make ci-local` passed end to end (locked env, torch-free embeddings,
+pre-commit, generated requirements + protobuf match their sources, ruff, pytest 127 passed /
+1 skipped — the real-fastembed test, skipped because ci-local syncs agent+dev only — coverage
+floor, bandit, diff-size, headroom gate; license gate DEFERRED without syft). Footprint table
+refreshed in `docs/footprint-baseline.md`. Deferred to the runtime host, all inside
+`make verify-integration`:
+
+- `./scripts/image_sizes.sh` — agent ≤ 700 MB (forecast ≈ 755, D-028), ingest ≤ 300 MB (at risk,
+  D-017), relay ≤ 160 MB
+- `make torch-cpu-lock` (needs download.pytorch.org, D-011)
+- `uv run --no-sync python .forgejo/scripts/license_gate.py --zone C` and `--zone B` (syft)
+- `LITE_SMOKE_FORGEJO_TOKEN=<bot token> ./scripts/lite_smoke.sh` (lite spine → one task reaches
+  `done`; needs a `swarm/sandbox-repo` in Forgejo)
+
+### Phase 2 — closed 2026-11-03 (tag `lean-phase-2`)
+
+Unit protocol green: `make ci-local` passed end to end (138 passed, 2 skipped — the two
+real-fastembed tests, skipped because ci-local syncs agent+dev only; with the `embeddings` extra all
+140 pass). Real-Postgres tests ran in-session against Postgres 16 + pgvector 0.6. Footprint table
+refreshed. Deferred to the runtime host, all inside `make verify-integration`:
+
+- `env REQUIRE_POSTGRES=1 uv run --no-sync pytest -q` (hybrid retrieval, codex index, retention,
+  SLA queries on the spine's pgvector image — a skip fails the step)
+- `uv run --frozen --group agent --extra embeddings python -c "from agent.lessons import embed; …"`
+  (real bge-small download → 384-dim; HuggingFace is 403 here)
+- `./scripts/embeddings_shadow.sh` (re-embed + golden pack per embedder; fastembed first-pass green
+  rate ≥ the v4.1 baseline embedder)
+
+Follow-up found by accident and fixed in `lean(L1.1): restore pyproject.toml and uv.lock when
+torch-cpu-lock fails`: the script left the CPU-torch source enabled when the re-lock failed.
+
+### Phase 3 — closed 2026-11-10 (tag `lean-phase-3`)
+
+Unit protocol green: `make ci-local` passed end to end on the close-out tree (190 passed,
+2 skipped — the two real-fastembed tests, skipped because ci-local syncs agent+dev only; license
+gate DEFERRED without syft). Real-Postgres tests ran in-session on Postgres 16 + pgvector.
+Footprint table refreshed. Two review rounds (above); the second-round fixes were not
+independently reviewed. Deferred to the runtime host, all inside `make verify-integration`:
+
+- `uv run --no-sync python .forgejo/scripts/license_gate.py --zone C` and `--zone B` — needs syft
+  and pypi.org. **Zone C is expected to fail** until the owner decides on the licenses listed in
+  `conventions/licensing.md` (OWNER_STOP §5); the simulation with real PyPI metadata blocks 23 of
+  352 lock entries
+- `./scripts/observability_smoke.sh` — every SLA gauge scraped by Prometheus, a task span in
+  Jaeger, the Perses dashboard loaded from the provisioning folder
+- `percli lint -f deploy/observability/perses-sla.json` — needs percli v0.55.1
+- `./scripts/embeddings_shadow.sh` — the ten-task golden pack per embedder with the per-role
+  report; writes `eval/last_report.md`
+- `./scripts/image_sizes.sh` — the agent image now also carries ruff and pytest (forecast ≈ 785 MB)
+
+Every task row above is DONE or DONE-DEFERRED-INTEGRATION. What only the owner can do is in
+[OWNER_STOP.md](OWNER_STOP.md).
+
+## Review round (R1–R8)
+
+Opened 2026-11-10 on head `cfe17c5` from an independent review of PR #3 (second machine). Resume:
+re-paste the review-round prompt; it continues from the first row that is not `DONE` /
+`DONE-DEFERRED-INTEGRATION`.
+
+| id | task | status | evidence / deferred command |
+|---|---|---|---|
+| R1 | Build the Headroom proxy image from the lock | DONE-DEFERRED-INTEGRATION | Group `headroom-proxy = ["headroom-ai[proxy]==0.31.0"]` + conflict with `agent`: `uv lock` adds magika, sqlite-vec, watchdog (356 packages); 92 pins, no torch; the agent and ingest exports are byte-identical before and after. `Containerfile.headroom` is two-stage from `uv.lock`. `tests/test_headroom_proxy.py` starts `headroom proxy` from an env synced with `--only-group headroom-proxy`: `/health` 200 in 11 s (version 0.31.0), `/metrics` serves `headroom_requests_total`; **the same test fails** on an env installed the old way (`pip install --only-binary headroom-ai headroom-ai` → 0.43.1, "Proxy dependencies not installed … No module named 'fastapi'"). CI and `ci-local` sync that env once (`HEADROOM_PROXY_ENV`), run the start-up test and the headroom gate in it; `make tools` is constrained by `requirements-headroom-proxy.txt`. Prometheus job `headroom` → `headroom:8787/metrics` (path confirmed on the running proxy). Size target 760 MB (D-035). **Deferred:** `./scripts/image_sizes.sh` (builds the image) and `./scripts/headroom_image_smoke.sh` (the image answers `/health`) in `verify-integration`. |
+| R2 | License gate: publisher metadata, shipped closures, no laundering | DONE-DEFERRED-INTEGRATION | **`license_gate.py --zone C --python-only` ran for real on the lock: exit 0** — 355 lock entries read from pypi.org; agent 120 pins (43 expression / 35 license field / 39 classifiers / 3 rows), ingest 69 (33 / 20 / 13 / 3), headroom 92 (46 / 24 / 17 / 5); 166 entries in no image pass the Zone B denylist; numpy 1.26.4 and scipy 1.15.3 pass on four acknowledgement rows and are printed. `--zone B --python-only`: exit 0. Before the rows and allowlist ids were added the same run blocked exactly cffi 2.1.1, numpy 1.26.4, numpy 2.5.4, scipy 1.15.3, sqlite-vec. On the old gate `LicenseRef-GNU-GPL-v3` / `-LGPL` / `-Eclipse-Public-License-2.0` / `-Proprietary` passed with an `MIT` row; now they block. 55 gate tests (12 recorded PyPI fixtures): laundering, numpy without / with a wrong-version acknowledgement, NVIDIA outside and inside a closure, nothing declared, offline = exit 2, failed `uv export` = exit 2, allowlist additions, Boost. In `ci-local`. Allowlist also gained `MIT-0` and `Zlib` for the headroom image (D-036 — owner can veto). **Deferred:** the syft part (`--zone C`, `--zone B` without `--python-only`) in `verify-integration`. |
+| R3 | The quality gate fails closed | DONE | `check_workspace`: a configured check whose binary is missing is red with `gate tool <name> is not installed` — stage 1 returns at once, stage 2 marks the gate red and still reports the other checks. `agent_worker.require_gate_tools()` runs before the worker connects to anything and exits non-zero when `missing_gate_tools()` is non-empty; `QUALITY_ALLOW_MISSING_TOOLS=1` (in `.env.example`) lets it start and logs that every gated task will be red. 4 new tests in `tests/test_quality_loop.py`; all 4 fail on the previous commit (the gate stayed green there). No existing test asserted the skip, so none had to be rewritten. |
+| R4 | Dense retrieval that works where agents run (`EMBEDDING_BACKEND=api`) | DONE-DEFERRED-INTEGRATION | `EMBEDDING_BACKEND=api` is the default: `POST ${EMBEDDING_API_BASE}/embeddings` with `{model, input}`, base `${OLLAMA_API_BASE}/v1`, model `all-minilm` (the tag and its 384 dimensions confirmed in Ollama's own integration tests; ollama.com itself is blocked here), 10 s timeout, L2-normalised. `tests/test_embedding_api.py` (14) against a local fake `/v1/embeddings` server: success (request shape, normalisation), timeout, wrong dimension, HTTP 500, garbage body, server down — each logs an error and returns text-only, never raises. Migration `010_lessons_embedder.sql` (mirrored in `db/schema.sql`): `lessons.embedder`, five-argument `match_lessons_hybrid`; on real Postgres 16 + pgvector a query embedded by A does not dense-match B's row (though it sits exactly on the query vector) but still finds it by text, and roles swap seen from B; applying 002–010 twice leaves exactly the five-argument function and keeps vectors. `write_lesson`, `seed`, `index-repo`, the two morning scripts write the embedder; `--reembed` rewrites it and never nulls a vector when a single call fails. `make sla` prints lessons per embedder; `make models` also pulls `all-minilm`. Compose and k8s agents set backend, base and model; Tier B gets `deploy/k8s/embeddings.yaml` (its vLLM serves no embeddings route). fastembed and sentence-transformers unchanged and selectable. **Deferred:** `embed('hello')` against the spine's Ollama, and `./scripts/embeddings_shadow.sh` (api default and fastembed vs the v4.1 baseline) in `verify-integration`. |
+| R5 | Host reachability and spine isolation | DONE-DEFERRED-INTEGRATION | All 26 published ports (21 in `compose.yaml`, 5 in `compose.lite.yaml`) bind to `${SWARM_BIND_ADDR:-127.0.0.1}`. `deploy/compose.hostports.yaml` (14 services) and `compose.hostports.lite.yaml` (4) attach exactly the internal-only port publishers to the external network `swarm-host`, created per runtime by `scripts/hostports_network.sh` (Docker `enable_ip_masquerade=false`; Podman `no_default_route=true`, looked up in the Podman docs and netavark source). `make up` / `make up-lite` include them with `HOSTPORTS=1`. `docker compose config` validates both combinations here (no daemon: config only); with the default, 21 ports resolve to `host_ip: 127.0.0.1`. `tests/test_hostports.py` (11): every port loopback-bound; with the override no port publisher is internal-only and the override names exactly those services; `agent-*` and `relay` are on `swarm-internal` alone in every combination. `lite_smoke.sh` asserts host→5432/4222/6379/8200 (exit 3) and no outbound TCP from the postgres container (exit 4) right after the spine is up. **Deferred:** `./scripts/lite_smoke_modes.sh` in `verify-integration` — default mode first, `HOSTPORTS=1` only on exit 3, mode recorded and printed. No container runtime here, so neither mode was exercised. |
+| R6 | Image targets from evidence | DONE-DEFERRED-INTEGRATION | `scripts/image_sizes.sh`: agent ≤ 850 MB, ingest ≤ 450 MB, relay ≤ 160 MB, headroom ≤ 760 MB (R1). README, RUNBOOK (Footprint) and the L1.4 row agree; a test reads the four numbers from the script and checks the three documents against them. The gate tools stay in the agent image (`--group gate` asserted). The evidence: agent environment ≈ 574 MB + base and git ≈ 785 MB; ingest environment 236 MB + base (D-040). **Deferred:** `./scripts/image_sizes.sh` in `verify-integration` — real sizes need a container runtime. |
+| R7 | Land v4.2 "Elevation+" on this branch | DONE-DEFERRED-INTEGRATION | `ce2edd9` cherry-picked; five conflicts (Makefile ×2, README, RUNBOOK, `requirements-elevation.txt`, plus `compose.yaml` since R5) resolved keeping both sides. Lean toolchain: `claude-agent-sdk` = extra `escalation` (0.2.180), `strix-agent` = group `security` (1.7.0) with conflicts against `agent`, `ingest`, `headroom-proxy`; `uv lock` 374 packages; agent / ingest / headroom exports and the nine earlier generated requirements files byte-identical; `requirements-security.txt` and `requirements-escalation.txt` generated. Six missing variables added to `.env.example`; Zone A rows for the Strix image and DinD; `swarm-codex` is a fourth Zone C closure — `license_gate.py --zone C --python-only` still exit 0 (373 entries, 184 in no image). Version 4.2.0 in the four places the task names (`pyproject.toml` `version`, `relay/package.json`, the relay lockfile, the README title); the `pyproject.toml` description and the Perses dashboard title followed in the review fixes. `tests/test_v42.py` 35 pass (24 from v4.2, one of them rewritten to assert fail-closed, 11 new). Every v4.2 make target, option and variable is present (test). v4.2 defects corrected against each tool's source at the pinned version: Codex image (Node purged, unpinned CLI), `codex review` invocation and fail-open parsing, audit config keys and network, Strix variables / `--output json` / report shape / telemetry, `shadow-eval-engines` comparing aider with itself, five Antidoom flags upstream lacks (D-041). `make ci-local` green: 292 passed, 2 skipped. **Deferred:** Codex lane image build, `./scripts/codex_egress_audit.sh`, `./scripts/strix_quick_scan.sh` in `verify-integration`. Not verified at all: two ghcr image names, Codex's real review output shape (D-041 (e)). |
+| R9 | An acknowledgement clears only what it declares | DONE | `judge_python`: a row clears only the family of its own license (`GPL-3.0-or-later WITH GCC-exception-3.1` → GPL, `LGPL-2.1-or-later` → LGPL); any other family in the same text or classifiers blocks with a message naming it. Before the scan five verbatim sentences of the standard GPL-3.0 text and the GCC Runtime Library Exception are removed (§13 as specified, plus four more — the real numpy and scipy texts also contain "proprietary" ×4 and "noncommercially" from those license texts, D-042). On the old gate "…The rest is Proprietary." and "Eclipse Public License" passed with an LGPL acknowledgement; now they block. 9 new tests: proprietary / EPL / AGPL classifier / AGPL outside §13 / non-commercial / Creative Commons + acknowledgement block; numpy with only its LGPL row blocks naming GPL; real numpy 1.26.4 and scipy 1.15.3 name exactly GPL and LGPL and pass; only the verbatim sentences are removed. `license_gate.py --zone C --python-only` on the real lock: exit 0, and prints `families in the publisher's text: LGPL, GPL` for both. |
+| R10 | The Strix lane runs what upstream ships | DONE-DEFERRED-INTEGRATION | One script, `scripts/strix_quick_scan.sh`, behind `make strix`, `make strix-scan`, the advisory Forgejo `security` workflow and the `verify-integration` step: the Strix CLI from the locked `security` group (`uv sync --frozen --only-group security` into its own environment), `STRIX_SCAN_MODE` default `quick`, `STRIX_TARGET` default `./`, `STRIX_TELEMETRY=false`, `LLM_API_BASE` the model gateway. `STRIX_IMAGE` is pinned to `ghcr.io/usestrix/strix-sandbox:1.3.0` — read from the installed strix-agent 1.7.0 (`strix/config/settings.py`, `RuntimeSettings.image`), in the script, `.env.example` and a Zone A row. The compose service `strix` and `deploy/k8s/strix.yaml` are **moved** to this lane (LEDGER, D-043). Ran here: `make -n strix` and `make -n strix-scan` both print `./scripts/strix_quick_scan.sh`; `docker compose config` (also with `--profile security`) rc 0; the locked CLI installed and `strix --help` lists every flag the lane passes. 5 tests (was 1): no compose/k8s file names `ghcr.io/usestrix/strix:` and no service mounts `docker.sock`; both make targets resolve to the script; the script's defaults; `STRIX_IMAGE` in the script, `.env.example` and licensing.md equals the installed package's default; the flags exist in the locked CLI. The last two read the environment `ci-local` / `ci.yaml` sync as `STRIX_ENV`. Deferred: the real scan (needs Docker and the gateway) — `verify-integration` step "Strix quick scan". |
+| R11 | Wire escalation, rubric and Codex review into their flows | DONE-DEFERRED-INTEGRATION | All three off by default, fail closed (D-044, `conventions/escalation.md`). **Escalation:** a `swarm-hard` task (label stored in `tasks.labels`, or the title marker) whose gate is red after its repair budget, with `ROUTE_API_FALLBACK=1`, raises `EscalationHandoff`; `escalation.hand_off` moves it to `escalated`, stores the failing diff and gate output in `escalations` and writes the outbox row on `swarm.tasks.escalation` in one transaction (migration `011_escalation.sql`, mirrored in `db/schema.sql`; durable consumer `escalation`). The lane is the host-run `make escalation` (`agent/escalation_worker.py`, environment `uv sync --group agent --extra escalation`): compare-and-set claim, `escalate()`, patch applied to a fresh clone, the same two-stage gate once, push of `feature/*` and `PR_OPENED` with `escalated=1`; every failure is `FAILED` with the reason → DLQ. At most one per task (primary key + `escalated_at`). **Rubric:** `RUBRIC_ENABLED=1` adds a pre-push review step (`agent/review_gate.py`); first MISS → one revision with the notes, second MISS → escalation or needs-human, counter `tasks.rubric_misses`. **Codex:** `CODEX_REVIEW=1` adds `codex_review.review` to swarm-hard reviews; its ERROR does not block unless `CODEX_REVIEW_REQUIRED=1`. Ran here: 47 tests in `tests/test_r11_flow.py` on real Postgres with a local bare repository as the remote and the real gate — good patch → gate → pushed branch, `done`, `escalated=1`; red patch, stale patch, no patch, SDK unavailable, key lease failed, Forgejo lease failed → DLQ reason, nothing pushed; flags off → the call and the `PoisonError` are what they were and the database is not touched; flag without label and label without flag → no hand-off; second escalation refused; hand-off rolls back as a whole; rubric HIT / MISS → one revision / MISS twice → needs-human or hand-off / never a third engine run / a redelivered task cannot buy another revision; Codex finding in the aggregate, BLOCK blocks, ERROR advisory by default and blocking when required; migration 011 twice over all migrations and alone on a v4.1-shaped table; the real `uv export` of all four images has no `claude-agent-sdk`. `make ci-local`: 352 passed, 2 skipped. Deferred: one real escalation run — `verify-integration` step `scripts/escalation_lane.sh --smoke`, reported as SKIP with the reason unless `ROUTE_API_FALLBACK=1` and the Claude key lease succeeds. |
+| R8 | Close-out | TODO | first half committed in `a0ef813` (OWNER_STOP rewritten, footprint refreshed); closes after R9–R11 and the adversarial review |
+
+### Adversarial review of R1–R7 (39 agents: 4 finder dimensions, 1 skeptic per finding)
+
+Range `cfe17c5..079ea12`. 35 findings, each given to a skeptic told to
+refute it: 31 confirmed, 4 rejected (a usage limit stopped 15 skeptics on
+the first run; the run was resumed and all 35 were judged). The 31
+confirmed findings are 11 distinct defects. Each fix has a test.
+
+| # | defect (confirmed findings) | fix | test |
+|---|---|---|---|
+| 1 | The license gate asked pypi.org for every lock entry whatever its registry, so the lock `make torch-cpu-lock` writes (`torch …+cpu` from PyTorch's index) was exit 2 — in `verify-integration` right after that step, and in CI once committed (3) | entries from an index in `ALTERNATE_INDEXES` are judged by the pypi.org metadata of their public version and named in the report | `test_a_torch_cpu_lock_entry_is_judged_by_its_public_version`, `test_the_python_run_passes_on_a_cpu_lock_and_names_the_entry` |
+| 2 | A git, URL or path dependency was in no list the gate looks at: it shipped unjudged (1) | exit 2 for a lock entry from any other source or registry, for an image closure line that is not a pin, and a violation for a shipped pin without metadata | `test_a_lock_entry_the_gate_cannot_judge_is_exit_2` (6 sources), `test_an_image_closure_with_something_that_is_not_a_pin_is_exit_2` (4), `test_a_shipped_pin_without_metadata_is_a_violation` |
+| 3 | An override row could clear free text naming BUSL / Business Source, Commons Clause or Elastic in the Python path (1) | those families joined `REFUSED`; the syft path uses the same list | `test_an_override_row_cannot_clear_the_families_hard_rule_9_names` (6) |
+| 4 | `scripts/strix_quick_scan.sh` could not succeed: strix-agent 1.7.0 exits 2 when it has findings (the script stopped before routing them) and writes no report when it has none (the script then exited 1) (3) | exit 0 and 2 are a completed scan; a new report decides whether 2 meant findings; a clean scan passes; `STRIX_FAIL_ON` makes it blocking | four `test_strix_lane_*` tests driving the script with a fake CLI |
+| 5 | The security workflow's routing step ran an interpreter without the script's imports, and the runner has no database (3) | the workflow runs the shared script with `STRIX_ROUTE=0`: findings are printed in the job log; `make strix` on the lane host writes lessons | `test_strix_lane_blocks_only_when_asked_and_can_skip_routing` |
+| 6 | The Headroom service set `OPENAI_BASE_URL`; the 0.31.0 proxy reads `OPENAI_TARGET_API_URL`, so every request went to api.openai.com — a 502 on the no-egress network (1) | compose and k8s set `OPENAI_TARGET_API_URL` | `test_proxy_forwards_to_the_upstream_the_deployments_configure` (real proxy, fake upstream) |
+| 7 | A backtick in a `verify-integration` step label ran `codex --version` on the host (4) | label reworded | `test_no_verify_integration_step_label_can_run_a_command` |
+| 8 | The Codex lane image copied `node:22-slim`'s whole global `node_modules` — npm (Artistic-2.0) and corepack in a Zone C image no gate saw (3) | the npm payload is `deploy/codex/package-lock.json` (`npm ci`), only that and `node` are copied, the gate scans the lock | `test_codex_image_ships_only_the_locked_npm_payload_and_the_gate_scans_it` |
+| 9 | `deploy/antidoom/compose.yaml` ran `uv run antidoom` one directory above the clone and installed uv with `pip` in an image without it (1) | runs in the clone; uv is the host's binary, mounted read-only | `test_antidoom_runs_in_the_clone_and_does_not_need_pip_in_the_image` |
+| 10 | The documented Tier B model pull ran in a pod the default-deny policy blocks (1) | `deploy/k8s/embeddings-model-pull.yaml`, a temporary HTTPS-egress policy for that pod alone, applied and deleted around the pull | `test_the_tier_b_embedding_model_pull_has_a_procedure_that_works_under_default_deny` |
+| 11 | Stale statements: four in `conventions/licensing.md`, the R4 test count (15, is 14) and "4.2.0 everywhere" in STATE (2) | corrected; `pyproject.toml` description and the Perses dashboard title now say v4.2.0 | `test_licensing_md_describes_the_gate_as_it_is`, `test_version_labels_follow_the_release` |
+
+The Codex lanes (9 confirmed findings, 5 defects), fixed against the
+pinned CLI's source (`openai/codex`, tag `rust-v0.167.0`), which three
+research agents read and three skeptics re-checked (D-046):
+
+| # | defect | fix | test |
+|---|---|---|---|
+| 12 | `codex exec --oss` without `-m` runs Codex's own `gpt-oss:20b` and asks Ollama to pull it; "runs Ornith" was false for the engine, the audit and `shadow-eval-engines` | the default flags carry `-m <CODEX_MODEL>` (the swarm's model as Ollama lists it); the audit uses the same flags | `test_codex_engine_defaults_select_the_swarms_model_and_can_edit` |
+| 13 | No sandbox flag meant read-only (no edits), and Codex's sandbox — bubblewrap with user namespaces — cannot start in the hardened containers at all | `--sandbox danger-full-access`: the container is the sandbox, as for aider | same test |
+| 14 | `codex-engine` could not start Codex: `CODEX_HOME` on a fresh tmpfs never existed (exit 1), and nothing told Codex where Ollama is | the worker creates `CODEX_HOME` before the first run; the service sets `CODEX_OSS_BASE_URL`; the offline profile is baked into the image as `/etc/codex/config.toml` and now also turns off the plugins sync, feedback and metrics export | `test_codex_lane_can_start_codex`, `test_codex_lane_image_carries_the_offline_profile`, `test_engine_subprocesses_do_not_inherit_stdin` |
+| 15 | `make codex-review` always ended in ERROR (`--oss` names no provider) and could never be right: `codex exec review --base` prints the review as rendered text only, so the parser mapped any real stream — a P0 finding, a failed turn — to PASS | the review runs `codex exec … --output-schema` with the diff in the prompt and validates the event stream and the JSON document strictly; the legacy parser returns ERROR for anything that is not a finding list | 25 cases in `test_codex_review_*` and `test_legacy_findings_parser_no_longer_passes_what_is_not_a_finding_list` |
+| 16 | (found while fixing 8) the Codex platform package also bundles LGPL binaries — bubblewrap and a GStreamer voice runtime — inside an image the gate treats as permissive-only | the build removes both and fails if any is left | `test_codex_image_ships_only_the_locked_npm_payload_and_the_gate_scans_it` |
+
+Rejected, with the skeptic's reason: the Zone B denylist ignoring a short
+free-text `license` field (it is what the R2 text specifies, and the full
+Zone B run has syft over the lock); an acknowledgement clearing every
+family (a recorded decision, D-036 (d) — replaced by R9 while this review
+ran); Antidoom's compose service having no Zone A row (it is not a swarm
+network service, and its image has a row among the base layers);
+`codex-engine` on the `egress` network (v4.2's design, which R7 had to
+land intact).
+
+### Adversarial review of R9–R11 (same workflow; range `a0ef813..f6fbb00`)
+
+26 agents. 22 findings, each given to a skeptic told to refute it: 21
+confirmed, 1 rejected. The 21 are 11 distinct defects, fixed below, each
+with a test. The rejected one — `make dlq-replay` of a failed escalation
+stranding the task — cannot be reached, by the skeptic's reading of
+nats-server 2.12: the lane ends a failed escalation with `term()`, which
+removes the message from the work queue and writes no `SWARM_DLQ` entry to
+replay. Row 8 keeps the replay change anyway; it is harmless.
+
+| # | defect | fix | test |
+|---|---|---|---|
+| 1 | R11: a lane failure that is not a `PoisonError` — a gate that times out, an SDK error, a clone or push timeout — killed the lane and left the task `claimed` for ever, with no `FAILED` event and no reason | `handle()` ends every failure in `FAILED` with its reason; `run_escalated_patch` maps `TimeoutError`; `escalate()` turns SDK errors into `EscalationUnavailable` | `test_a_timeout_or_a_crash_in_the_lane_still_ends_in_failed` (2), `test_sdk_errors_become_escalation_unavailable` |
+| 2 | R11: `extract_patch` applied only the first fenced block; a reply with one fence per file was truncated, and the partial change was pushed when its gate was green | every fenced diff is joined, in order | `test_a_reply_with_one_fence_per_file_is_one_patch` |
+| 3 | R11: the lane's gate environment was a denylist by name: it dropped `GIT_CONFIG_KEY_n` but kept `GIT_CONFIG_COUNT`/`VALUE_n` (every `git` call in the gate failed, stage 1 was silently skipped) and passed `FORGEJO_URL`, `OLLAMA_API_BASE` and others through | an allowlist (tool path, locale, git identity); the gate's own `git` calls keep the worker's environment | `test_the_lanes_gate_survives_git_configuration_from_the_environment`, `test_extract_patch_and_the_gate_environment` |
+| 4 | R11: no test failed when the worker was un-wired — the hand-off in the message loop and the flow arguments in `handle_task` were never executed by a test; the "token not in the clone" assertion could not fail; the lane's `feature/*` guard and token scrubbing were untested | the worker's and the lane's per-message handling are functions (`process`), driven end to end with a fake message; the fixture's remote URL carries the secret | `test_the_worker_hands_a_swarm_hard_failure_to_the_lane`, `test_the_worker_fails_the_task_as_before_without_flag_or_label` (3), `test_the_worker_hands_a_task_off_only_once`, `test_the_lane_acks_terms_or_skips_a_message`, `test_the_lane_refuses_a_branch_that_is_not_feature`, `test_a_lane_failure_never_carries_the_token` |
+| 5 | R11: on a second rubric MISS the grader's notes came before the gate output, and the escalation prompt keeps only the tail | notes last | assertion in `test_second_miss_escalates_when_escalation_is_enabled_for_the_task` |
+| 6 | R9: the GPL-3.0 §13 passage was `heading.*?closing words` — anything between a stray heading and a later real §13 disappeared from the scan | the paragraph is spelled out literally | `test_section_13_is_not_a_wildcard` |
+| 7 | R9: "Affero GPL" / "Affero General Public License" was classified as GPL, which the GCC-exception acknowledgement clears | the AGPL family matches `Affero` | `test_an_acknowledgement_never_clears_the_affero_family_however_it_is_spelled` (4) |
+| 8 | R11: D-044 (d), three comments and `conventions/escalation.md` said a failed escalation reaches `SWARM_DLQ`; `term()` does not feed that stream (it captures `MAX_DELIVERIES` only), and `make dlq-replay` of a message from the lane's subject would have stranded the task | wording corrected to what happens; a replayed escalation message goes back to the task's role subject | `test_a_replayed_escalation_message_goes_back_to_the_role_subject` |
+| 9 | R11: after a green gate the lane committed and pushed in the clone the gate had just run model-written code in. A hook or `.git/config` planted there would have run inside the push, with the token-bearing URL as its argument and the lane's whole environment | the commit and the push happen in a second clone that nothing ran in, with hooks and user/system git config off, and only when its base commit and patched tree equal the gated ones | `test_code_run_by_the_gate_cannot_reach_the_token_through_git` (fails on the old code: the planted hooks fire), `test_the_lane_pushes_only_what_the_gate_saw` |
+| 10 | R11: `swarm-hard` was decided after `CONTEXT_PACK=1` had appended retrieved text to the title; a chunk mentioning `[swarm-hard]` made an unlabelled task eligible for the hosted lane | decided on the task as ingested, before the pack | `test_swarm_hard_is_decided_before_the_context_pack_is_appended` |
+| 11 | R11: `ROUTE_API_FALLBACK=1 make verify-integration` — the only way to run the real escalation step — turned the unit-test step red, because the suite read the flag from the caller's environment | every test starts with the four opt-in flags off (`tests/conftest.py`) | the suite passes with all four set in the environment |

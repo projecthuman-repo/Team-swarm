@@ -38,9 +38,7 @@ from swarm.v1 import task_pb2  # noqa: E402
 log = logging.getLogger("dlq-triage")
 
 NATS_URL = os.environ.get("NATS_URL", "nats://localhost:4222")
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL", "postgres://postgres:dev@localhost:5432/swarm"
-)
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:dev@localhost:5432/swarm")
 FORGEJO = os.environ.get("FORGEJO_URL", "http://localhost:3000")
 OWNER = os.environ.get("FORGEJO_OWNER", "swarm")
 REPO = os.environ.get("FORGEJO_REPO", "sandbox-repo")
@@ -115,6 +113,15 @@ async def triage(watch: bool) -> None:
     await nc.drain()
 
 
+def replay_subject(subject: str, role: str) -> str:
+    """Where a replayed task is re-injected: its own subject, except that a
+    message from the escalation lane's subject goes back to the task's role.
+    The lane claims only tasks in status `escalated`, and a task is escalated
+    at most once (review R11) — a replay is a normal attempt.
+    """
+    return f"swarm.tasks.{role}" if subject == "swarm.tasks.escalation" else subject
+
+
 async def replay(stream_seq: int) -> None:
     """v4.1 T5.1 — DLQ replay drill: re-inject a fixed task by sequence."""
     pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=2)
@@ -132,7 +139,7 @@ async def replay(stream_seq: int) -> None:
             )
             await conn.execute(
                 "INSERT INTO outbox(subject, msg_id, payload) VALUES($1, $2, $3)",
-                raw.subject,
+                replay_subject(raw.subject, task.role),
                 f"replay-{stream_seq}-{uuid.uuid4().hex[:8]}",  # fresh dedupe key
                 task.SerializeToString(),
             )
@@ -145,8 +152,12 @@ def main() -> None:
     logging.basicConfig(level="INFO", format="%(name)s %(levelname)s %(message)s")
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--watch", action="store_true", help="keep consuming")
-    p.add_argument("--replay", type=int, metavar="STREAM_SEQ",
-                   help="re-inject a fixed task from SWARM_TASKS by sequence")
+    p.add_argument(
+        "--replay",
+        type=int,
+        metavar="STREAM_SEQ",
+        help="re-inject a fixed task from SWARM_TASKS by sequence",
+    )
     args = p.parse_args()
     if args.replay:
         asyncio.run(replay(args.replay))

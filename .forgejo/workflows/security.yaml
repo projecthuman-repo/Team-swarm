@@ -1,0 +1,49 @@
+# Strix autonomous security-review workflow (v4.2 T8.2).
+#
+# SEPARATE from ci.yaml — the always-on bandit static gate there is
+# UNTOUCHED. This adds dynamic DAST/pentest depth on the diff.
+#
+# Starts ADVISORY (continue-on-error: findings are posted, the PR is not
+# blocked) for a burn-in window. Promote to blocking (drop continue-on-
+# error) once the false-positive rate is acceptable on the swarm's own
+# history. Inference stays self-hosted via LLM_API_BASE (Ornith).
+name: security
+on:
+  pull_request:
+    branches: [integration]
+
+jobs:
+  strix:
+    runs-on: docker
+    # Strix needs Docker-in-the-loop; this runner label provides it.
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: uv and the agent environment (the findings router imports it)
+        run: |
+          pip install --quiet uv==0.11.32
+          uv sync --frozen --group agent
+
+      - name: strix dynamic scan (advisory — burn-in)
+        id: strix
+        continue-on-error: true # ADVISORY: remove to promote to blocking
+        env:
+          LLM_API_BASE: ${{ env.LLM_API_BASE }} # self-hosted Ornith gateway
+          STRIX_LLM: ${{ env.STRIX_LLM }} # model id at that gateway
+          STRIX_ENV: /tmp/strix-env # isolated: the `security` group conflicts with `agent`
+          # The runner has no route to the swarm's Postgres, so findings are
+          # printed in this job's log and not written as lessons from CI;
+          # `make strix` on the security-lane host writes them. To route from
+          # CI, give the job a DATABASE_URL it can reach and set this to "1".
+          STRIX_ROUTE: "0"
+        # The shared lane script (review R10): Strix from the locked `security`
+        # group, pinned sandbox image, telemetry off. The same script as
+        # `make strix`. A completed scan is exit 0 whatever it found; to make
+        # the job blocking, remove continue-on-error and set STRIX_FAIL_ON
+        # (critical|high|medium|low|info).
+        run: |
+          ./scripts/strix_quick_scan.sh --scope-mode diff --diff-base origin/integration
+
+      # bandit still runs in ci.yaml — this workflow does not touch it.

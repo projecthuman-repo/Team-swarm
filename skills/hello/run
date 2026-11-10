@@ -9,6 +9,7 @@ A skill is any executable named `run` in skills/<name>/. It gets:
 Try it:   echo world | skills/run_skill.sh hello
 Verify isolation:  skills/run_skill.sh hello --prove-isolation
 """
+
 import socket
 import sys
 

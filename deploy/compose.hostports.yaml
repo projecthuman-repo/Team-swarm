@@ -1,0 +1,47 @@
+# Host-port override for the full stack (review R5) — `make up HOSTPORTS=1`.
+#
+# Why: rootful Podman and Docker do not forward published ports for a
+# container attached only to an `internal: true` network, so on those
+# runtimes the host cannot reach the spine on localhost (rootless Podman
+# forwards them today, through rootlessport). This file attaches every
+# service that publishes a port and sits only on `swarm-internal` to a second,
+# non-internal network, `swarm-host`, with outbound NAT disabled. Agents and
+# the relay never join it: they stay on `swarm-internal` alone (Hard Rule 1).
+#
+# The network is created outside compose by scripts/hostports_network.sh
+# (`make up HOSTPORTS=1` runs it), because the two runtimes need different
+# options and each mishandles the other's:
+#   Docker:  -o com.docker.network.bridge.enable_ip_masquerade=false
+#            (Podman rejects this key)
+#   Podman:  --opt no_default_route=true      (Podman >= 4.6 / netavark >= 1.7;
+#            Docker silently ignores this key, leaving NAT on)
+# An external network fails closed on both: without it, `up` stops.
+#
+# Limits — neither option is a firewall. Docker: packets still leave the host,
+# un-NATed with a private source address, so replies never return; the
+# embedded DNS still resolves external names. Podman: only the container's
+# default route is missing. scripts/lite_smoke.sh proves on the actual host
+# that the ports answer and that an outbound connection from the postgres
+# container fails.
+#
+# Published ports stay bound to ${SWARM_BIND_ADDR:-127.0.0.1} (base files).
+networks:
+  swarm-host:
+    external: true
+    name: ${SWARM_HOST_NET:-swarm-host}
+
+services:
+  nats: { networks: [swarm-host] }
+  postgres: { networks: [swarm-host] }
+  apicurio: { networks: [swarm-host] }
+  valkey: { networks: [swarm-host] }
+  seaweedfs: { networks: [swarm-host] }
+  openbao: { networks: [swarm-host] }
+  headroom: { networks: [swarm-host] }
+  qdrant: { networks: [swarm-host] }
+  opensearch: { networks: [swarm-host] }
+  langfuse: { networks: [swarm-host] }
+  jaeger: { networks: [swarm-host] }
+  prometheus: { networks: [swarm-host] }
+  perses: { networks: [swarm-host] }
+  openobserve: { networks: [swarm-host] }

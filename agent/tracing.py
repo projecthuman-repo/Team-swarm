@@ -89,18 +89,14 @@ def otlp_logs_payload(event: dict) -> dict:
     }
 
 
-def otlp_span_payload(
-    name: str, attrs: dict, start_ns: int, end_ns: int, trace_id: str
-) -> dict:
+def otlp_span_payload(name: str, attrs: dict, start_ns: int, end_ns: int, trace_id: str) -> dict:
     """Minimal OTLP/HTTP JSON traces payload — one GenAI-convention span
     (v4.1 T5.2): steps, LLM calls, and retries each get their own span."""
     return {
         "resourceSpans": [
             {
                 "resource": {
-                    "attributes": [
-                        {"key": "service.name", "value": {"stringValue": "swarm-agent"}}
-                    ]
+                    "attributes": [{"key": "service.name", "value": {"stringValue": "swarm-agent"}}]
                 },
                 "scopeSpans": [
                     {
@@ -204,9 +200,7 @@ def emit_trace(
             log.debug("opensearch emit failed: %s", err)
     if OTLP_ENDPOINT:
         try:
-            headers = dict(
-                h.split("=", 1) for h in OTLP_HEADERS.split(",") if "=" in h
-            )
+            headers = dict(h.split("=", 1) for h in OTLP_HEADERS.split(",") if "=" in h)
             requests.post(
                 f"{OTLP_ENDPOINT.rstrip('/')}/v1/logs",
                 json=otlp_logs_payload(event),
@@ -215,3 +209,6 @@ def emit_trace(
             )
         except requests.RequestException as err:
             log.debug("otlp emit failed: %s", err)
+        # L3.2: the same event as a span (trace id = task id), so every
+        # task is one trace in Jaeger; OTLP log-only backends ignore it.
+        emit_span(f"swarm.{kind}", task_id, event)

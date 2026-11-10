@@ -1,0 +1,13 @@
+# Host-port override for the lite spine (review R5) — `make up-lite HOSTPORTS=1`.
+# Same network and reasoning as deploy/compose.hostports.yaml; a separate file
+# because an override may only name services its base file defines.
+networks:
+  swarm-host:
+    external: true
+    name: ${SWARM_HOST_NET:-swarm-host}
+
+services:
+  nats: { networks: [swarm-host] }
+  postgres: { networks: [swarm-host] }
+  valkey: { networks: [swarm-host] }
+  openbao: { networks: [swarm-host] }

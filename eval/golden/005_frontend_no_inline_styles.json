@@ -1,0 +1,5 @@
+{
+  "title": "Create web/dashboard.html and web/styles.css: the page links styles.css, uses at least three CSS classes that are all defined in styles.css, and has no inline style attributes and no <style> blocks.",
+  "role": "frontend",
+  "verify_cmd": "python -c 'import pathlib, re\npage = pathlib.Path(\"web/dashboard.html\").read_text()\ncss = pathlib.Path(\"web/styles.css\").read_text()\nassert not re.search(r\"\\sstyle\\s*=\", page) and \"<style\" not in page.lower()\nassert re.search(r\"<link[^>]+href=[\\\"'\"'\"']styles\\.css[\\\"'\"'\"']\", page)\nused = {c for group in re.findall(r\"class=[\\\"'\"'\"']([^\\\"'\"'\"']+)[\\\"'\"'\"']\", page) for c in group.split()}\ndefined = set(re.findall(r\"\\.([A-Za-z_][\\w-]*)\\s*[,{:]\", css))\nassert len(used) >= 3 and used <= defined, (used, defined)'"
+}

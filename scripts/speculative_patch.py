@@ -30,9 +30,7 @@ from agent.sandbox import run_sandboxed_aider  # noqa: E402
 
 log = logging.getLogger("speculative")
 
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL", "postgres://postgres:dev@localhost:5432/swarm"
-)
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:dev@localhost:5432/swarm")
 N_CANDIDATES = int(os.environ.get("SPECULATIVE_CANDIDATES", "3"))
 
 # Approach spread stands in for raw temperature where the engine doesn't
@@ -104,16 +102,20 @@ async def run(task_id: str) -> int:
                 }
             )
         except Exception as err:
-            results.append(
-                {"candidate": i, "green": False, "tokens": 0, "error": str(err)}
-            )
-        log.info("candidate %d: %s (cost=%s tokens)",
-                 i, results[-1].get("green"), results[-1].get("tokens"))
+            results.append({"candidate": i, "green": False, "tokens": 0, "error": str(err)})
+        log.info(
+            "candidate %d: %s (cost=%s tokens)",
+            i,
+            results[-1].get("green"),
+            results[-1].get("tokens"),
+        )
 
     winner = select_candidate(results)
     for r in results:
-        print(f"candidate {r['candidate']}: green={r.get('green')} "
-              f"tokens={r.get('tokens')} branch={r.get('branch', '-')}")
+        print(
+            f"candidate {r['candidate']}: green={r.get('green')} "
+            f"tokens={r.get('tokens')} branch={r.get('branch', '-')}"
+        )
     if winner is None:
         print("no green candidate — task stays with the normal repair/DLQ path")
         return 1

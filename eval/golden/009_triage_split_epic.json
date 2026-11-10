@@ -1,0 +1,8 @@
+{
+  "title": "[swarm-hard] Split this epic into independently verifiable tasks: \"Users need to export their task history as CSV from the dashboard, and exports must be reviewed for PII leaks before release.\" Write one file per task under triage/epic-export/ named NN-<slug>.md (at least three), each starting with the lines `role:`, `title:`, `verify_cmd:` and containing a `## Scope` section. The set must include at least one backend, one frontend and one review task, and no two tasks may share a title.",
+  "role": "triage",
+  "labels": [
+    "swarm-hard"
+  ],
+  "verify_cmd": "python -c 'import pathlib, re\nfiles = sorted(pathlib.Path(\"triage/epic-export\").glob(\"[0-9][0-9]-*.md\"))\nassert len(files) >= 3, files\nroles, titles = [], []\nfor f in files:\n    text = f.read_text()\n    head = dict(l.split(\":\", 1) for l in text.splitlines()[:6] if re.match(r\"(role|title|verify_cmd):\", l))\n    assert set(head) == {\"role\", \"title\", \"verify_cmd\"} and head[\"verify_cmd\"].strip(), f\n    assert re.search(r\"^## Scope\\s*\\n\\s*\\S\", text, re.M), f\n    roles.append(head[\"role\"].strip()); titles.append(head[\"title\"].strip().lower())\nassert {\"backend\", \"frontend\", \"review\"} <= set(roles), roles\nassert len(set(titles)) == len(titles)'"
+}

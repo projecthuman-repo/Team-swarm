@@ -2,13 +2,15 @@
 
 The verified finding: author-model verification preserves author biases —
 so the verifier never sees the author's conversation. It reviews ONLY the
-diff + task spec (delivered via Headroom SharedContext, T1.7) from a
-fresh perspective.
+diff + task spec (delivered through the Valkey hand-off store, T1.7 /
+L0.3) from a fresh perspective. Its model request goes to
+VERIFIER_API_BASE, which defaults to the Headroom proxy when
+HEADROOM_ENABLED=1 — so the bundle is compressed in flight.
 
 Tasks labelled swarm-hard fan out three parallel lenses — Architect /
 Security / QA — whose findings are aggregated; any BLOCK verdict blocks.
 
-    python -m agent.verifier <task_id>            # bundle from SharedContext
+    python -m agent.verifier <task_id>            # bundle from the hand-off store
     python -m agent.verifier --diff d.patch --spec s.md
 """
 
@@ -26,10 +28,15 @@ from agent.shared_context import get_handoff
 
 log = logging.getLogger("verifier")
 
-OPENAI_BASE = os.environ.get(
-    "VERIFIER_API_BASE",
-    os.environ.get("OPENAI_API_BASE", "http://localhost:11434/v1"),
-)
+
+def _default_api_base() -> str:
+    """Headroom proxy when enabled (compresses in flight), else the model."""
+    if os.environ.get("HEADROOM_ENABLED", "") == "1":
+        return os.environ.get("HEADROOM_URL", "http://headroom:8787/v1")
+    return os.environ.get("OPENAI_API_BASE", "http://localhost:11434/v1")
+
+
+OPENAI_BASE = os.environ.get("VERIFIER_API_BASE") or _default_api_base()
 MODEL = os.environ.get("VERIFIER_MODEL", "Ornith-1.0-9B")
 
 LENSES = {
@@ -48,7 +55,7 @@ LENSES = {
     ),
 }
 VERDICT_INSTRUCTIONS = (
-    'End with exactly one line: VERDICT: PASS or VERDICT: BLOCK — <reason>. '
+    "End with exactly one line: VERDICT: PASS or VERDICT: BLOCK — <reason>. "
     "You have ONLY the spec and diff below; do not assume any other context."
 )
 
@@ -80,14 +87,82 @@ def parse_verdict(text: str) -> str:
     return "BLOCK"  # fail-closed: no explicit verdict = block
 
 
-def aggregate(findings: list[dict]) -> dict:
-    """Any BLOCK blocks; ERRORs block too (fail-closed)."""
-    blocking = [f for f in findings if f["verdict"] != "PASS"]
+def aggregate(findings: list[dict], advisory_errors: tuple[str, ...] = ()) -> dict:
+    """Any BLOCK blocks; ERRORs block too (fail-closed).
+
+    `advisory_errors` names reviewers whose ERROR (unavailable, unparseable)
+    is recorded in `findings` but does not block — the optional Codex
+    reviewer unless CODEX_REVIEW_REQUIRED=1 (review R11). Their BLOCK blocks.
+    """
+    blocking = [
+        f
+        for f in findings
+        if f["verdict"] != "PASS" and not (f["verdict"] == "ERROR" and f["lens"] in advisory_errors)
+    ]
     return {
         "verdict": "PASS" if not blocking else "BLOCK",
         "findings": findings,
         "blocking": blocking,
     }
+
+
+# v4.2 T7.8 — rubric grading mirrors Claude Code's Performance-Outcomes
+# pattern: a rubric grader scores the result and forces exactly ONE
+# revision on a miss, then escalates rather than looping forever.
+RUBRIC = os.environ.get(
+    "VERIFIER_RUBRIC",
+    "1. The diff addresses the task spec. "
+    "2. It includes or updates tests. "
+    "3. Scope is surgical (only files the task names). "
+    "4. No secrets, debug prints, or TODOs left behind.",
+)
+RUBRIC_PASS_THRESHOLD = float(os.environ.get("RUBRIC_PASS_THRESHOLD", "0.75"))
+
+
+def grade_rubric(bundle: str) -> dict:
+    """Score the bundle against the rubric. Returns {score, verdict, notes}.
+
+    verdict MISS (< threshold) triggers one forced revision upstream; a
+    second MISS escalates (T7.8), never an unbounded loop.
+    """
+    prompt = (
+        "You are a rubric grader. Score the diff against each numbered "
+        "criterion as pass(1)/fail(0). Reply with the fraction passed as "
+        "'SCORE: N/M' on the last line.\n\nRubric:\n"
+        f"{RUBRIC}\n\n{bundle}"
+    )
+    try:
+        resp = requests.post(
+            f"{OPENAI_BASE.rstrip('/')}/chat/completions",
+            json={
+                "model": MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.1,
+            },
+            timeout=600,
+        )
+        resp.raise_for_status()
+        text = resp.json()["choices"][0]["message"]["content"]
+    except requests.RequestException as err:
+        return {"score": 0.0, "verdict": "MISS", "notes": str(err)}
+    score = parse_rubric_score(text)
+    return {
+        "score": score,
+        "verdict": "HIT" if score >= RUBRIC_PASS_THRESHOLD else "MISS",
+        "notes": text[-800:],
+    }
+
+
+def parse_rubric_score(text: str) -> float:
+    """Parse 'SCORE: N/M' (bottom-up); fail-closed to 0.0."""
+    import re
+
+    for line in reversed(text.strip().splitlines()):
+        m = re.search(r"SCORE:\s*(\d+)\s*/\s*(\d+)", line, re.I)
+        if m:
+            num, den = int(m.group(1)), int(m.group(2))
+            return num / den if den else 0.0
+    return 0.0
 
 
 def verify(bundle: str, lenses: list[str] | None = None) -> dict:
@@ -100,7 +175,7 @@ def verify(bundle: str, lenses: list[str] | None = None) -> dict:
 def main() -> None:
     logging.basicConfig(level="INFO")
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("task_id", nargs="?", help="fetch bundle from SharedContext")
+    p.add_argument("task_id", nargs="?", help="fetch bundle from the hand-off store")
     p.add_argument("--diff", help="path to a diff file")
     p.add_argument("--spec", help="path to a spec file")
     p.add_argument("--lens", action="append", choices=list(LENSES))

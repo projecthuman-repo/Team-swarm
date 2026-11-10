@@ -16,38 +16,112 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: install tooling
+      - name: cache uv downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ hashFiles('uv.lock') }}
+          restore-keys: uv-
+
+      - name: locked environment (uv.lock is the source of truth, L1.2)
+        # uv is pinned to the version that wrote uv.lock (DECISIONS D-002).
         run: |
-          pip install --quiet ruff pytest pytest-cov bandit -r requirements.txt
+          pip install --quiet uv==0.11.32
+          uv sync --frozen --group agent --group dev
+          uv lock --check
+
+      - name: embeddings extra is torch-free (fastembed default)
+        run: ./scripts/check_torch_free.sh
+
+      - name: cache pre-commit hook envs
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: pre-commit (developer hooks, L1.3)
+        run: uv run --no-sync pre-commit run --all-files --show-diff-on-failure
+
+      - name: generated requirements match uv.lock
+        # requirements*.txt are generated; a hand edit (or a stale export)
+        # fails here, which is what lets the diff-size gate skip them.
+        run: |
+          sha1sum uv.lock requirements*.txt > "${TMPDIR:-/tmp}/lock.sha"
+          ./scripts/lock_export.sh
+          sha1sum -c --quiet "${TMPDIR:-/tmp}/lock.sha"
+
+      - name: generated protobuf code matches proto/
+        run: ./scripts/check_gen.sh
+
+      - name: install syft (license gate)
+        run: |
           curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
             | sh -s -- -b /usr/local/bin
 
+      - name: headroom environment from uv.lock (isolated, review R1)
+        # The locked `headroom-proxy` group — exactly what
+        # deploy/Containerfile.headroom installs. headroom-ai==0.31.0 cannot
+        # co-install with aider-chat (litellm >=1.86.2 vs ==1.81.10), so it
+        # NEVER enters the agent env. Used by the proxy start-up test and by
+        # the headroom gate below.
+        run: |
+          UV_PROJECT_ENVIRONMENT=/tmp/headroom-env \
+            uv sync --frozen --no-install-project --only-group headroom-proxy
+
+      - name: strix environment from uv.lock (isolated, review R10)
+        # The locked `security` group — the Strix lane's CLI. Tests read the
+        # sandbox image default and the scan flags from it.
+        run: |
+          UV_PROJECT_ENVIRONMENT=/tmp/strix-env \
+            uv sync --frozen --no-install-project --only-group security
+
+      # Every gate runs in the synced env; --no-sync keeps `uv run` from
+      # re-syncing to the default groups and dropping the agent group.
       - name: lint (ruff)
-        run: ruff check .
+        run: uv run --no-sync ruff check .
 
       - name: tests + coverage floor
         # floor = current honest coverage; ratchet it up as the suite grows
-        run: pytest --cov=agent --cov=ingest --cov-fail-under=20 -q
+        env:
+          HEADROOM_PROXY_ENV: /tmp/headroom-env
+          STRIX_ENV: /tmp/strix-env
+        run: uv run --no-sync pytest --cov=agent --cov=ingest --cov-fail-under=20 -q
 
       - name: security scan (bandit)
         # medium+ blocks; Low subprocess-usage notes are accepted (the
         # engines ARE subprocesses — list args, never shell=True)
-        run: bandit -q -r agent ingest scripts -x tests --severity-level medium
+        run: uv run --no-sync bandit -q -r agent ingest scripts -x tests --severity-level medium
 
       - name: diff-size limit
         run: bash .forgejo/scripts/diff_size_gate.sh
 
+      - name: AGENTS.md size gate (cross-tool constitution, v4.2 T7.5)
+        # keep the shared constitution <= Codex's 32 KiB project_doc_max_bytes
+        run: uv run --no-sync python .forgejo/scripts/agents_md_gate.py
+
       - name: headroom gate (token compression, v4.1 T1.1)
         # chopratejas/headroom (PyPI headroom-ai, Apache-2.0) — compresses
         # checked-in fixtures and asserts ratio floor + CCR round-trip.
-        # (Replaces the mis-wired gglucass/headroom-desktop step: that is a
-        # paid desktop tray app, not the compression library.)
-        run: |
-          pip install --quiet --only-binary headroom-ai headroom-ai
-          python .forgejo/scripts/headroom_gate.py
+        # Runs in the locked headroom environment synced above.
+        run: /tmp/headroom-env/bin/python .forgejo/scripts/headroom_gate.py
 
-      - name: license gate (fail-closed)
-        run: python .forgejo/scripts/license_gate.py
+      # Three zones (conventions/licensing.md, L3.1, review R2): C = what
+      # ships, permissive-only, fail-closed — Python image closures judged
+      # from the publisher's pypi.org metadata, code directories and the
+      # npm lock scanned by syft; B = everything linked anywhere in the
+      # repo, AGPL/SSPL/BUSL/Commons-Clause denylist.
+      - name: cache publisher license metadata
+        uses: actions/cache@v4
+        with:
+          path: .cache/license-gate
+          key: license-gate-${{ hashFiles('uv.lock') }}
+          restore-keys: license-gate-
+
+      - name: license gate zone C (image contents, fail-closed)
+        run: uv run --no-sync python .forgejo/scripts/license_gate.py --zone C
+
+      - name: license gate zone B (linked code, denylist)
+        run: uv run --no-sync python .forgejo/scripts/license_gate.py --zone B
 
   proto-compat:
     runs-on: docker

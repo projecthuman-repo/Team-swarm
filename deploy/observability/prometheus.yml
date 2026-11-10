@@ -1,0 +1,29 @@
+# Prometheus for the swarm (Lean & Precise L3.2, compose profile observability).
+# Scrapes every agent's health port (/metrics: the SLA gauges of
+# agent/sla_metrics.py), the outbox relay (RELAY_METRICS_PORT, 9464) and the
+# Headroom proxy's own counters (headroom_requests_total, …) when the
+# `headroom` profile runs — a target that is down is only reported as down.
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+scrape_configs:
+  - job_name: swarm-agents
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - agent-backend:8080
+          - agent-frontend:8080
+          - agent-review:8080
+          - agent-triage:8080
+
+  - job_name: swarm-relay
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["relay:9464"]
+
+  # headroom-ai 0.31.0 serves Prometheus text at /metrics on the proxy port.
+  - job_name: headroom
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["headroom:8787"]

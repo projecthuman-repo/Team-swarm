@@ -32,10 +32,12 @@ FORGEJO = os.environ.get("FORGEJO_URL", "http://localhost:3000")
 OWNER = os.environ.get("FORGEJO_OWNER", "swarm")
 REPO = os.environ.get("SWARM_REPO", "team-swarm")  # the swarm's own repo
 BOT = os.environ.get("FORGEJO_BOT_USER", "swarm-bot")
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL", "postgres://postgres:dev@localhost:5432/swarm"
-)
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:dev@localhost:5432/swarm")
 TARGET_FILE = "conventions/learned.md"
+# The `headroom` CLI lives in an isolated uv tool env (`make tools`), never
+# in the agent env (headroom-ai and aider-chat cannot co-resolve). uv puts
+# the binary on PATH (~/.local/bin/headroom); override with HEADROOM_BIN.
+HEADROOM_BIN = os.environ.get("HEADROOM_BIN", "headroom")
 
 
 def run_learn(dry_run: bool = True, fixture_log: str | None = None) -> str:
@@ -45,16 +47,15 @@ def run_learn(dry_run: bool = True, fixture_log: str | None = None) -> str:
     """
     if fixture_log is not None:
         return parse_learn_output(fixture_log)
-    cmd = ["headroom", "learn", "--target", TARGET_FILE]
+    cmd = [HEADROOM_BIN, "learn", "--target", TARGET_FILE]
     if dry_run:
         cmd.append("--dry-run")
     try:
-        out = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=1800
-        ).stdout
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=1800).stdout
     except FileNotFoundError:
         raise SystemExit(
-            "headroom CLI not installed: pip install -r requirements-elevation.txt"
+            f"headroom CLI not found at {HEADROOM_BIN!r}: run `make tools` "
+            "(uv tool install headroom-ai==0.31.0, pinned by uv.lock) or set HEADROOM_BIN"
         ) from None
     return parse_learn_output(out)
 
@@ -104,9 +105,18 @@ def open_learn_pr(corrections: str, token: str) -> str:
             f.write(f"\n\n## {date} (headroom learn)\n\n{corrections}\n")
         subprocess.run(["git", "add", TARGET_FILE], cwd=repo, check=True)
         subprocess.run(
-            ["git", "-c", f"user.name={BOT}", "-c", f"user.email={BOT}@swarm",
-             "commit", "-m", f"headroom learn corrections {date}"],
-            cwd=repo, check=True,
+            [
+                "git",
+                "-c",
+                f"user.name={BOT}",
+                "-c",
+                f"user.email={BOT}@swarm",
+                "commit",
+                "-m",
+                f"headroom learn corrections {date}",
+            ],
+            cwd=repo,
+            check=True,
         )
         subprocess.run(["git", "push", "-u", "origin", branch], cwd=repo, check=True)
     resp = requests.post(
@@ -130,7 +140,7 @@ async def mirror_accepted(token: str) -> int:
 
     import asyncpg
 
-    from agent.lessons import embed, to_pgvector
+    from agent.lessons import embed, stored_embedder, to_pgvector
 
     resp = requests.get(
         f"{FORGEJO}/api/v1/repos/{OWNER}/{REPO}/pulls",
@@ -142,19 +152,21 @@ async def mirror_accepted(token: str) -> int:
     pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=2)
     mirrored = 0
     for pr in resp.json():
-        if not pr.get("merged") or not pr.get("head", {}).get(
-            "ref", ""
-        ).startswith("feature/headroom-learn-"):
+        if not pr.get("merged") or not pr.get("head", {}).get("ref", "").startswith(
+            "feature/headroom-learn-"
+        ):
             continue
         text = f"[headroom-learn] accepted: {pr.get('title')}\n{pr.get('body', '')[:1500]}"
         if await pool.fetchval("SELECT 1 FROM lessons WHERE text = $1", text):
             continue
+        vec = embed(text)
         await pool.execute(
-            "INSERT INTO lessons(lesson_id, text, tag, embedding) "
-            "VALUES($1, $2, 'headroom-learn', $3)",
+            "INSERT INTO lessons(lesson_id, text, tag, embedding, embedder) "
+            "VALUES($1, $2, 'headroom-learn', $3, $4)",
             uuid.uuid4(),
             text,
-            to_pgvector(embed(text)),
+            to_pgvector(vec),
+            stored_embedder(vec),
         )
         mirrored += 1
     await pool.close()

@@ -1,0 +1,23 @@
+# Offline profile for the Codex lane (v4.2 T7.1 / T7.3; review of R7).
+# Baked into the lane image as /etc/codex/config.toml — the system layer
+# Codex reads below CODEX_HOME — so it applies even though CODEX_HOME is a
+# fresh tmpfs. scripts/codex_egress_audit.sh audits with the same keys.
+# Key names checked against openai/codex at tag rust-v0.167.0.
+
+# TUI only (`codex exec` makes no update check); kept for any interactive use.
+check_for_update_on_startup = false
+
+# Statsig metrics export (ab.chatgpt.com) and the analytics events client.
+[analytics]
+enabled = false
+
+[feedback]
+enabled = false
+
+[otel]
+metrics_exporter = "none"
+
+# Without this, start-up runs `git ls-remote` against the curated plugins
+# repository on github.com.
+[features]
+plugins = false

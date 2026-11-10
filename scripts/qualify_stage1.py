@@ -19,9 +19,8 @@ import sys
 
 import asyncpg
 
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL", "postgres://postgres:dev@localhost:5432/swarm"
-)
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:dev@localhost:5432/swarm")
+OUTBOX_RETENTION_DAYS = int(os.environ.get("OUTBOX_RETENTION_DAYS", "7"))
 
 
 async def main() -> int:
@@ -35,13 +34,17 @@ async def main() -> int:
     if stuck:
         failures.append(f"{stuck} outbox row(s) stuck unpublished (dual-write risk)")
 
+    # Published outbox rows older than OUTBOX_RETENTION_DAYS are pruned by
+    # the morning routine (L2.5), so only younger tasks can show a loss.
     orphans = await pool.fetchval(
         """
         SELECT count(*) FROM tasks t
-        WHERE NOT EXISTS (
+        WHERE t.created_at > now() - make_interval(days => $1)
+          AND NOT EXISTS (
           SELECT 1 FROM outbox o WHERE o.msg_id = t.task_id::text
         )
-        """
+        """,
+        OUTBOX_RETENTION_DAYS,
     )
     if orphans:
         failures.append(f"{orphans} task(s) with no outbox event (dual-write loss)")
@@ -49,8 +52,7 @@ async def main() -> int:
     # Duplicate execution would show up as a task flapping between owners;
     # with compare-and-set claims each task has at most one claimed_by.
     unclaimed_done = await pool.fetchval(
-        "SELECT count(*) FROM tasks "
-        "WHERE status IN ('claimed','done') AND claimed_by IS NULL"
+        "SELECT count(*) FROM tasks WHERE status IN ('claimed','done') AND claimed_by IS NULL"
     )
     if unclaimed_done:
         failures.append(f"{unclaimed_done} claimed/done task(s) without an owner")

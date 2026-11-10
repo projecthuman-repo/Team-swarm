@@ -1,55 +1,69 @@
-"""Multi-agent hand-off via Headroom SharedContext (v4.1 T1.7).
+"""Cross-process multi-agent hand-off store (Lean & Precise L0.3; v4.1 T1.7).
 
-Reviewer/verifier agents receive the diff + task spec through a shared,
-compressed context store instead of re-reading the repo — cutting
-reviewer context tokens (target: >=30% lower on fixtures with unchanged
-verdicts). Without headroom-ai installed, hand-off falls back to a plain
-in-process store so the pipeline still runs (compression becomes a no-op).
+Reviewer/verifier agents receive the diff + task spec as a bundle instead
+of re-reading the repo. The bundle lives in Valkey at `handoff:<task_id>`
+(TTL = MAX_TASK_WALL_S), so a verifier in ANOTHER process or container —
+e.g. `python -m agent.verifier <task_id>` — reads exactly what the author's
+side wrote.
+
+Compression happens in flight, not here: the verifier sends its model
+request to VERIFIER_API_BASE, which defaults to the Headroom proxy when
+HEADROOM_ENABLED=1 (see agent/verifier.py). That keeps the headroom-ai
+library out of the agent environment (it cannot co-resolve with aider).
+
+Fallback: when VALKEY_URL is unset or Valkey is unreachable at import
+time, the store is a per-process dict and a warning is logged — hand-off
+then works only within one process.
 """
 
 from __future__ import annotations
 
 import logging
+import os
+
+from agent.budget import MAX_TASK_WALL_S
 
 log = logging.getLogger("shared-context")
 
-_store = None
 _plain: dict[str, str] = {}
 
 
-def _shared():
-    global _store
-    if _store is None:
-        try:
-            import headroom
-
-            _store = headroom.SharedContext(model="gpt-4o")
-        except ImportError:
-            _store = False  # sentinel: plain fallback
-    return _store
-
-
-def compress_text(text: str) -> str:
-    """Compress a hand-off blob with Headroom; identity without it."""
+def _connect():
+    """Sync Valkey client, or None for the in-memory fallback."""
+    if not os.environ.get("VALKEY_URL"):
+        log.warning(
+            "VALKEY_URL unset: hand-off store is per-process memory; a "
+            "verifier in another process will not see bundles"
+        )
+        return None
     try:
-        import headroom
+        from agent.budget import sync_client
 
-        res = headroom.compress([{"role": "tool", "content": text}], model="gpt-4o")
-        return str(res.messages[-1]["content"])
-    except ImportError:
-        return text
-    except Exception as err:  # hand-off must never fail on compression
-        log.warning("compress failed, passing through: %s", err)
-        return text
+        conn = sync_client()
+        conn.ping()
+        return conn
+    except Exception as err:  # noqa: BLE001 - any connect failure degrades
+        log.warning(
+            "Valkey unreachable at import (%s): hand-off store is per-process "
+            "memory; a verifier in another process will not see bundles",
+            err,
+        )
+        return None
+
+
+_valkey = _connect()
+
+
+def _key(task_id: str) -> str:
+    return f"handoff:{task_id}"
 
 
 def put_handoff(task_id: str, diff: str, spec: str) -> str:
     """Store the review bundle for a task; returns the hand-off key."""
-    key = f"handoff:{task_id}"
+    key = _key(task_id)
     bundle = f"# Task spec\n{spec}\n\n# Diff under review\n{diff}"
-    store = _shared()
-    if store:
-        store.put(key, compress_text(bundle))
+    if _valkey is not None:
+        _valkey.set(key, bundle, ex=MAX_TASK_WALL_S)
     else:
         _plain[key] = bundle
     return key
@@ -57,8 +71,8 @@ def put_handoff(task_id: str, diff: str, spec: str) -> str:
 
 def get_handoff(task_id: str) -> str | None:
     """Fetch the bundle a verifier reviews — its ONLY context (T2.3)."""
-    key = f"handoff:{task_id}"
-    store = _shared()
-    if store:
-        return store.get(key)
+    key = _key(task_id)
+    if _valkey is not None:
+        value = _valkey.get(key)
+        return value.decode() if isinstance(value, bytes) else value
     return _plain.get(key)

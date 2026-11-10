@@ -1,0 +1,16 @@
+# Build-context hygiene (Lean & Precise L1.4). Nothing below is COPY'd by
+# any Containerfile; tests/test_containerfiles.py enforces that.
+.git
+**/node_modules
+.venv
+venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.ruff_cache
+eval/
+docs/
+tests/
+deploy/headroom-assets/
+relay/dist/
+.cache

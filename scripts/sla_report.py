@@ -21,9 +21,11 @@ import sys
 
 import asyncpg
 
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL", "postgres://postgres:dev@localhost:5432/swarm"
-)
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from agent import sla_metrics  # noqa: E402
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:dev@localhost:5432/swarm")
 HEADROOM_STATS_URL = os.environ.get("HEADROOM_STATS_URL", "http://localhost:8787")
 OUTPUT_HOLDOUT = float(os.environ.get("HEADROOM_OUTPUT_HOLDOUT", "0") or 0)
 
@@ -55,16 +57,24 @@ def headroom_savings_lines(stats: dict | None, holdout: float) -> list[str]:
     return lines
 
 
-def print_headroom_savings() -> None:
-    import requests
+def gate_timing_line(stage1_ms: float | None, stage2_ms: float | None) -> str:
+    """L2.1 — median first-pass gate time per stage (None = no data)."""
 
-    stats = None
-    try:
-        resp = requests.get(f"{HEADROOM_STATS_URL.rstrip('/')}/stats", timeout=3)
-        if resp.ok:
-            stats = resp.json()
-    except requests.RequestException:
-        pass
+    def fmt(ms):
+        return "n/a" if ms is None else f"{ms / 1000:.1f}s"
+
+    return f"gate median s1 / s2   : {fmt(stage1_ms)} / {fmt(stage2_ms)}  (fast lint / full checks)"
+
+
+def lessons_line(counts: list[tuple[str, int]]) -> str:
+    """R4 — which vector spaces the lessons live in; more than one embedder
+    (or text-only rows) means part of the memory matches by text only."""
+    shown = ", ".join(f"{name} {n}" for name, n in counts) or "none"
+    return f"lessons by embedder   : {shown}"
+
+
+def print_headroom_savings() -> None:
+    stats = sla_metrics.fetch_headroom_stats(HEADROOM_STATS_URL)
     for line in headroom_savings_lines(stats, OUTPUT_HOLDOUT):
         print(line)
 
@@ -72,41 +82,12 @@ def print_headroom_savings() -> None:
 async def report(hours: int) -> int:
     pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=2)
 
-    total, done_in_window = await pool.fetchrow(
-        """
-        SELECT count(*),
-               count(*) FILTER (
-                 WHERE status = 'done'
-                 AND updated_at - created_at <= interval '24 hours')
-        FROM tasks WHERE created_at > now() - make_interval(hours => $1)
-        """,
-        hours,
-    )
-
-    latency = await pool.fetchrow(
-        """
-        SELECT avg(t.updated_at - o.published_at)                       AS avg_pickup,
-               percentile_cont(0.95) WITHIN GROUP
-                 (ORDER BY extract(epoch FROM t.updated_at - o.published_at)) AS p95_s
-        FROM tasks t
-        JOIN outbox o ON o.msg_id = t.task_id::text
-        WHERE t.status IN ('claimed', 'done')
-          AND o.published_at IS NOT NULL
-          AND t.created_at > now() - make_interval(hours => $1)
-        """,
-        hours,
-    )
-
-    # v4.1 T2.1 — first-pass green rate (north-star metric DR-4.1)
-    green_row = await pool.fetchrow(
-        """
-        SELECT count(*) FILTER (WHERE first_pass_green) AS green,
-               count(*) FILTER (WHERE first_pass_green IS NOT NULL) AS measured,
-               coalesce(avg(repair_cycles), 0) AS avg_repairs
-        FROM tasks WHERE created_at > now() - make_interval(hours => $1)
-        """,
-        hours,
-    )
+    # The queries live in agent/sla_metrics.py, shared with /metrics (L3.2).
+    total, done_in_window = await sla_metrics.completion(pool, hours)
+    latency = await sla_metrics.pickup_latency(pool, hours)
+    green_row = await sla_metrics.first_pass(pool, hours)  # v4.1 T2.1 north star
+    gate_row = await sla_metrics.gate_medians(pool, hours)  # L2.1
+    outbox_rows, outbox_pending = await sla_metrics.outbox_rows(pool)  # L2.5
 
     rate = (done_in_window / total * 100) if total else 100.0
     avg_pickup = latency["avg_pickup"]
@@ -122,9 +103,9 @@ async def report(hours: int) -> int:
         )
     else:
         print("first-pass green rate : n/a (no measured tasks yet)")
+    print(gate_timing_line(gate_row["s1"], gate_row["s2"]))
     print(
-        "avg publish->claim    : "
-        f"{avg_pickup if avg_pickup is not None else 'n/a'}  (SLA < 10 min)"
+        f"avg publish->claim    : {avg_pickup if avg_pickup is not None else 'n/a'}  (SLA < 10 min)"
     )
     print(
         "p95 pickup latency    : "
@@ -132,11 +113,11 @@ async def report(hours: int) -> int:
         "  (Stage 3: flat 4 -> 16 agents)"
     )
 
+    print(f"outbox rows           : {outbox_rows} ({outbox_pending} unpublished)")
+    print(lessons_line(await sla_metrics.lessons_by_embedder(pool)))  # R4
     print_headroom_savings()
 
-    breached = rate < 70 or (
-        avg_pickup is not None and avg_pickup.total_seconds() > 600
-    )
+    breached = rate < 70 or (avg_pickup is not None and avg_pickup.total_seconds() > 600)
     if breached:
         print("SLA BREACH — tune consumers/prompts/embeddings (not a hard stop)")
     await pool.close()

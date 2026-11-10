@@ -1,11 +1,12 @@
-# Team-swarm — Overnight Agent Swarm v4.1 "Elevation"
+# Team-swarm — Overnight Agent Swarm v4.2.0 "Elevation+" on "Lean & Precise"
 
 A self-hosted, licence-clean multi-agent coding swarm: autonomous agents
 (backend / frontend / review / triage) pick up tasks overnight, write code
 with [aider](https://github.com/Aider-AI/aider) + **Ornith-1.0** on local
 inference, open PRs on your own Forgejo, and merge to `integration` only
-when every CI gate is green. No cloud calls, no agent egress, everything
-permissively licensed (Apache/MIT/BSD/MPL — enforced by a fail-closed gate).
+when every CI gate is green. No cloud calls, no agent egress, and everything
+that ships is permissively licensed (Apache/MIT/BSD/MPL — a fail-closed gate;
+the three licence zones are in [conventions/licensing.md](conventions/licensing.md)).
 
 ```
                           ┌─────────────────────────────────────────────┐
@@ -33,7 +34,7 @@ permissively licensed (Apache/MIT/BSD/MPL — enforced by a fail-closed gate).
   └───┬────┘   └────┬────┘    └────┬─────┘    └────┬─────┘  in sandboxed containers
       ▼             ▼              ▼               ▼
   OpenBao (leased secrets)  SeaweedFS (artifacts)  Valkey (locks · budgets)
-                     OpenSearch + Langfuse (logs · traces · token spend)
+   OpenSearch (logs) · Jaeger (traces) · Prometheus + Perses (SLA dashboards) · Langfuse
 ```
 
 ## Quickstart (Tier A — one laptop, Podman, no Kubernetes)
@@ -54,11 +55,37 @@ make inject         # inject a synthetic task through the outbox
 make logs           # watch it flow: outbox -> relay -> JetStream -> agent
 ```
 
+### Lite path (smallest footprint)
+
+Four spine services instead of seven — no Apicurio, no SeaweedFS, and Ollama
+only when you ask for it. Same images, volumes and networks as the full file
+(`deploy/compose.lite.yaml`), so `make up` later just adds the rest.
+
+```bash
+make up-lite && make bootstrap && make ollama && make forgejo && make agent ROLE=backend
+make relay                # second terminal — the outbox relay is the only JetStream publisher
+make inject               # third terminal — one synthetic task
+```
+
+Published ports bind to `127.0.0.1` (`SWARM_BIND_ADDR`). If your runtime does
+not forward ports of containers on the internal network (rootful Podman,
+Docker) and `localhost:5432` does not answer, use `make up-lite HOSTPORTS=1`
+(and `make up HOSTPORTS=1`); see RUNBOOK, "Host ports and isolation".
+
+`make bootstrap` detects the lite spine and skips Protobuf schema registration
+(the `proto-compat` CI job still guards compatibility). `make down-lite` stops
+it; `make disk-usage` shows container disk use and `make clean` prunes it
+(keeping the swarm's own data volumes).
+
 Run components on the host instead of in containers (nicer for hacking):
 
 ```bash
 cp .env.example .env
-pip install -r requirements.txt -r requirements-dev.txt
+uv sync --frozen --group agent --group dev   # pyproject.toml + uv.lock are the source of truth
+#   fallback without uv: pip install -r requirements.txt -r requirements-dev.txt
+#   (the requirements*.txt files are generated from uv.lock by `make lock`)
+make hooks   # pre-commit: ruff, ruff-format, uv-lock, hygiene (developer machines only —
+             # swarm agents have no egress; their in-container ruff gate is the equivalent)
 (cd relay && npm install)
 make relay                # terminal 1 — outbox relay
 make agent ROLE=backend   # terminal 2 — one agent worker
@@ -99,7 +126,12 @@ scripts/               # bootstrap, schema registration, task injection, qualifi
    `--network=none --read-only --cap-drop=ALL` + seccomp on Tier A).
 7. Secrets are **leased from OpenBao**, never baked into images or env files.
 8. Test environments use **synthetic data only**.
-9. **Fail-closed license gate** on every PR: Apache/MIT/BSD/MPL only.
+9. **Three-zone license gate** on every PR (`conventions/licensing.md`):
+   everything that ships — our code and every image's contents (Zone C) — is
+   Apache/MIT/BSD/MPL/ISC/0BSD only, and that gate is **fail-closed**; nothing
+   linked anywhere in the repo may be AGPL/SSPL/BUSL/Commons Clause (Zone B);
+   network services we only call over a socket, unmodified in their own
+   container (Forgejo, OpenObserve, Grafana …), may carry any OSI license (Zone A).
 
 ## Failure semantics
 
@@ -122,6 +154,7 @@ scripts/               # bootstrap, schema registration, task injection, qualifi
 | 48–80 GB | Ornith-1.0-9B bf16 (`9b-bf16`) / 35B FP8 | `make models-bf16` / vLLM |
 | 8×80 GB or API | Ornith-1.0-397B | vLLM multi-GPU, or hosted via the LiteLLM opt-in fallback |
 | Fallback | gpt-oss:20b or qwen2.5-coder (Apache-2.0) | Ollama |
+| Embeddings (any hardware, CPU) | `all-minilm` (384-dim) served by the inference server's `/v1/embeddings` — the default, `EMBEDDING_BACKEND=api`; options: in-process fastembed `BAAI/bge-small-en-v1.5` (ONNX, no torch) or `BAAI/bge-m3` (1024) | `make models` pulls it; options: `make sync EXTRAS="embeddings"` |
 
 KV-cache headroom matters at 256K context: the tier thresholds in
 `agent/capacity.py` (`9b-q4` ≈8 GB, `35b-q4` ≈24 GB, `9b-bf16` ≈22 GB
@@ -150,11 +183,14 @@ docs ships runnable:
 | nano-claude-code engine | aider | `AGENT_ENGINE=nano-claude-code` (custom: `AGENT_ENGINE_CMD="tool {message}"`) |
 | Qdrant vector store (>5–10M vectors) | pgvector | `make qdrant` + `VECTOR_BACKEND=qdrant` (`pip install -r requirements-vector.txt`) |
 | Chroma local-tier retrieval (retained v3.0 option) | pgvector | `VECTOR_BACKEND=chroma` |
-| bge-m3 embeddings (quality > speed) | all-MiniLM-L6-v2 | apply `db/migrations/001_bge_m3_embeddings.sql`, set `EMBEDDING_MODEL=BAAI/bge-m3 EMBEDDING_DIM=1024`, `scripts/seed_knowledge.py --reembed` |
+| fastembed embeddings (in-process ONNX, no torch, no inference server needed) | `api` backend: Ollama `all-minilm` (384) | `make sync EXTRAS="embeddings"` + `EMBEDDING_BACKEND=fastembed` (default model `BAAI/bge-small-en-v1.5`, 384), then **mandatory** `scripts/seed_knowledge.py --reembed`; for host processes — the agent image carries no embedder |
+| bge-m3 embeddings (quality > speed) | `api` backend: Ollama `all-minilm` (384) | apply `db/migrations/optional/001_bge_m3_embeddings.sql` by hand (`make migrate` never runs it), set `EMBEDDING_BACKEND=fastembed EMBEDDING_MODEL=BAAI/bge-m3 EMBEDDING_DIM=1024` (served by fastembed from the ONNX export), then **mandatory** `scripts/seed_knowledge.py --reembed` |
+| sentence-transformers embeddings (torch) | `api` backend: Ollama `all-minilm` (384) | `make sync EXTRAS="embeddings-torch"` + `EMBEDDING_BACKEND=sentence-transformers` (default model all-MiniLM-L6-v2, 384), then **mandatory** `scripts/seed_knowledge.py --reembed` |
 | LangGraph orchestration (durable graphs, HIL) | bespoke loop | `make graph` (`HIL=1` pauses before work; `requirements-orchestration.txt`) |
 | CrewAI declarative crews | bespoke roles | `make crew TITLE="..."` |
 | CDC outbox relay (higher throughput) | 250ms poll | `make relay-cdc` (publication ships in `db/schema.sql`) |
-| Langfuse + OpenSearch (baseline observability) | log lines | `make observability` + `LANGFUSE_*`/`OPENSEARCH_URL` envs (`agent/tracing.py` fans out) |
+| Canonical observability: OpenSearch logs · Jaeger traces · Prometheus + **Perses** SLA dashboard · Langfuse LLM traces | log lines | `make observability` (agents export OTLP to Jaeger and serve `/metrics`; Perses on :8090, Jaeger on :16686) + `LANGFUSE_*`/`OPENSEARCH_URL` envs (`agent/tracing.py` fans out) |
+| Grafana SLA dashboard (AGPL-3.0, Zone A) | Perses | import `deploy/observability/grafana-sla.json` into your Grafana; `make perses-migrate` converts it for Perses |
 | OpenObserve single-binary swap | OpenSearch+Langfuse | `make openobserve` + `OTEL_EXPORTER_OTLP_ENDPOINT` |
 | OTel tracing (Laminar/OpenLLMetry-style) | Langfuse | `OTEL_EXPORTER_OTLP_ENDPOINT` towards any collector |
 | Kata/Firecracker sandbox (dedicated kernel) | gVisor | `runtimeClassName: kata` (`deploy/k8s/runtimeclass-gvisor.yaml` ships both) |
@@ -168,6 +204,52 @@ docs ships runnable:
 | Knowledge-pack seeding (Appendix C) | — | `make seed` after dropping docs in `knowledge/` |
 | Karpathy coding guidelines (Appendix D) | — | vendored as `karpathy-guidelines.md`, imported by `AGENTS.md` + aider; refresh with `scripts/update_karpathy.sh` |
 
+## v4.1.1 "Lean & Precise" — smaller footprint, sharper code generation
+
+Nothing from v4.0/v4.1 was removed; every option above still runs. What
+changed (task-by-task evidence: [docs/loop/STATE.md](docs/loop/STATE.md),
+decisions: [docs/loop/DECISIONS.md](docs/loop/DECISIONS.md), ledger:
+[docs/loop/LEDGER.md](docs/loop/LEDGER.md), sizes:
+[docs/footprint-baseline.md](docs/footprint-baseline.md)):
+
+| Area | What runs |
+|---|---|
+| Toolchain | `pyproject.toml` + `uv.lock` are the source of truth (`make lock`, `make sync`); `requirements*.txt` are generated for the pip fallback; CI installs from the lock with a cache; `make ci-local` runs the same gates; `make hooks` installs pre-commit |
+| Images | `.dockerignore`, multi-stage agent/ingest/relay images (uv/npm builders, slim and distroless runtimes); headroom-ai lives only in the ingest image (it cannot co-resolve with aider) |
+| Lite path | `make up-lite` (nats, postgres+pgvector, valkey, openbao) + `make ollama`; `make clean`, `make disk-usage`; capped sandbox tmpfs and orphan-workdir reaping |
+| Quality gate | two stages — a fast lint of the Python files the task changed, then the full checks + the task's verify command (`QUALITY_FAST_CHECK`); stage timings in `make sla`. Fails closed: a configured check whose tool is missing is red, and a worker without its gate tools exits at start-up (`QUALITY_ALLOW_MISSING_TOOLS=1` is the development escape) |
+| Retrieval | hybrid lesson search (pgvector + Postgres full-text, RRF); embeddings over the inference server's `/v1/embeddings` by default, so dense search works inside the agent containers; each vector records its embedder and dense search stays within one; signature index for Python/TS/JS/Go/Rust/Java, incremental (`make index-repo`) |
+| Storage | morning routine prunes published outbox rows (`OUTBOX_RETENTION_DAYS`) and runs `VACUUM (ANALYZE)` |
+| Licensing | three-zone gate: Zone C (ships) fail-closed permissive, Zone B (linked) denylist, Zone A (network services) any OSI licence — `make gate` |
+| Observability | Jaeger + Prometheus + Perses beside OpenSearch and Langfuse; agents serve the SLA gauges on `/metrics` |
+| Evaluation | ten-task golden pack, two per role (`python scripts/shadow_eval.py --dry-run`), per-role deltas |
+
+Developer and operator targets added in v4.1.1:
+
+| Target | Does |
+|---|---|
+| `make lock` | `uv lock` + regenerate every `requirements*.txt` (idempotent) |
+| `make sync` | `uv sync --frozen` — `GROUPS="agent dev"`, `EXTRAS="embeddings"` (never agent + ingest together) |
+| `make hooks` | install the pre-commit hooks (ruff, ruff-format, uv-lock, hygiene) |
+| `make ci-local` | every CI gate with the same commands |
+| `make up-lite` / `make down-lite` / `make ollama` | the lite spine and on-demand Ollama |
+| `make up HOSTPORTS=1` / `make up-lite HOSTPORTS=1` | the same, with the port-publishing spine services also on the non-internal `swarm-host` network — for runtimes that do not forward ports of internal-only containers; ports bind to `SWARM_BIND_ADDR` (default `127.0.0.1`) |
+| `make clean` | prune stopped containers, dangling images and volumes (keeps the swarm's data volumes) |
+| `make disk-usage` | container disk usage |
+| `make footprint` | wheel sizes per requirement set (+ image sizes when a runtime is up). Image size targets, checked by `make verify-integration`: agent ≤ 850 MB, ingest ≤ 450 MB, relay ≤ 160 MB, headroom ≤ 760 MB |
+| `make gate` | license gate zones C and B, and the Zone A services table |
+| `make perses-migrate` | convert the Grafana dashboard with `percli` |
+| `make tools` / `make ingest-container` | the isolated `headroom` CLI (pinned by `requirements-headroom-proxy.txt`) / one issue sync inside the ingest image |
+| `make torch-cpu-lock` | re-lock the torch extras to CPU-only wheels (needs download.pytorch.org) |
+| `make verify-integration` | every check that needs a container runtime, GPU or the running spine — run it on the runtime host |
+
+Upgrading from v4.1: `make migrate` (applies 002–009, all idempotent; new
+in v4.1.1 are 006–009; it never applies the optional bge-m3 switch), re-run
+`make bootstrap`, `make models` (it now also pulls the embedding model),
+then `python scripts/seed_knowledge.py --reembed` (the default embedder
+changed, and stored vectors only match once they carry the current
+embedder) and `make index-repo REPO=<path>` to rebuild the signature index.
+
 ## v4.1 "Elevation" — best code as output
 
 Every item of the v4.1 development plan is implemented (26/26 coverage
@@ -177,7 +259,7 @@ and the protected SLAs (dashboard: `deploy/observability/grafana-sla.json`).
 
 | Workstream | What runs |
 |---|---|
-| Headroom compression (T1.1–T1.9) | CI gate on fixtures (`.forgejo/scripts/headroom_gate.py`), proxy sidecar (`make headroom`, offline assets via `scripts/seed_headroom_assets.sh`), agent wiring (`HEADROOM_ENABLED=1`), `headroom learn` → PR (`scripts/morning_headroom_learn.py`), output shaper + measured savings in `make sla`, SharedContext hand-off (`agent/shared_context.py`), ingest compression with SeaweedFS originals (`ingest/compress_util.py`), compression attrs in traces |
+| Headroom compression (T1.1–T1.9) | CI gate on fixtures (`.forgejo/scripts/headroom_gate.py`), proxy sidecar (`make headroom`, offline assets via `scripts/seed_headroom_assets.sh`), agent wiring (`HEADROOM_ENABLED=1`), `headroom learn` → PR (`scripts/morning_headroom_learn.py`), output shaper + measured savings in `make sla`, cross-process Valkey hand-off compressed in flight by the proxy (`agent/shared_context.py`), ingest compression with SeaweedFS originals (`ingest/compress_util.py`), compression attrs in traces |
 | Code quality (T2.1–T2.6) | green-build gate + grounded repair loop in `agent/sandbox.py` (`MAX_REPAIR_CYCLES`, red never pushes), repro-test-first policy (`conventions/repro-tests.md`), independent verifier (`agent/verifier.py`, Architect/Security/QA lenses), bounded repo RAG (`make index-repo`, `CONTEXT_PACK=1`), speculative patches (`make speculative TASK=<id>`), repair-cap → DLQ |
 | Planner–executor–verifier (T3.1–T3.3) | verification-aware DAG in `make graph` (subtasks carry `parent_task_id`+`verify_cmd`; replans on verify-fail), single-agent-default policy (`conventions/orchestration.md`), Postgres checkpoints (`GRAPH_CHECKPOINT=postgres`) |
 | Capacity + routing (T4.1–T4.5) | node capacity probe (`agent/capacity.py`, `WORKER_TIERS=auto`), tier subjects `swarm.tasks.<role>.<tier>` (backward-compatible default), LiteLLM gateway with structural local-primary (`make litellm`, `ROUTE_API_FALLBACK` opt-in), RouteLLM proposal (`ROUTER_ENABLED=1`), hardware lineup above |
@@ -191,6 +273,41 @@ bypass per-role with `HEADROOM_ENABLED=0`. Existing deployments: run
 `make migrate` (migrations 002–005) and re-run `make bootstrap`
 (tier consumers + backoff ladder; the stream subject widens to
 `swarm.tasks.>`).
+
+## v4.2 "Elevation+" — engines, security depth, model improvement
+
+A strict superset of v4.1 (nothing removed): three new workstreams add a
+second/third coding engine, a dynamic security lane, and an offline
+model-improvement track. All are **opt-in and shadow-eval-gated**; `aider`
+stays the default engine, `bandit` stays the always-on static gate.
+
+| Workstream | What runs |
+|---|---|
+| Codex engine (T7.1–T7.6) | `AGENT_ENGINE=codex` runs Ornith self-hosted via `codex exec --oss --local-provider ollama -m <CODEX_MODEL>` with Codex's own sandbox off — the container is the boundary (`agent/sandbox.py`, engine-aware token parser); offline egress audit (`make codex-audit`) decides sealed-container vs. the `codex-engine` lane (`make codex-engine`); Codex as a 2nd heterogeneous reviewer (`make codex-review`, `agent/codex_review.py`); cross-engine shadow eval (`make shadow-eval-engines`) — promote only on a win; AGENTS.md ≤32 KiB cross-tool constitution (`make agents-md-check`, CI gate) |
+| Claude Code / SDK (T7.7–T7.8) | Claude Opus 4.8 escalation for the hard ~5% on the **API-fallback lane only** (`agent/escalation_claude.py`, behind `ROUTE_API_FALLBACK=1`, OpenBao-leased key, never sealed); its patch re-enters the green-build gate. Enforcement patterns mirrored onto swarm machinery (`conventions/enforcement-patterns.md`) incl. a rubric grader that forces exactly one revision (`grade_rubric()` in `agent/verifier.py`). **Wired into the task flow, all off by default** (`conventions/escalation.md`): with `ROUTE_API_FALLBACK=1` a `swarm-hard` task that exhausts its repair budget goes to the escalation lane — the host-run worker `make escalation`, never a container — instead of the DLQ, at most once; `RUBRIC_ENABLED=1` grades every green change before the push (one forced revision, then escalation or needs-human); `CODEX_REVIEW=1` adds Codex as a fourth reviewer on `swarm-hard` reviews |
+| Strix security lane (T8.1–T8.5) | `usestrix/strix` dynamic pentest **augmenting** bandit: `make strix` — the Strix CLI from the locked `security` group, with its pinned sandbox image (`STRIX_IMAGE`); advisory CI workflow (`.forgejo/workflows/security.yaml`, promotes to blocking after burn-in), validated findings → `lessons(tag='strix')` + needs-human issues (`scripts/strix_findings.py`), scope guardrail (`conventions/security-scope.md`, in-org repos only) |
+| Antidoom offline (T9.1–T9.5) | FTPO/LoRA anti-doom-loop adapter for local Ornith 9B/35B, **off the critical path** on a GPU host (`deploy/antidoom/`); doom-loop baseline probe (`make doomloop`, `scripts/doomloop_probe.py`) correlated with `reason=snowball`; promote the merged (MIT-derivative) checkpoint only on a measured doom-loop + tokens/PR drop with no green-rate regression |
+
+Placement rule that governs the two CLIs: the sealed agent container is
+egress-free (Hard Rule 1), so **Claude Code/SDK can never run inside it**
+(Claude-model-only + Anthropic egress → API-fallback lane only). **Codex
+runs Ornith locally** and may be sealed *iff* `make codex-audit` proves it
+egress-free; otherwise it runs on the `codex-engine` lane — decided by the
+audit spike, never silently. New external deps (`strix-agent`,
+`claude-agent-sdk`, the `codex` binary, `antidoom`) are all optional and
+guarded — the build stays green when they're absent.
+
+Since v4.2.0 they follow the lean toolchain: `claude-agent-sdk` is the extra
+`escalation` and `strix-agent` the dependency group `security`, both pinned
+in `uv.lock` (`requirements-escalation.txt` and `requirements-security.txt`
+are generated by `make lock`) and neither is in any image; the Codex lane
+image builds from the lock with `@openai/codex` pinned; `make strix-scan`
+runs Strix from the locked group; `make codex-review` fails closed. The
+runtime checks of v4.2 — the Codex lane image, `make codex-audit`,
+`make strix-scan`, one real escalation run (skipped unless
+`ROUTE_API_FALLBACK=1`) — are steps of `make verify-integration`.
+`make escalation` starts the host-run escalation lane. Antidoom stays
+its own offline target on a separate GPU host.
 
 ## Tier B (production: k3s + Istio ambient)
 
