@@ -236,7 +236,7 @@ Developer and operator targets added in v4.1.1:
 | `make up HOSTPORTS=1` / `make up-lite HOSTPORTS=1` | the same, with the port-publishing spine services also on the non-internal `swarm-host` network — for runtimes that do not forward ports of internal-only containers; ports bind to `SWARM_BIND_ADDR` (default `127.0.0.1`) |
 | `make clean` | prune stopped containers, dangling images and volumes (keeps the swarm's data volumes) |
 | `make disk-usage` | container disk usage |
-| `make footprint` | wheel sizes per requirement set (+ image sizes when a runtime is up) |
+| `make footprint` | wheel sizes per requirement set (+ image sizes when a runtime is up). Image size targets, checked by `make verify-integration`: agent ≤ 850 MB, ingest ≤ 450 MB, relay ≤ 160 MB, headroom ≤ 760 MB |
 | `make gate` | license gate zones C and B, and the Zone A services table |
 | `make perses-migrate` | convert the Grafana dashboard with `percli` |
 | `make tools` / `make ingest-container` | the isolated `headroom` CLI (pinned by `requirements-headroom-proxy.txt`) / one issue sync inside the ingest image |

@@ -712,3 +712,17 @@ forwards internal-network ports today, a behaviour its maintainers call
 an implementation detail), so no default was changed: `HOSTPORTS=0`.
 (g) Nothing was runtime-tested here — the session has a Docker client
 but no daemon and no Podman; only `docker compose config` ran.
+
+**D-040 · Image targets from evidence (R6).** The 700 / 300 MB targets of
+L1.4 were set before anything was measured. Measured since: the agent's
+locked environment is 546 MB (D-028 (6)) plus 28 MB for ruff and pytest
+(D-033 (5)), and with python:3.12-slim (≈ 120 MB) and git with its
+dependencies (≈ 90 MB) the image is forecast at ≈ 785 MB; the ingest
+environment is 236 MB before the base image (D-017). New targets, as the
+owner set them: agent ≤ 850 MB, ingest ≤ 450 MB, relay ≤ 160 MB
+(unchanged), headroom ≤ 760 MB (D-035). The gate tools stay in the agent
+image — a quality gate that runs is the point of the image. This closes
+the "expected honest failure" of D-017, D-028 and D-033 for image sizes;
+the real numbers still come from `./scripts/image_sizes.sh` on the
+runtime host. Dated phase sections in STATE.md and
+`docs/footprint-baseline.md` keep the figures they recorded at the time.

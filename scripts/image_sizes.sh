@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # Build the swarm images and check their size targets (Lean & Precise L1.4):
-#   agent <= 700 MB · ingest <= 300 MB · relay <= 160 MB · headroom <= 760 MB
+#   agent <= 850 MB · ingest <= 450 MB · relay <= 160 MB · headroom <= 760 MB
 #   (1 MB = 10^6 bytes of `image inspect .Size`). Builds all four, reports
 #   all, then fails if any build failed or any image is over its target.
+#   Targets follow the evidence (review R6, DECISIONS D-040): the agent's
+#   locked environment with the quality-gate tools measures ~574 MB before
+#   the base image and git; the ingest environment 236 MB before the base.
 #   headroom: 565 MB locked environment + ~120 MB python:3.12-slim, +10 %
 #   (DECISIONS D-035).
 set -uo pipefail
@@ -27,8 +30,8 @@ check() { # $1 = image (Containerfile suffix), $2 = target MB
   fi
 }
 
-check agent 700
-check ingest 300
+check agent 850
+check ingest 450
 check relay 160
 check headroom 760
 exit "$fail"

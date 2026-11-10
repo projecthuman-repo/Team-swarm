@@ -206,3 +206,4 @@ where it went) or `generated` (the file stays, with a header saying so).
 | `scripts/lite_smoke.sh` | extended | R5 — reachability and no-egress assertions; same task-reaches-done check after them |
 | `scripts/lite_smoke_modes.sh`; host mode in `scripts/vi_summary.sh` | generated (new) | R5 — `verify-integration` runs the smoke through it |
 | `tests/test_hostports.py` | generated (new) | R5 |
+| `scripts/image_sizes.sh` targets | extended | R6 — agent 700 → 850, ingest 300 → 450; relay 160 kept; headroom 760 (R1). README, RUNBOOK, STATE updated; the check itself is unchanged |

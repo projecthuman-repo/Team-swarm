@@ -326,7 +326,8 @@ issues), `make sla` (completion rate, publish→claim latency, p95 pickup),
 with a container runtime, image sizes, `system df` and the SLA latency
 lines; the per-phase tables are in `docs/footprint-baseline.md`.
 
-- **Targets:** agent image ≤ 700 MB, ingest ≤ 300 MB, relay ≤ 160 MB
+- **Targets:** agent image ≤ 850 MB (it carries ruff and pytest for the
+  quality gate), ingest ≤ 450 MB, relay ≤ 160 MB, headroom ≤ 760 MB
   (`scripts/image_sizes.sh`, run by `make verify-integration`).
 - **Keeping it small:** the default embedder is an HTTP call to the
   inference server (no library in the image); in-process fastembed (the

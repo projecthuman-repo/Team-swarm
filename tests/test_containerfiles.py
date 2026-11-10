@@ -127,3 +127,19 @@ def test_headroom_image_installs_from_the_lock():
                 "ORT_LIB_LOCATION=/assets/ort", "HF_HOME=/assets/hf", "HEADROOM_HOST=0.0.0.0",
                 "HEADROOM_PORT=8787"):  # fmt: skip
         assert var in text, var
+
+
+def test_image_size_targets_follow_the_evidence_and_the_docs_agree():
+    """Review R6: agent 850, ingest 450, relay 160 (headroom per R1)."""
+    script = open(os.path.join(ROOT, "scripts", "image_sizes.sh")).read()
+    targets = dict(re.findall(r"^check (\w+) (\d+)$", script, re.M))
+    assert targets == {"agent": "850", "ingest": "450", "relay": "160", "headroom": "760"}
+    for doc in ("README.md", os.path.join("docs", "RUNBOOK.md")):
+        text = " ".join(open(os.path.join(ROOT, doc)).read().split())
+        for image, mb in targets.items():
+            assert re.search(rf"{image}( image)? ≤ {mb} MB", text), (doc, image, mb)
+    state = open(os.path.join(ROOT, "docs", "loop", "STATE.md")).read()
+    assert "agent ≤ 850, ingest ≤ 450, relay ≤ 160, headroom ≤ 760 MB" in state
+    # the gate tools stay in the agent image
+    agent = open(os.path.join(ROOT, "deploy", "Containerfile.agent")).read()
+    assert "--group agent --group gate" in agent
