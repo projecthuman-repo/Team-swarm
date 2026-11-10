@@ -24,7 +24,7 @@ in the session container. Recreate and push them after the merge:
 git tag lean-phase-0 af5dcd3
 git tag lean-phase-1 6ab3dfd
 git tag lean-phase-2 22bd2ef
-git tag lean-phase-3 <the "lean(phase-3): close out" commit — see STATE.md>
+git tag lean-phase-3 056a89c
 git push origin lean-phase-0 lean-phase-1 lean-phase-2 lean-phase-3
 ```
 
