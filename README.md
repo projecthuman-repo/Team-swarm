@@ -149,7 +149,7 @@ scripts/               # bootstrap, schema registration, task injection, qualifi
 | 48–80 GB | Ornith-1.0-9B bf16 (`9b-bf16`) / 35B FP8 | `make models-bf16` / vLLM |
 | 8×80 GB or API | Ornith-1.0-397B | vLLM multi-GPU, or hosted via the LiteLLM opt-in fallback |
 | Fallback | gpt-oss:20b or qwen2.5-coder (Apache-2.0) | Ollama |
-| Embeddings (any hardware, CPU) | fastembed `BAAI/bge-small-en-v1.5` (384-dim, ONNX — no torch); option `BAAI/bge-m3` (1024) via the same fastembed path | `make sync EXTRAS="embeddings"` |
+| Embeddings (any hardware, CPU) | `all-minilm` (384-dim) served by the inference server's `/v1/embeddings` — the default, `EMBEDDING_BACKEND=api`; options: in-process fastembed `BAAI/bge-small-en-v1.5` (ONNX, no torch) or `BAAI/bge-m3` (1024) | `make models` pulls it; options: `make sync EXTRAS="embeddings"` |
 
 KV-cache headroom matters at 256K context: the tier thresholds in
 `agent/capacity.py` (`9b-q4` ≈8 GB, `35b-q4` ≈24 GB, `9b-bf16` ≈22 GB
@@ -178,8 +178,9 @@ docs ships runnable:
 | nano-claude-code engine | aider | `AGENT_ENGINE=nano-claude-code` (custom: `AGENT_ENGINE_CMD="tool {message}"`) |
 | Qdrant vector store (>5–10M vectors) | pgvector | `make qdrant` + `VECTOR_BACKEND=qdrant` (`pip install -r requirements-vector.txt`) |
 | Chroma local-tier retrieval (retained v3.0 option) | pgvector | `VECTOR_BACKEND=chroma` |
-| bge-m3 embeddings (quality > speed) | fastembed bge-small-en-v1.5 (384) | apply `db/migrations/optional/001_bge_m3_embeddings.sql` by hand (`make migrate` never runs it), set `EMBEDDING_MODEL=BAAI/bge-m3 EMBEDDING_DIM=1024` (served by fastembed from the ONNX export), then **mandatory** `scripts/seed_knowledge.py --reembed` |
-| sentence-transformers embeddings (torch) | fastembed (ONNX, no torch) | `make sync EXTRAS="embeddings-torch"` + `EMBEDDING_BACKEND=sentence-transformers` (default model all-MiniLM-L6-v2, 384), then **mandatory** `scripts/seed_knowledge.py --reembed` |
+| fastembed embeddings (in-process ONNX, no torch, no inference server needed) | `api` backend: Ollama `all-minilm` (384) | `make sync EXTRAS="embeddings"` + `EMBEDDING_BACKEND=fastembed` (default model `BAAI/bge-small-en-v1.5`, 384), then **mandatory** `scripts/seed_knowledge.py --reembed`; for host processes — the agent image carries no embedder |
+| bge-m3 embeddings (quality > speed) | `api` backend: Ollama `all-minilm` (384) | apply `db/migrations/optional/001_bge_m3_embeddings.sql` by hand (`make migrate` never runs it), set `EMBEDDING_BACKEND=fastembed EMBEDDING_MODEL=BAAI/bge-m3 EMBEDDING_DIM=1024` (served by fastembed from the ONNX export), then **mandatory** `scripts/seed_knowledge.py --reembed` |
+| sentence-transformers embeddings (torch) | `api` backend: Ollama `all-minilm` (384) | `make sync EXTRAS="embeddings-torch"` + `EMBEDDING_BACKEND=sentence-transformers` (default model all-MiniLM-L6-v2, 384), then **mandatory** `scripts/seed_knowledge.py --reembed` |
 | LangGraph orchestration (durable graphs, HIL) | bespoke loop | `make graph` (`HIL=1` pauses before work; `requirements-orchestration.txt`) |
 | CrewAI declarative crews | bespoke roles | `make crew TITLE="..."` |
 | CDC outbox relay (higher throughput) | 250ms poll | `make relay-cdc` (publication ships in `db/schema.sql`) |
@@ -212,7 +213,7 @@ decisions: [docs/loop/DECISIONS.md](docs/loop/DECISIONS.md), ledger:
 | Images | `.dockerignore`, multi-stage agent/ingest/relay images (uv/npm builders, slim and distroless runtimes); headroom-ai lives only in the ingest image (it cannot co-resolve with aider) |
 | Lite path | `make up-lite` (nats, postgres+pgvector, valkey, openbao) + `make ollama`; `make clean`, `make disk-usage`; capped sandbox tmpfs and orphan-workdir reaping |
 | Quality gate | two stages — a fast lint of the Python files the task changed, then the full checks + the task's verify command (`QUALITY_FAST_CHECK`); stage timings in `make sla`. Fails closed: a configured check whose tool is missing is red, and a worker without its gate tools exits at start-up (`QUALITY_ALLOW_MISSING_TOOLS=1` is the development escape) |
-| Retrieval | hybrid lesson search (pgvector + Postgres full-text, RRF); fastembed default embedder (no torch); signature index for Python/TS/JS/Go/Rust/Java, incremental (`make index-repo`) |
+| Retrieval | hybrid lesson search (pgvector + Postgres full-text, RRF); embeddings over the inference server's `/v1/embeddings` by default, so dense search works inside the agent containers; each vector records its embedder and dense search stays within one; signature index for Python/TS/JS/Go/Rust/Java, incremental (`make index-repo`) |
 | Storage | morning routine prunes published outbox rows (`OUTBOX_RETENTION_DAYS`) and runs `VACUUM (ANALYZE)` |
 | Licensing | three-zone gate: Zone C (ships) fail-closed permissive, Zone B (linked) denylist, Zone A (network services) any OSI licence — `make gate` |
 | Observability | Jaeger + Prometheus + Perses beside OpenSearch and Langfuse; agents serve the SLA gauges on `/metrics` |
@@ -238,10 +239,10 @@ Developer and operator targets added in v4.1.1:
 
 Upgrading from v4.1: `make migrate` (applies 002–009, all idempotent; new
 in v4.1.1 are 006–009; it never applies the optional bge-m3 switch), re-run
-`make bootstrap`, then `python scripts/seed_knowledge.py --reembed` (the
-default embedder changed; a v4.1 `.env` that pins
-`EMBEDDING_MODEL=all-MiniLM-L6-v2` keeps the same vectors and needs no
-re-embed) and `make index-repo REPO=<path>` to rebuild the signature index.
+`make bootstrap`, `make models` (it now also pulls the embedding model),
+then `python scripts/seed_knowledge.py --reembed` (the default embedder
+changed, and stored vectors only match once they carry the current
+embedder) and `make index-repo REPO=<path>` to rebuild the signature index.
 
 ## v4.1 "Elevation" — best code as output
 

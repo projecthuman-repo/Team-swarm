@@ -66,6 +66,13 @@ def gate_timing_line(stage1_ms: float | None, stage2_ms: float | None) -> str:
     return f"gate median s1 / s2   : {fmt(stage1_ms)} / {fmt(stage2_ms)}  (fast lint / full checks)"
 
 
+def lessons_line(counts: list[tuple[str, int]]) -> str:
+    """R4 — which vector spaces the lessons live in; more than one embedder
+    (or text-only rows) means part of the memory matches by text only."""
+    shown = ", ".join(f"{name} {n}" for name, n in counts) or "none"
+    return f"lessons by embedder   : {shown}"
+
+
 def print_headroom_savings() -> None:
     stats = sla_metrics.fetch_headroom_stats(HEADROOM_STATS_URL)
     for line in headroom_savings_lines(stats, OUTPUT_HOLDOUT):
@@ -107,6 +114,7 @@ async def report(hours: int) -> int:
     )
 
     print(f"outbox rows           : {outbox_rows} ({outbox_pending} unpublished)")
+    print(lessons_line(await sla_metrics.lessons_by_embedder(pool)))  # R4
     print_headroom_savings()
 
     breached = rate < 70 or (avg_pickup is not None and avg_pickup.total_seconds() > 600)

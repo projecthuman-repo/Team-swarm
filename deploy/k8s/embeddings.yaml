@@ -1,0 +1,54 @@
+# Tier B embeddings (review R4): the lessons memory embeds through an
+# OpenAI-compatible /v1/embeddings endpoint (EMBEDDING_BACKEND=api). The
+# Tier B inference server (vllm.yaml) serves one generative model and no
+# embeddings route, so this is a small CPU Ollama serving `all-minilm`
+# (384-dim) — the same model and vector space as Tier A, so lessons move
+# between tiers without a re-embed.
+#
+# The model is NOT pulled automatically (default-deny egress). Once, from a
+# host that may reach the Ollama registry, or by pre-seeding the PVC:
+#   kubectl exec -n swarm deploy/embeddings -- ollama pull all-minilm
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: embeddings
+  namespace: swarm
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: embeddings }
+  template:
+    metadata:
+      labels: { app: embeddings }
+    spec:
+      containers:
+        - name: ollama
+          image: ollama/ollama:latest # same image as the Tier A compose service
+          ports:
+            - containerPort: 11434
+          volumeMounts:
+            - { name: models, mountPath: /root/.ollama }
+      volumes:
+        - name: models
+          persistentVolumeClaim: { claimName: embeddings-models }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: embeddings
+  namespace: swarm
+spec:
+  selector: { app: embeddings }
+  ports:
+    - port: 11434
+      targetPort: 11434
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: embeddings-models
+  namespace: swarm
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests: { storage: 2Gi }

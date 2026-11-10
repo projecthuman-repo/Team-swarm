@@ -41,6 +41,9 @@ spec:
             - { name: OLLAMA_API_BASE, value: http://vllm:8000 }
             - { name: AIDER_MODEL, value: openai/Ornith-1.0-35B }
             - { name: HEADROOM_STATS_URL, value: "http://headroom:8787" }
+            - { name: EMBEDDING_BACKEND, value: api }
+            - { name: EMBEDDING_API_BASE, value: "http://embeddings:11434/v1" }
+            - { name: EMBEDDING_MODEL, value: all-minilm }
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

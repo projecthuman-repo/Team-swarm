@@ -1,4 +1,5 @@
-"""L2.3 — fastembed is the default embedder; sentence-transformers stays an option."""
+"""L2.3 / R4 — the api backend is the default embedder (it works inside the
+agent containers); fastembed and sentence-transformers stay selectable."""
 
 import os
 import subprocess
@@ -32,7 +33,9 @@ def defaults(**env):
 
 
 def test_defaults():
-    assert defaults() == ["fastembed", "BAAI/bge-small-en-v1.5", "384"]
+    assert defaults() == ["api", "all-minilm", "384"]  # R4: the default changed
+    assert defaults(EMBEDDING_BACKEND="fastembed") == [
+        "fastembed", "BAAI/bge-small-en-v1.5", "384"]  # fmt: skip
     assert defaults(EMBEDDING_BACKEND="sentence-transformers") == [
         "sentence-transformers", "all-MiniLM-L6-v2", "384"]  # fmt: skip
     assert defaults(EMBEDDING_MODEL="BAAI/bge-m3", EMBEDDING_DIM="1024")[1:] == [

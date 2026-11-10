@@ -7,7 +7,7 @@ working context small and grounded.
 | Need | Mechanism |
 |---|---|
 | Shrink tool/JSON traffic | Headroom compaction (proxy sidecar, `HEADROOM_ENABLED=1`) |
-| Remember durable facts | structured note-taking via `lessons` (tagged; see T0.2) |
+| Remember durable facts | structured note-taking via `lessons` (tagged; see T0.2). Hybrid search: full-text plus dense vectors from the inference server's `/v1/embeddings` (`EMBEDDING_BACKEND=api`, the default; fastembed and sentence-transformers are in-process options). A lesson is dense-matched only against vectors written by the same embedder; everything else is still found by text |
 | Hand off to a sub-agent / verifier | Valkey hand-off store, compressed in flight by the Headroom proxy (`agent/shared_context.py` → `handoff:<task_id>`, TTL `MAX_TASK_WALL_S`) — diff + spec only, never the author conversation |
 | Hand off large artifacts | SeaweedFS + `spec_ref` (store the blob, pass the reference) |
 | Repo knowledge | bounded retrieval pack (`agent/context_pack.py`): files + signatures under a hard cap (`CONTEXT_PACK_TOKENS`); similar-snippet retrieval is banned (degrades results up to 15%) |

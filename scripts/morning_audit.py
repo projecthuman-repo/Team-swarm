@@ -113,14 +113,16 @@ async def audit(since_hours: int) -> int:
         else:
             import uuid as _uuid
 
-            from agent.lessons import embed, to_pgvector
+            from agent.lessons import embed, stored_embedder, to_pgvector
 
+            vec = embed(lesson)
             await pool.execute(
-                "INSERT INTO lessons(lesson_id, text, tag, embedding) "
-                "VALUES($1, $2, 'morning-audit', $3)",
+                "INSERT INTO lessons(lesson_id, text, tag, embedding, embedder) "
+                "VALUES($1, $2, 'morning-audit', $3, $4)",
                 _uuid.uuid4(),
                 lesson,
-                to_pgvector(embed(lesson)),
+                to_pgvector(vec),
+                stored_embedder(vec),
             )
         open_issue(token, issue_title, lesson)
         log.warning("PR #%s flagged -> lesson + needs-human issue", pr["number"])

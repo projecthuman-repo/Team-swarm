@@ -134,9 +134,12 @@ migrate: ## apply db/migrations/*.sql in order (idempotent; optional/ is applied
 	  $(RUNTIME) exec -i $$($(RUNTIME) ps -qf name=postgres | head -1) \
 	    psql -v ON_ERROR_STOP=1 -U postgres -d swarm < $$f || exit 1; done
 
-models: ## pull the default Ornith model into the ollama container
+EMBED_MODEL ?= all-minilm
+models: ## pull the default Ornith model and the embedding model (EMBED_MODEL) into the ollama container
 	$(RUNTIME) exec -it $$($(RUNTIME) ps -qf name=ollama | head -1) \
 	  ollama pull maxwell1500/ornith-9b:Q4_K_M
+	$(RUNTIME) exec -it $$($(RUNTIME) ps -qf name=ollama | head -1) \
+	  ollama pull $(EMBED_MODEL)
 
 models-35b: ## 35B MoE Q4 for 24GB+ nodes (both architect and editor roles)
 	$(RUNTIME) exec -it $$($(RUNTIME) ps -qf name=ollama | head -1) \
@@ -202,8 +205,9 @@ verify-integration: ## run every deferred integration check (runtime host)
 	@$(VI) "L3.1/R2 license gate zone B (publisher metadata + syft over the repository, denylist)" uv run --no-sync python .forgejo/scripts/license_gate.py --zone B
 	@$(VI) "L1.5 lite spine: boot, bootstrap, one task reaches done" ./scripts/lite_smoke.sh
 	@$(VI) "L2.2+ real-Postgres tests (hybrid retrieval SQL) on the spine" env REQUIRE_POSTGRES=1 uv run --no-sync pytest -q
-	@$(VI) "L2.3 fastembed embeds: embed('hello') is a 384-vector" uv run --frozen --group agent --extra embeddings python -c "from agent.lessons import embed; v = embed('hello'); assert v is not None and len(v) == 384, v; print('384-dim ok')"
-	@$(VI) "L2.3/L3.3 shadow-eval, full ten-task golden pack per embedder: fastembed first-pass green rate >= baseline" ./scripts/embeddings_shadow.sh
+	@$(VI) "L2.3 fastembed option embeds: embed('hello') is a 384-vector" env EMBEDDING_BACKEND=fastembed EMBEDDING_MODEL=BAAI/bge-small-en-v1.5 uv run --frozen --group agent --extra embeddings python -c "from agent.lessons import embed; v = embed('hello'); assert v is not None and len(v) == 384, v; print('384-dim ok')"
+	@$(VI) "R4 api embedder against the spine's Ollama: embed('hello') is a 384-vector" env EMBEDDING_BACKEND=api EMBEDDING_API_BASE=http://localhost:11434/v1 EMBEDDING_MODEL=$(EMBED_MODEL) uv run --no-sync python -c "from agent.lessons import embed; v = embed('hello'); assert v is not None and len(v) == 384, v; print('384-dim ok')"
+	@$(VI) "L2.3/L3.3/R4 shadow-eval, full ten-task golden pack per embedder: api default and fastembed first-pass green rate >= the v4.1 baseline" ./scripts/embeddings_shadow.sh
 	@$(VI) "L3.2 observability: gauges scraped, task span in Jaeger, Perses dashboard" ./scripts/observability_smoke.sh
 	@$(VI) "L3.2 percli lint of the Perses dashboard (needs percli)" percli lint -f deploy/observability/perses-sla.json
 	@./scripts/vi_summary.sh

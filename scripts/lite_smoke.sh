@@ -30,6 +30,10 @@ jq -n '{data: {token: env.LITE_SMOKE_FORGEJO_TOKEN}}' \
       -H "X-Vault-Token: ${OPENBAO_TOKEN:-dev-root}" -d @- >/dev/null || exit 1
 make --no-print-directory ollama || exit 1
 "$RUNTIME" exec "$("$RUNTIME" ps -qf name=ollama | head -1)" ollama pull "$MODEL" || exit 1
+# R4: the agents embed through Ollama (EMBEDDING_BACKEND=api); without the
+# model they only degrade to text-only search, but the smoke should run as shipped.
+"$RUNTIME" exec "$("$RUNTIME" ps -qf name=ollama | head -1)" \
+  ollama pull "${LITE_SMOKE_EMBED_MODEL:-all-minilm}" || exit 1
 make --no-print-directory forgejo || exit 1
 "$RUNTIME" compose -f deploy/compose.yaml --profile swarm up -d --build relay agent-backend || exit 1
 

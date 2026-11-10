@@ -50,6 +50,12 @@ x-agent-base: &agent-base
     # L3.2: spans + logs to Jaeger when the observability profile runs.
     # Unset -> Jaeger; set it empty to disable, or point it at OpenObserve.
     OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT-http://jaeger:4318}
+    # R4: lessons are embedded through the inference server's OpenAI-compatible
+    # /v1/embeddings (the agent image carries no embedder and has no egress).
+    # `make models` pulls the model. Fixed, like HEADROOM_STATS_URL below.
+    EMBEDDING_BACKEND: api
+    EMBEDDING_API_BASE: http://ollama:11434/v1
+    EMBEDDING_MODEL: all-minilm
     # /metrics reads the Headroom proxy's /stats (swarm_headroom_savings_ratio)
     # Fixed, not interpolated: a root .env carries the host-side localhost URL.
     HEADROOM_STATS_URL: http://headroom:8787

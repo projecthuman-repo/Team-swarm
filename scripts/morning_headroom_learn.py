@@ -140,7 +140,7 @@ async def mirror_accepted(token: str) -> int:
 
     import asyncpg
 
-    from agent.lessons import embed, to_pgvector
+    from agent.lessons import embed, stored_embedder, to_pgvector
 
     resp = requests.get(
         f"{FORGEJO}/api/v1/repos/{OWNER}/{REPO}/pulls",
@@ -159,12 +159,14 @@ async def mirror_accepted(token: str) -> int:
         text = f"[headroom-learn] accepted: {pr.get('title')}\n{pr.get('body', '')[:1500]}"
         if await pool.fetchval("SELECT 1 FROM lessons WHERE text = $1", text):
             continue
+        vec = embed(text)
         await pool.execute(
-            "INSERT INTO lessons(lesson_id, text, tag, embedding) "
-            "VALUES($1, $2, 'headroom-learn', $3)",
+            "INSERT INTO lessons(lesson_id, text, tag, embedding, embedder) "
+            "VALUES($1, $2, 'headroom-learn', $3, $4)",
             uuid.uuid4(),
             text,
-            to_pgvector(embed(text)),
+            to_pgvector(vec),
+            stored_embedder(vec),
         )
         mirrored += 1
     await pool.close()

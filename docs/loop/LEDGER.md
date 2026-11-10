@@ -186,3 +186,17 @@ where it went) or `generated` (the file stays, with a header saying so).
 | `tests/test_license_gate.py` | extended | R2 — syft-side cases kept; laundering, Boost and allowlist cases added; the inventory test replaced by the metadata tests |
 | `sandbox.check_workspace` missing-tool handling | extended | R3 — red with `gate tool <name> is not installed` (was a skip note); every other path unchanged |
 | `agent_worker.require_gate_tools()`; `QUALITY_ALLOW_MISSING_TOOLS` | generated (new) | R3 — replaces the start-up log line of D-033; `missing_gate_tools()` kept |
+| `EMBEDDING_BACKEND=api` (`_embed_api`, `EMBEDDING_API_BASE`) | generated (new) | R4 — the new default |
+| `EMBEDDING_BACKEND=fastembed`, `=sentence-transformers` | kept | R4 — selectable exactly as before; fastembed is no longer the default (D-038) |
+| Migration `010_lessons_embedder.sql`; `lessons.embedder` in `db/schema.sql` | generated (new) | R4 |
+| `match_lessons_hybrid` | extended | R4 — five arguments (adds the caller's embedder); the four-argument function is dropped |
+| `write_lesson`, `seed_knowledge.py` (seed, index-repo, reembed), `morning_audit.py`, `morning_headroom_learn.py` | extended | R4 — write the embedder with every vector |
+| `make models` | extended | R4 — the Ornith pull is unchanged; also pulls `EMBED_MODEL` (all-minilm) |
+| `make sla` | extended | R4 — one more line: lessons per embedder (`sla_metrics.lessons_by_embedder`) |
+| Compose / k8s agent environment | extended | R4 — `EMBEDDING_BACKEND`, `EMBEDDING_API_BASE`, `EMBEDDING_MODEL` |
+| `deploy/k8s/embeddings.yaml` + `install.sh` line | generated (new) | R4 — Tier B embeddings service |
+| `scripts/embeddings_shadow.sh` | extended | R4 — third config `api-all-minilm`; the baseline and fastembed runs kept, both gated |
+| `verify-integration` | extended | R4 — api embed check added; the fastembed check kept (now selects its backend explicitly) |
+| `scripts/lite_smoke.sh` | extended | R4 — also pulls the embedding model |
+| README, RUNBOOK §2, `.env.example`, `conventions/context.md` | extended | R4 |
+| `tests/test_embedding_api.py` | generated (new) | R4; `tests/test_embeddings.py`, `tests/test_lessons.py` updated for the new default and signature |

@@ -54,8 +54,9 @@ async def test_search_uses_hybrid_function_with_tag(monkeypatch):
     out = await lessons.search_lessons(pool, "parse_outbox_row", limit=3, tag="codex-index")
     assert out == ["lesson"]
     sql, args = pool.calls[0]
-    assert "match_lessons_hybrid($1, $2, $3, $4)" in sql
-    assert args[0] == "parse_outbox_row" and args[2:] == ("codex-index", 3)
+    assert "match_lessons_hybrid($1, $2, $3, $4, $5)" in sql
+    assert args[0] == "parse_outbox_row"
+    assert args[2:] == (lessons.embedder_id(), "codex-index", 3)  # R4: the caller's embedder
     assert args[1].startswith("[0.100000,")
 
 
@@ -104,8 +105,9 @@ async def test_exact_identifier_ranks_first_in_real_postgres(pg, monkeypatch):
     ]
     for text, vec, tag in rows:
         await pg.execute(
-            "INSERT INTO lessons(lesson_id, text, tag, embedding) VALUES($1, $2, $3, $4)",
-            uuid.uuid4(), text, tag, to_pgvector(vec),
+            "INSERT INTO lessons(lesson_id, text, tag, embedding, embedder) "
+            "VALUES($1, $2, $3, $4, $5)",
+            uuid.uuid4(), text, tag, to_pgvector(vec), lessons.embedder_id(),
         )  # fmt: skip
     query_vec = [0.9, 0.3] + [0.0] * 382  # dense: 'near' (dim 0) beats the exact one
     dense = await pg.fetch(

@@ -93,6 +93,14 @@ async def outbox_rows(pool) -> tuple[int, int]:
     return row["n"], row["pending"]
 
 
+async def lessons_by_embedder(pool) -> list[tuple[str, int]]:
+    """R4 — lessons per embedder (`<backend>:<model>`), text-only rows last."""
+    rows = await pool.fetch(
+        "SELECT embedder, count(*) AS n FROM lessons GROUP BY embedder ORDER BY embedder NULLS LAST"
+    )
+    return [(r["embedder"] or "(text-only)", r["n"]) for r in rows]
+
+
 async def tokens_per_done(pool, hours: int) -> float | None:
     """L3.2 — mean engine tokens of tasks that reached done (PR opened)."""
     return await pool.fetchval(

@@ -642,3 +642,38 @@ binary for a task's own `verify_cmd` keeps its v4.1 behaviour (the task
 fails with the error) — it is task input, not gate configuration.
 (e) No existing test asserted the skip, so the "rewrite those tests" part
 of the task had nothing to rewrite; four tests were added instead.
+
+**D-038 · Embeddings over the inference API (R4).** (a) *Model tag.*
+`all-minilm`: ollama.com and its registry are blocked in the session, so
+the tag and its 384 dimensions were confirmed from Ollama's own repository
+(`integration/embed_test.go` pulls "all-minilm" and asserts 384 floats;
+`testdata/embed.json` has `all-minilm:latest`, unit norm). The explicit
+tags (`:l6-v2`, `:22m`, `:33m`) are not verified, so none is pinned.
+`/v1/embeddings` exists in Ollama since v0.2.6 (route absent in v0.2.5).
+The request sends only `model` and `input`. (b) *Tier B.* The k8s agents
+point `OLLAMA_API_BASE` at vLLM, which serves one generative model and
+registers no embeddings route, so `${OLLAMA_API_BASE}/v1` is not a usable
+default there. Rather than set a base URL that answers 404,
+`deploy/k8s/embeddings.yaml` adds a small CPU Ollama serving the same
+`all-minilm` — same embedder id and vector space as Tier A. Its model
+must be pulled once by the operator (default-deny egress); a static
+manifest like the other k8s files, not exercised here. (c) *Compose
+values are fixed*, not interpolated from the host `.env` (the lesson of
+D-034 (5)). (d) *Function signature.* `match_lessons_hybrid(query_text,
+query_embedding, current_embedder, want_tag, k DEFAULT 5)`; the old
+four-argument one is dropped by 010 and by `schema.sql`. Because
+`make migrate` re-runs 007, the four-argument function is re-created and
+dropped again on every run — harmless, and tested. (e) *Rows from before
+010 have `embedder` NULL* and match by text only until `--reembed`; the
+migration does not guess which model wrote them. (f) `--reembed` now also
+skips a row whose single call failed and exits non-zero with the count,
+keeping D-033 (3)'s rule that a re-embed never nulls a vector. (g) The
+async paths call `embed` through `asyncio.to_thread`: an HTTP call of up
+to 10 s must not stall the worker's event loop. (h) `.env.example` leaves
+`EMBEDDING_MODEL` commented out so that switching the backend picks that
+backend's default model. (i) Not measured: whether Ollama's `all-minilm`
+vectors equal sentence-transformers' all-MiniLM-L6-v2 vectors. They are
+treated as different spaces (different embedder ids), which is the safe
+reading; the shadow-eval in `verify-integration` compares outcomes.
+(j) The Qdrant and Chroma mirrors are not embedder-aware; they hold one
+vector space and are rebuilt by re-embedding, as before.

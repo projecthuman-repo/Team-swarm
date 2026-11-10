@@ -43,7 +43,8 @@ CREATE TABLE IF NOT EXISTS lessons (
   tag        text,                    -- retrieval flywheel (v4.1 T0.2 restore)
   source     text,                    -- L2.4 codex-index: relative source path
   content_sha text,                   -- L2.4 sha256 of the indexed record
-  embedding  vector(384),             -- all-MiniLM-L6-v2 dim
+  embedding  vector(384),             -- EMBEDDING_DIM (all-minilm, bge-small, MiniLM-L6)
+  embedder   text,                    -- R4: `<backend>:<model>` that wrote the vector
   created_at timestamptz DEFAULT now()
 );
 
@@ -66,14 +67,20 @@ CREATE INDEX IF NOT EXISTS lessons_fts_idx ON lessons USING gin(fts);
 -- The sparse CTE orders before its LIMIT (otherwise LIMIT keeps an
 -- arbitrary k*4 of the matches) and the score is cast to float8 to match
 -- the declared result type (DECISIONS D-023).
+-- Review R4 (mirrors 010_lessons_embedder.sql): the embedder that wrote each
+-- vector; dense search ranks only rows of the caller's embedder.
+ALTER TABLE lessons ADD COLUMN IF NOT EXISTS embedder text;
+CREATE INDEX IF NOT EXISTS lessons_embedder_idx ON lessons(embedder);
+DROP FUNCTION IF EXISTS match_lessons_hybrid(text, vector, text, int);
 CREATE OR REPLACE FUNCTION match_lessons_hybrid(
-  query_text text, query_embedding vector, want_tag text, k int DEFAULT 5)
+  query_text text, query_embedding vector, current_embedder text, want_tag text, k int DEFAULT 5)
 RETURNS TABLE (lesson_id uuid, lesson_text text, score float8)
 LANGUAGE sql STABLE AS $$
   WITH dense AS (
     SELECT l.lesson_id, row_number() OVER (ORDER BY l.embedding <=> query_embedding) AS r
     FROM lessons l
-    WHERE l.embedding IS NOT NULL AND (want_tag IS NULL OR l.tag = want_tag)
+    WHERE l.embedding IS NOT NULL AND l.embedder = current_embedder
+      AND (want_tag IS NULL OR l.tag = want_tag)
     ORDER BY l.embedding <=> query_embedding LIMIT k * 4),
   sparse AS (
     SELECT l.lesson_id,

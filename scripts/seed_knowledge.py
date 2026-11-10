@@ -34,7 +34,13 @@ import asyncpg
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from agent.lessons import embed, search_lessons, to_pgvector  # noqa: E402
+from agent.lessons import (  # noqa: E402
+    embed,
+    embedder_id,
+    search_lessons,
+    stored_embedder,
+    to_pgvector,
+)
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:dev@localhost:5432/swarm")
 KNOWLEDGE_DIR = pathlib.Path(__file__).resolve().parent.parent / "knowledge"
@@ -65,11 +71,13 @@ async def seed(pool: asyncpg.Pool) -> int:
             exists = await pool.fetchval("SELECT 1 FROM lessons WHERE text = $1", text)
             if exists:
                 continue
+            vec = embed(text)
             await pool.execute(
-                "INSERT INTO lessons(lesson_id, text, embedding) VALUES($1, $2, $3)",
+                "INSERT INTO lessons(lesson_id, text, embedding, embedder) VALUES($1, $2, $3, $4)",
                 uuid.uuid4(),
                 text,
-                to_pgvector(embed(text)),
+                to_pgvector(vec),
+                stored_embedder(vec),
             )
             n += 1
     return n
@@ -237,17 +245,20 @@ async def index_repo(pool: asyncpg.Pool, repo_path: str) -> dict[str, int]:
         if known.get(source) == sha:
             counts["unchanged"] += 1
             continue
+        vec = embed(text)
         await pool.execute(
-            "INSERT INTO lessons(lesson_id, text, tag, embedding, source, content_sha) "
-            "VALUES($1, $2, 'codex-index', $3, $4, $5) "
+            "INSERT INTO lessons(lesson_id, text, tag, embedding, source, content_sha, embedder) "
+            "VALUES($1, $2, 'codex-index', $3, $4, $5, $6) "
             "ON CONFLICT (source) WHERE tag = 'codex-index' DO UPDATE "
             "SET text = EXCLUDED.text, embedding = EXCLUDED.embedding, "
+            "embedder = EXCLUDED.embedder, "
             "content_sha = EXCLUDED.content_sha, created_at = now()",
             uuid.uuid4(),
             text,
-            to_pgvector(embed(text)),
+            to_pgvector(vec),
             source,
             sha,
+            stored_embedder(vec),
         )
         counts["updated" if source in known else "inserted"] += 1
     # Only sources that are gone (or no longer indexable) are pruned; a file
@@ -269,13 +280,24 @@ async def reembed(pool: asyncpg.Pool) -> int:
             "existing embeddings were left untouched"
         )
     rows = await pool.fetch("SELECT lesson_id, text FROM lessons")
+    done = 0
     for r in rows:
+        vec = embed(r["text"])
+        if vec is None:  # a single failed call must not null a stored vector either
+            continue
         await pool.execute(
-            "UPDATE lessons SET embedding = $2 WHERE lesson_id = $1",
+            "UPDATE lessons SET embedding = $2, embedder = $3 WHERE lesson_id = $1",
             r["lesson_id"],
-            to_pgvector(embed(r["text"])),
+            to_pgvector(vec),
+            embedder_id(),
         )
-    return len(rows)
+        done += 1
+    if done != len(rows):
+        raise SystemExit(
+            f"re-embedded {done} of {len(rows)} lesson(s) as {embedder_id()}; the embedder failed "
+            "for the rest (see the log) — they were left untouched. Run --reembed again."
+        )
+    return done
 
 
 async def run(args: argparse.Namespace) -> None:
@@ -284,7 +306,7 @@ async def run(args: argparse.Namespace) -> None:
         for i, text in enumerate(await search_lessons(pool, args.query), 1):
             print(f"--- {i} ---\n{text[:400]}\n")
     elif args.reembed:
-        print(f"re-embedded {await reembed(pool)} lesson(s)")
+        print(f"re-embedded {await reembed(pool)} lesson(s) as {embedder_id()}")
     elif args.index_repo:
         c = await index_repo(pool, args.index_repo)
         print(

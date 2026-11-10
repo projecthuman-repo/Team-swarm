@@ -58,19 +58,35 @@ is applied by hand and never by `make migrate`.
 | `007_lessons_fts.sql` | `lessons.fts` (generated tsvector) + GIN index + `match_lessons_hybrid()` (dense + full-text, RRF) |
 | `008_lessons_source.sql` | `lessons.source`, `lessons.content_sha` + a unique index on `source` for `tag='codex-index'` (incremental signature index) |
 | `009_task_tokens.sql` | `tasks.tokens_spent` (source of the `swarm_tokens_per_merged_pr` gauge) |
+| `010_lessons_embedder.sql` | `lessons.embedder` (`<backend>:<model>` that wrote each vector); `match_lessons_hybrid()` takes the caller's embedder and ranks dense candidates only among its rows (the four-argument function is dropped) |
 
 **Verify:** `\df match_lessons_hybrid` lists the function; `make
 index-repo REPO=.` twice reports every record unchanged the second time.
 
-**Embeddings (L2.3).** The default embedder is fastembed (ONNX Runtime, no
-torch — extra `embeddings`) with `BAAI/bge-small-en-v1.5`, 384-dim, matching
-`vector(384)`. Options: `EMBEDDING_MODEL=BAAI/bge-m3 EMBEDDING_DIM=1024`
-(after migration 001; same fastembed path) or
-`EMBEDDING_BACKEND=sentence-transformers` (extra `embeddings-torch`; default
-model all-MiniLM-L6-v2). Any switch of backend or model changes the vector
-space — `python scripts/seed_knowledge.py --reembed` is **mandatory** after
-it, or dense search compares incompatible vectors. The upgrade from the
-v4.1 default (all-MiniLM-L6-v2) to bge-small is such a switch.
+**Embeddings (L2.3, R4).** The default embedder is `EMBEDDING_BACKEND=api`:
+`POST ${EMBEDDING_API_BASE}/embeddings`, the OpenAI-compatible shape
+Ollama, vLLM and LiteLLM serve. It is the default because it works where
+the agents run — their image carries no embedding library and they have no
+egress to fetch a model. Defaults: base `${OLLAMA_API_BASE}/v1`, model
+`all-minilm` (384-dim, matching `vector(384)`); `make models` pulls it into
+the Ollama container. Tier B gets the same model from `deploy/k8s/embeddings.yaml`.
+A failed call or a vector of the wrong length logs an error and that
+lesson is stored or searched text-only — it never fails a task.
+
+Options, unchanged: `EMBEDDING_BACKEND=fastembed` (in-process ONNX Runtime,
+no torch — extra `embeddings`; `BAAI/bge-small-en-v1.5`, or
+`EMBEDDING_MODEL=BAAI/bge-m3 EMBEDDING_DIM=1024` after the optional
+migration 001) and `EMBEDDING_BACKEND=sentence-transformers` (extra
+`embeddings-torch`; default model all-MiniLM-L6-v2). They only help
+processes that have the library — host scripts, not the agent containers.
+
+Every vector is stored with its embedder (`lessons.embedder`), and dense
+search ranks only rows written by the current one; rows from another
+embedder, and rows from before migration 010, are still found by full-text.
+So after any switch of backend or model `python scripts/seed_knowledge.py
+--reembed` is what brings the old rows back into dense search (it rewrites
+the column, and refuses to null a vector when the embedder is down).
+`make sla` prints the lessons per embedder.
 
 ## 3. JetStream
 
@@ -267,7 +283,7 @@ prompt, token spend, and check results from the trace.
 | Sandbox | gVisor | Kata/Firecracker | dedicated-kernel threat model | `runtimeClassName: kata` |
 | Observability | OpenSearch+Langfuse | OpenObserve | storage cost / tool sprawl | `make openobserve` + OTLP env |
 | Tracing | Langfuse | OTel (Laminar/OpenLLMetry-style) | vendor-neutral instrumentation | `OTEL_EXPORTER_OTLP_ENDPOINT` |
-| Embeddings | fastembed bge-small-en-v1.5 (384) | bge-m3 via fastembed (1024); sentence-transformers (torch) | retrieval quality > speed | migration 001 + `EMBEDDING_MODEL`/`EMBEDDING_DIM` (or `EMBEDDING_BACKEND`), then `seed_knowledge.py --reembed` |
+| Embeddings | `api`: Ollama `all-minilm` (384) over `/v1/embeddings` | fastembed bge-small (in-process, no torch); bge-m3 via fastembed (1024); sentence-transformers (torch) | no inference server reachable, or retrieval quality > speed | `EMBEDDING_BACKEND` / `EMBEDDING_MODEL` / `EMBEDDING_DIM` (migration 001 for 1024), then `seed_knowledge.py --reembed` |
 | Relay | 250ms poll | logical-replication CDC | outbox throughput | `make relay-cdc` |
 | Engine | aider | nano-claude-code | lightweight runtime | `AGENT_ENGINE=nano-claude-code` |
 | Chat ingress | Telegram | +Slack/Discord | team-channel task initiation | `CHAT_SOURCES=telegram,slack,discord` |
@@ -312,9 +328,10 @@ lines; the per-phase tables are in `docs/footprint-baseline.md`.
 
 - **Targets:** agent image ≤ 700 MB, ingest ≤ 300 MB, relay ≤ 160 MB
   (`scripts/image_sizes.sh`, run by `make verify-integration`).
-- **Keeping it small:** the default embedder is fastembed (the
-  `embeddings` set is ~60 MB of wheels; the torch route is opt-in via
-  `embeddings-torch`, CPU-only wheels with `make torch-cpu-lock`);
+- **Keeping it small:** the default embedder is an HTTP call to the
+  inference server (no library in the image); in-process fastembed (the
+  `embeddings` set, ~60 MB of wheels) and the torch route
+  (`embeddings-torch`, CPU-only wheels with `make torch-cpu-lock`) are opt-in;
   images are multi-stage with a `.dockerignore`; the relay ships as an
   esbuild bundle on distroless.
 - **Lite path:** `make up-lite` runs four services instead of seven;
