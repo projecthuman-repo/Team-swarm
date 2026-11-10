@@ -93,8 +93,8 @@ ingest-container: ## build the ingest image (headroom-ai inside) and run one iss
 	$(COMPOSE) --profile chat build chat-ingress
 	$(COMPOSE) --profile chat run --rm chat-ingress python -m ingest.forgejo_issue_sync
 
-tools: ## isolated CLI tools: headroom (learn loop) — never installed into the agent env
-	uv tool install headroom-ai==0.31.0
+tools: ## isolated CLI tools: headroom (learn loop), pinned by uv.lock — never installed into the agent env
+	uv tool install --constraints requirements-headroom-proxy.txt headroom-ai==0.31.0
 
 inject: ## inject a synthetic task through the outbox
 	python scripts/inject_task.py --role backend --title "synthetic task"
@@ -195,7 +195,8 @@ VI := ./scripts/vi_step.sh
 verify-integration: ## run every deferred integration check (runtime host)
 	@$(VI) --reset
 	@$(VI) "L0.1 footprint (wheels + images + disk + SLA latency)" $(MAKE) --no-print-directory footprint
-	@$(VI) "L0.2/L0.4/L1.4 images build within size targets" ./scripts/image_sizes.sh
+	@$(VI) "L0.2/L0.4/L1.4/R1 images build within size targets" ./scripts/image_sizes.sh
+	@$(VI) "R1 Headroom proxy image starts: /health 200" ./scripts/headroom_image_smoke.sh
 	@$(VI) "L1.1 CPU-only torch for the torch extras" $(MAKE) --no-print-directory torch-cpu-lock
 	@$(VI) "L1.2/L3.1 license gate zone C (syft, fail-closed)" uv run --no-sync python .forgejo/scripts/license_gate.py --zone C
 	@$(VI) "L3.1 license gate zone B (syft, denylist)" uv run --no-sync python .forgejo/scripts/license_gate.py --zone B

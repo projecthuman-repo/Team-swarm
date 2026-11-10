@@ -232,7 +232,7 @@ Developer and operator targets added in v4.1.1:
 | `make footprint` | wheel sizes per requirement set (+ image sizes when a runtime is up) |
 | `make gate` | license gate zones C and B, and the Zone A services table |
 | `make perses-migrate` | convert the Grafana dashboard with `percli` |
-| `make tools` / `make ingest-container` | the isolated `headroom` CLI / one issue sync inside the ingest image |
+| `make tools` / `make ingest-container` | the isolated `headroom` CLI (pinned by `requirements-headroom-proxy.txt`) / one issue sync inside the ingest image |
 | `make torch-cpu-lock` | re-lock the torch extras to CPU-only wheels (needs download.pytorch.org) |
 | `make verify-integration` | every check that needs a container runtime, GPU or the running spine — run it on the runtime host |
 

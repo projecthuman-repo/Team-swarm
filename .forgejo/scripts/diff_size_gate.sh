@@ -25,6 +25,7 @@ GENERATED=(
   requirements-dev.txt
   requirements-elevation.txt
   requirements-embeddings.txt
+  requirements-headroom-proxy.txt
   requirements-ingest.txt
   requirements-orchestration.txt
   requirements-routing.txt

@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Build the swarm images and check their size targets (Lean & Precise L1.4):
-#   agent <= 700 MB · ingest <= 300 MB · relay <= 160 MB
-#   (1 MB = 10^6 bytes of `image inspect .Size`). Builds all three, reports
+#   agent <= 700 MB · ingest <= 300 MB · relay <= 160 MB · headroom <= 760 MB
+#   (1 MB = 10^6 bytes of `image inspect .Size`). Builds all four, reports
 #   all, then fails if any build failed or any image is over its target.
+#   headroom: 565 MB locked environment + ~120 MB python:3.12-slim, +10 %
+#   (DECISIONS D-035).
 set -uo pipefail
 cd "$(dirname "$0")/.."
 RUNTIME="$(command -v podman || command -v docker)"
@@ -28,4 +30,5 @@ check() { # $1 = image (Containerfile suffix), $2 = target MB
 check agent 700
 check ingest 300
 check relay 160
+check headroom 760
 exit "$fail"

@@ -41,6 +41,8 @@ addon --group dev \
   | emit requirements-dev.txt "group 'dev' — add-on to requirements.txt (same resolution)"
 "${EXPORT[@]}" --only-group ingest \
   | emit requirements-ingest.txt "uv export --only-group ingest (ingest image; never with the agent group)"
+"${EXPORT[@]}" --only-group headroom-proxy \
+  | emit requirements-headroom-proxy.txt "uv export --only-group headroom-proxy (Headroom proxy image; never with the agent group)"
 
 { echo "# torch-based option: uv sync --extra embeddings-torch (sentence-transformers)."
   only_extra embeddings; } \

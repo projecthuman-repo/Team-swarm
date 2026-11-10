@@ -58,6 +58,16 @@ jobs:
           curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
             | sh -s -- -b /usr/local/bin
 
+      - name: headroom environment from uv.lock (isolated, review R1)
+        # The locked `headroom-proxy` group — exactly what
+        # deploy/Containerfile.headroom installs. headroom-ai==0.31.0 cannot
+        # co-install with aider-chat (litellm >=1.86.2 vs ==1.81.10), so it
+        # NEVER enters the agent env. Used by the proxy start-up test and by
+        # the headroom gate below.
+        run: |
+          UV_PROJECT_ENVIRONMENT=/tmp/headroom-env \
+            uv sync --frozen --no-install-project --only-group headroom-proxy
+
       # Every gate runs in the synced env; --no-sync keeps `uv run` from
       # re-syncing to the default groups and dropping the agent group.
       - name: lint (ruff)
@@ -65,6 +75,8 @@ jobs:
 
       - name: tests + coverage floor
         # floor = current honest coverage; ratchet it up as the suite grows
+        env:
+          HEADROOM_PROXY_ENV: /tmp/headroom-env
         run: uv run --no-sync pytest --cov=agent --cov=ingest --cov-fail-under=20 -q
 
       - name: security scan (bandit)
@@ -78,12 +90,8 @@ jobs:
       - name: headroom gate (token compression, v4.1 T1.1)
         # chopratejas/headroom (PyPI headroom-ai, Apache-2.0) — compresses
         # checked-in fixtures and asserts ratio floor + CCR round-trip.
-        # Isolated venv: headroom-ai==0.31.0 cannot co-install with aider-chat
-        # (litellm >=1.86.2 vs ==1.81.10), so it NEVER enters the agent env.
-        run: |
-          uv venv --python 3.12 /tmp/headroom-env
-          uv pip install --python /tmp/headroom-env/bin/python headroom-ai==0.31.0
-          /tmp/headroom-env/bin/python .forgejo/scripts/headroom_gate.py
+        # Runs in the locked headroom environment synced above.
+        run: /tmp/headroom-env/bin/python .forgejo/scripts/headroom_gate.py
 
       # Three zones (conventions/licensing.md, L3.1): C = shipped code and
       # image contents, permissive-only, fail-closed; B = everything linked

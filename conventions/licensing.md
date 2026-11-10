@@ -62,7 +62,7 @@ Every compose service and Kubernetes image the swarm runs but does not build.
 | swarm-agent | `deploy/Containerfile.agent` | Zone C — `uv.lock` agent + gate group closure + `agent/ ingest/ skills/ scripts/ conventions/` |
 | swarm-ingest | `deploy/Containerfile.ingest` | Zone C — `uv.lock` ingest group closure + `ingest/` |
 | swarm-relay | `deploy/Containerfile.relay` | Zone C — esbuild bundle of `relay/` + `relay/package-lock.json` closure |
-| swarm-headroom | `deploy/Containerfile.headroom` | Zone C — headroom-ai (Apache-2.0) closure |
+| swarm-headroom | `deploy/Containerfile.headroom` | Zone C — `uv.lock` headroom-proxy group closure (headroom-ai[proxy] 0.31.0, Apache-2.0) |
 
 ## Dependencies added by Lean & Precise v4.1.1
 
@@ -81,6 +81,7 @@ metadata unless noted.
 | tree-sitter-language-pack | 0.13.0 | MIT OR Apache-2.0 | C | already in the agent closure via aider; used by L2.4 |
 | prometheus-client | 0.26.0 | Apache-2.0 AND BSD-2-Clause | C | base deps, `/metrics` (L3.2) |
 | ruff / pytest | (lock) | MIT / MIT | C | group `gate` — the agent image runs the quality gate with them (Phase-3 review) |
+| headroom-ai[proxy] → magika / sqlite-vec / watchdog | 1.0.3 / 0.1.9 / 7.1.0 | Apache-2.0 / MIT OR Apache-2.0 / Apache-2.0 | C | group `headroom-proxy` — the three packages the `proxy` extra adds to the lock (review R1) |
 | esbuild | ^0.25.12 | MIT | B | relay builder stage only — not in the runtime image (L1.4) |
 | pre-commit | 4.x | MIT | B | dev group (L1.3) |
 | pre-commit hooks: ruff-pre-commit, uv-pre-commit, pre-commit-hooks | v0.17.3 / 0.11.32 / v6.0.0 | MIT / MIT OR Apache-2.0 / MIT | B | developer machines only |

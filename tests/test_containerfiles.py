@@ -110,3 +110,20 @@ def test_relay_cmd_matches_esbuild_outputs():
     compose = open(os.path.join(ROOT, "deploy", "compose.yaml")).read()
     cdc = re.search(r"#\s*command:\s*(\[.*?\])", compose).group(1)
     assert json.loads(cdc)[0] in emitted
+
+
+def test_headroom_image_installs_from_the_lock():
+    """Review R1: no floating pip install; the locked group with the proxy extra."""
+    text = open(os.path.join(ROOT, "deploy", "Containerfile.headroom")).read()
+    steps = instructions(os.path.join(ROOT, "deploy", "Containerfile.headroom"))
+    assert not any("pip install" in s for s in steps), "bare pip install in the headroom image"
+    assert "COPY pyproject.toml uv.lock ./" in steps
+    sync = next(s for s in steps if s.startswith("RUN uv sync"))
+    for flag in ("--frozen", "--no-install-project", "--only-group headroom-proxy"):
+        assert flag in sync, flag
+    assert 'CMD ["headroom", "proxy"]' in steps
+    assert "useradd --create-home --uid 10001 headroom" in text
+    for var in ("HEADROOM_UPDATE_CHECK=off", "HF_HUB_OFFLINE=1", "ORT_STRATEGY=system",
+                "ORT_LIB_LOCATION=/assets/ort", "HF_HOME=/assets/hf", "HEADROOM_HOST=0.0.0.0",
+                "HEADROOM_PORT=8787"):  # fmt: skip
+        assert var in text, var

@@ -27,6 +27,13 @@ sha1sum -c --quiet "${TMPDIR:-/tmp}/lock.sha"
 step "generated protobuf code matches proto/"
 ./scripts/check_gen.sh
 
+step "headroom environment from uv.lock (isolated — never the agent env)"
+# The locked `headroom-proxy` group: what deploy/Containerfile.headroom
+# installs. The proxy start-up test and the headroom gate both use it.
+export HEADROOM_PROXY_ENV="${TMPDIR:-/tmp}/headroom-env"
+UV_PROJECT_ENVIRONMENT="$HEADROOM_PROXY_ENV" \
+  uv sync -q --frozen --no-install-project --only-group headroom-proxy
+
 step "lint (ruff)"
 uv run --no-sync ruff check .
 
@@ -39,12 +46,8 @@ uv run --no-sync bandit -q -r agent ingest scripts -x tests --severity-level med
 step "diff-size limit"
 bash .forgejo/scripts/diff_size_gate.sh
 
-step "headroom gate (isolated venv — never the agent env)"
-HV="${TMPDIR:-/tmp}/headroom-env"
-rm -rf "$HV"
-uv venv -q --python 3.12 "$HV"
-uv pip install -q --python "$HV/bin/python" headroom-ai==0.31.0
-"$HV/bin/python" .forgejo/scripts/headroom_gate.py
+step "headroom gate (the locked headroom environment)"
+"$HEADROOM_PROXY_ENV/bin/python" .forgejo/scripts/headroom_gate.py
 
 step "license gate zones C (fail-closed) and B (denylist)"
 if command -v syft >/dev/null 2>&1; then

@@ -175,8 +175,14 @@ def test_prometheus_config_targets():
         cfg = yaml.safe_load(f)
     targets = {t for job in cfg["scrape_configs"] for sc in job["static_configs"]
                for t in sc["targets"]}  # fmt: skip
-    assert targets == {"agent-backend:8080", "agent-frontend:8080", "agent-review:8080",
-                       "agent-triage:8080", "relay:9464"}  # fmt: skip
+    assert targets == {
+        "agent-backend:8080",
+        "agent-frontend:8080",
+        "agent-review:8080",
+        "agent-triage:8080",
+        "relay:9464",
+        "headroom:8787",
+    }  # fmt: skip — headroom: review R1
 
 
 def test_perses_dashboard_covers_every_gauge_with_sla_thresholds():

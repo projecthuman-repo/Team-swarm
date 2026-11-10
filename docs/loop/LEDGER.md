@@ -164,3 +164,11 @@ where it went) or `generated` (the file stays, with a header saying so).
 | License gate: empty-scan check | extended | Second review round — counts non-root packages; a lockfile yielding nothing is exit 2 |
 | `HEADROOM_STATS_URL` in compose | extended | Second review round — fixed value instead of host interpolation; `.env.example` line kept for host-run `make sla` |
 | `.env.example` bge-m3 note | extended | Second review round — points at `db/migrations/optional/` |
+| Dependency group `headroom-proxy` + conflict with `agent` | generated (new) | R1 — `headroom-ai[proxy]==0.31.0`; `ingest` group unchanged |
+| `requirements-headroom-proxy.txt` | generated (new) | R1 — written by `make lock`; in the diff-size generated list |
+| `deploy/Containerfile.headroom` | extended | R1 — two-stage from `uv.lock`; environment block, uid 10001 and `CMD` unchanged |
+| CI / `ci-local` headroom gate | extended | R1 — same gate script, now run in the locked `headroom-proxy` environment (was a separate pinned pip install) |
+| `make tools` | extended | R1 — same package and version, dependencies constrained by the lock |
+| `deploy/observability/prometheus.yml` job `headroom` | generated (new) | R1 — agents and relay jobs unchanged |
+| `scripts/image_sizes.sh` headroom target; `scripts/headroom_image_smoke.sh`; `verify-integration` step | generated (new) | R1 |
+| `tests/test_headroom_proxy.py`; headroom case in `tests/test_containerfiles.py` | generated (new) | R1 |

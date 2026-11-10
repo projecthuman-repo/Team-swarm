@@ -193,7 +193,7 @@ re-paste the review-round prompt; it continues from the first row that is not `D
 
 | id | task | status | evidence / deferred command |
 |---|---|---|---|
-| R1 | Build the Headroom proxy image from the lock | TODO | |
+| R1 | Build the Headroom proxy image from the lock | DONE-DEFERRED-INTEGRATION | Group `headroom-proxy = ["headroom-ai[proxy]==0.31.0"]` + conflict with `agent`: `uv lock` adds magika, sqlite-vec, watchdog (356 packages); 92 pins, no torch; the agent and ingest exports are byte-identical before and after. `Containerfile.headroom` is two-stage from `uv.lock`. `tests/test_headroom_proxy.py` starts `headroom proxy` from an env synced with `--only-group headroom-proxy`: `/health` 200 in 11 s (version 0.31.0), `/metrics` serves `headroom_requests_total`; **the same test fails** on an env installed the old way (`pip install --only-binary headroom-ai headroom-ai` → 0.43.1, "Proxy dependencies not installed … No module named 'fastapi'"). CI and `ci-local` sync that env once (`HEADROOM_PROXY_ENV`), run the start-up test and the headroom gate in it; `make tools` is constrained by `requirements-headroom-proxy.txt`. Prometheus job `headroom` → `headroom:8787/metrics` (path confirmed on the running proxy). Size target 760 MB (D-035). **Deferred:** `./scripts/image_sizes.sh` (builds the image) and `./scripts/headroom_image_smoke.sh` (the image answers `/health`) in `verify-integration`. |
 | R2 | License gate: publisher metadata, shipped closures, no laundering | TODO | |
 | R3 | The quality gate fails closed | TODO | |
 | R4 | Dense retrieval that works where agents run (`EMBEDDING_BACKEND=api`) | TODO | |

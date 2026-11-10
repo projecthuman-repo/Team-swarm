@@ -20,7 +20,12 @@ def pins(path):
 
 def test_addons_agree_with_requirements_txt():
     base = pins(os.path.join(ROOT, "requirements.txt"))
-    standalone = ("requirements-ingest.txt", "requirements-elevation.txt")
+    # image sets from groups that conflict with the agent group — never add-ons
+    standalone = (
+        "requirements-ingest.txt",
+        "requirements-headroom-proxy.txt",
+        "requirements-elevation.txt",
+    )
     addons = [p for p in glob.glob(os.path.join(ROOT, "requirements-*.txt"))
               if not p.endswith(standalone)]  # fmt: skip
     assert addons

@@ -55,7 +55,7 @@ def run_learn(dry_run: bool = True, fixture_log: str | None = None) -> str:
     except FileNotFoundError:
         raise SystemExit(
             f"headroom CLI not found at {HEADROOM_BIN!r}: run `make tools` "
-            "(uv tool install headroom-ai==0.31.0) or set HEADROOM_BIN"
+            "(uv tool install headroom-ai==0.31.0, pinned by uv.lock) or set HEADROOM_BIN"
         ) from None
     return parse_learn_output(out)
 
