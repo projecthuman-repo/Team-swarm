@@ -22,6 +22,10 @@ dependency:
    `ROUTE_API_FALLBACK=1`, else DLQ → needs-human). Doom loops are the
    failure mode T5.3/T9 guard; the rubric never becomes one.
 
+Wired into the task flow behind `RUBRIC_ENABLED=1` (review R11): the
+pre-push review step in `agent/review_gate.py`, counter
+`tasks.rubric_misses`. See `conventions/escalation.md`.
+
 ## Verify
 
 The rubric-miss path forces exactly one revision on a fixture, then

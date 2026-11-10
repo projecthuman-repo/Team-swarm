@@ -7,7 +7,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 CREATE TABLE IF NOT EXISTS tasks (
   task_id       uuid PRIMARY KEY,
   role          text NOT NULL,
-  status        text NOT NULL DEFAULT 'pending',  -- pending|claimed|done|failed
+  status        text NOT NULL DEFAULT 'pending',  -- pending|claimed|done|failed|escalated (R11: waiting for the escalation lane)
   attempt       int  NOT NULL DEFAULT 0,
   budget_tokens bigint NOT NULL,
   claimed_by    text,
@@ -20,6 +20,9 @@ CREATE TABLE IF NOT EXISTS tasks (
   gate_stage1_ms int,                             -- L2.1 fast lint (first pass)
   gate_stage2_ms int,                             -- L2.1 full checks + verify_cmd
   tokens_spent  bigint,                           -- L3.2 engine tokens (SLA gauge)
+  labels        text[] NOT NULL DEFAULT '{}',     -- R11: issue labels as ingested (swarm-hard)
+  rubric_misses int NOT NULL DEFAULT 0,           -- R11 (T7.8): 1 = one forced revision, 2 = escalate / needs-human
+  escalated_at  timestamptz,                      -- R11 (T7.7): handed to the escalation lane; never cleared
   created_at    timestamptz NOT NULL DEFAULT now(), -- SLA tracking (runbook §17)
   updated_at    timestamptz NOT NULL DEFAULT now()
 );
@@ -35,6 +38,19 @@ CREATE TABLE IF NOT EXISTS outbox (
 -- Relay scans unpublished rows in insert order.
 CREATE INDEX IF NOT EXISTS outbox_unpublished_idx
   ON outbox (id) WHERE published_at IS NULL;
+
+-- Review R11 (v4.2 T7.7) — one row per escalated task; the PRIMARY KEY is
+-- the "at most one escalation per task" rule. Written in the same
+-- transaction as the outbox row on swarm.tasks.escalation.
+CREATE TABLE IF NOT EXISTS escalations (
+  task_id      uuid PRIMARY KEY REFERENCES tasks(task_id) ON DELETE CASCADE,
+  reason       text NOT NULL,              -- why the normal path gave up
+  failing_diff text NOT NULL,              -- the last attempt, `git diff` vs the base
+  gate_output  text NOT NULL,              -- the gate (or rubric) output that failed it
+  outcome      text,                       -- pr_opened | the DLQ reason; NULL = waiting
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  finished_at  timestamptz
+);
 
 CREATE TABLE IF NOT EXISTS lessons (
   lesson_id  uuid PRIMARY KEY,

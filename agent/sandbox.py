@@ -144,6 +144,20 @@ class PoisonError(Exception):
     """Non-transient task failure: terminate -> MAX_DELIVERIES -> DLQ."""
 
 
+class EscalationHandoff(PoisonError):
+    """A failure the worker may hand to the escalation lane (review R11).
+
+    Raised instead of a plain PoisonError only when the caller asked for it
+    (`escalate=True`: a swarm-hard task with ROUTE_API_FALLBACK=1). It IS a
+    PoisonError: a caller that does not hand it off sends it to the DLQ.
+    """
+
+    def __init__(self, reason: str, failing_diff: str, gate_output: str):
+        super().__init__(reason)
+        self.failing_diff = failing_diff
+        self.gate_output = gate_output
+
+
 @dataclass
 class RunResult:
     """Outcome of one sandboxed engine run (v4.1 quality metrics)."""
@@ -375,17 +389,63 @@ async def check_workspace(
     return green, "\n\n".join(outputs)
 
 
-async def run_sandboxed_aider(task, secret: str, budget: ValkeyBudget) -> RunResult:
+def _remote(secret: str) -> str:
+    """Clone/push URL carrying the leased bot token (this process only)."""
+    return (
+        f"{FORGEJO_URL.split('://', 1)[0]}://{FORGEJO_BOT_USER}:{secret}@"
+        f"{FORGEJO_URL.split('://', 1)[1]}/{FORGEJO_OWNER}/{FORGEJO_REPO}.git"
+    )
+
+
+async def workspace_diff(repo: str, env: dict, base: str) -> str:
+    """Everything the task changed since `base`: committed, uncommitted and
+    new files (byte-code caches excluded).
+
+    Uses a scratch index, so the workspace's own index — which the engine
+    reads on a later run — is left exactly as it was.
+    """
+    scratch = {**env, "GIT_INDEX_FILE": os.path.join(repo, ".git", "swarm-review-index")}
+    await _run(["git", "read-tree", "HEAD"], repo, scratch, 60, check=False)
+    await _run(["git", "add", "-A"], repo, scratch, 60, check=False)
+    _, diff = await _run(
+        ["git", "diff", "--cached", base, "--", ".", ":(exclude,glob)**/__pycache__/**"],
+        repo,
+        scratch,
+        60,
+        check=False,
+    )
+    return diff
+
+
+def revision_message(original: str, notes: str) -> str:
+    """The one forced revision after a rubric MISS (v4.2 T7.8): the grader's
+    notes, verbatim — an external signal, like the gate output in a repair."""
+    return (
+        f"{original}\n\n"
+        "--- RUBRIC REVISION (one round only) ---\n"
+        "An independent grader scored your change against the task rubric and "
+        "it missed. Its notes are below. Revise the change to meet the rubric; "
+        "do not touch anything else.\n\n"
+        f"```\n{notes[-3000:]}\n```"
+    )
+
+
+async def run_sandboxed_aider(
+    task, secret: str, budget: ValkeyBudget, review=None, escalate: bool = False
+) -> RunResult:
     """Clone, run the engine with the green gate + repair loop, push.
 
     The Forgejo token is a short-lived OpenBao lease, used only in the
     remote URL for this process; a red final result NEVER pushes.
+
+    Review R11 — both off unless the caller passes them:
+    `review` (agent.review_gate.ReviewGate) judges a green change before the
+    push: PASS pushes, a first rubric MISS forces exactly one revision, a
+    block or a second MISS never pushes. `escalate=True` turns the final
+    failure into an EscalationHandoff carrying the diff and the gate output.
     """
     branch = task.branch or f"feature/{task.task_id}"
-    remote = (
-        f"{FORGEJO_URL.split('://', 1)[0]}://{FORGEJO_BOT_USER}:{secret}@"
-        f"{FORGEJO_URL.split('://', 1)[1]}/{FORGEJO_OWNER}/{FORGEJO_REPO}.git"
-    )
+    remote = _remote(secret)
     os.makedirs(SANDBOX_WORKDIR, exist_ok=True)
     workdir = tempfile.mkdtemp(prefix=f"task-{task.task_id[:8]}-", dir=SANDBOX_WORKDIR)
     env = build_env()
@@ -399,42 +459,72 @@ async def run_sandboxed_aider(task, secret: str, budget: ValkeyBudget) -> RunRes
         _, base = await _run(["git", "rev-parse", "HEAD"], repo, env, 60)
         base = base.strip()  # the gate's stage 1 diffs against this (D-030)
 
-        prompt = message
-        green = False
-        check_out = ""
-        for cycle in range(MAX_REPAIR_CYCLES + 1):
-            _heartbeat(workdir)
-            _, out = await _run(engine_cmd(prompt), repo, env, TASK_TIMEOUT_S)
-            spent = max(parse_tokens(out), 1)  # engine-aware (aider|codex)
-            result.tokens_spent += spent
-            await budget.spend(spent)
+        async def engine_until_green(original: str, first: bool) -> tuple[bool, str]:
+            """The engine run plus the grounded repair loop (T2.1/T2.6)."""
+            prompt = original
+            green = False
+            check_out = ""
+            for cycle in range(MAX_REPAIR_CYCLES + 1):
+                _heartbeat(workdir)
+                _, out = await _run(engine_cmd(prompt), repo, env, TASK_TIMEOUT_S)
+                spent = max(parse_tokens(out), 1)  # engine-aware (aider|codex)
+                result.tokens_spent += spent
+                await budget.spend(spent)
 
+                _heartbeat(workdir)
+                timings: dict = {}
+                green, check_out = await check_workspace(repo, env, task.verify_cmd, timings, base)
+                if cycle == 0 and first:
+                    result.first_pass_green = green
+                    result.gate_stage1_ms = timings["stage1_ms"]
+                    result.gate_stage2_ms = timings["stage2_ms"]
+                if green:
+                    break
+                result.repair_cycles += 1
+                if cycle < MAX_REPAIR_CYCLES:
+                    log.warning(
+                        "task %s red, repair cycle %d/%d",
+                        task.task_id,
+                        cycle + 1,
+                        MAX_REPAIR_CYCLES,
+                    )
+                    prompt = repair_message(original, check_out, cycle + 1)
+            return green, check_out
+
+        green, check_out = await engine_until_green(message, first=True)
+
+        if green and review is not None:  # R11: the pre-push review step
             _heartbeat(workdir)
-            timings: dict = {}
-            green, check_out = await check_workspace(repo, env, task.verify_cmd, timings, base)
-            if cycle == 0:
-                result.first_pass_green = green
-                result.gate_stage1_ms = timings["stage1_ms"]
-                result.gate_stage2_ms = timings["stage2_ms"]
-            if green:
-                break
-            result.repair_cycles = cycle + 1
-            if cycle < MAX_REPAIR_CYCLES:
-                log.warning(
-                    "task %s red, repair cycle %d/%d",
-                    task.task_id,
-                    cycle + 1,
-                    MAX_REPAIR_CYCLES,
+            diff = await workspace_diff(repo, env, base)
+            verdict = await review.judge(diff, message, base, repo)
+            if verdict.action == "revise":  # first rubric MISS: exactly one revision
+                log.warning("task %s rubric MISS; one forced revision", task.task_id)
+                green, check_out = await engine_until_green(
+                    revision_message(message, verdict.notes), first=False
                 )
-                prompt = repair_message(message, check_out, cycle + 1)
+                if green:
+                    _heartbeat(workdir)
+                    diff = await workspace_diff(repo, env, base)
+                    verdict = await review.judge(diff, message, base, repo)
+            if green and verdict.action != "push":
+                # A block, or a second MISS: never pushed, never a third round.
+                result.check_output = check_out[-4000:]
+                if verdict.action == "escalate" and escalate:
+                    raise EscalationHandoff(
+                        verdict.reason, diff, f"{verdict.notes}\n\n{check_out}".strip()
+                    )
+                raise PoisonError(f"{verdict.reason}; not pushing. {verdict.notes[-1500:]}")
 
         result.check_output = check_out[-4000:]
         if not green:
             # T2.6: repair cap exceeded -> DLQ -> needs-human. Never push red.
-            raise PoisonError(
+            reason = (
                 f"red after {MAX_REPAIR_CYCLES} repair cycle(s); not pushing. "
                 f"Last check output:\n{check_out[-1500:]}"
             )
+            if escalate:  # R11: swarm-hard + ROUTE_API_FALLBACK=1 -> the escalation lane
+                raise EscalationHandoff(reason, await workspace_diff(repo, env, base), check_out)
+            raise PoisonError(reason)
 
         # Bot pushes ONLY to feature/* (Hard Rule 4); auto-merge to
         # integration happens via the Forgejo API after checks pass.
@@ -447,5 +537,100 @@ async def run_sandboxed_aider(task, secret: str, budget: ValkeyBudget) -> RunRes
         # Deterministic tool failure -> let JetStream retry; after
         # max-deliver the advisory routes it to the DLQ.
         raise PoisonError(str(err)) from err
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
+_FENCE_RE = re.compile(r"```[\w+-]*\n(.*?)```", re.S)
+
+
+def extract_patch(reply: str) -> str:
+    """The unified diff inside an escalation reply, or "" when there is none.
+
+    Accepts a fenced block or a bare diff after prose; the diff must start
+    at a `diff --git` or `--- ` line.
+    """
+    candidates = _FENCE_RE.findall(reply) + [reply]
+    for text in candidates:
+        m = re.search(r"^(diff --git |--- )", text, re.M)
+        if m:
+            return text[m.start() :].rstrip("\n") + "\n"
+    return ""
+
+
+_SECRET_ENV_RE = re.compile(r"TOKEN|SECRET|PASSWORD|PASSWD|KEY|CREDENTIAL", re.I)
+_SERVICE_ENV = {"DATABASE_URL", "VALKEY_URL", "NATS_URL", "OPENBAO_ADDR"}
+
+
+def lane_gate_env(env: dict) -> dict:
+    """The environment the escalation lane gives the patched workspace.
+
+    The lane runs on the host, outside the sealed agent container, and the
+    gate executes code the escalation model wrote. So it gets no variable
+    that names a secret and none that points at the swarm's services.
+    """
+    return {k: v for k, v in env.items() if not _SECRET_ENV_RE.search(k) and k not in _SERVICE_ENV}
+
+
+async def run_escalated_patch(task, secret: str, patch: str) -> RunResult:
+    """Escalation lane (review R11; v4.2 T7.7): one patch, the same gate.
+
+    Applies `patch` to a fresh clone of the base branch, runs the two-stage
+    gate once — no repair loop, an escalation is a single better attempt —
+    and pushes the feature/* branch only on green. Anything else is a
+    PoisonError with the reason, and nothing is pushed.
+
+    The leased token is used for the clone and the push only: the clone's
+    stored remote is rewritten without it before the gate runs, and the gate
+    runs with lane_gate_env().
+    """
+    branch = task.branch or f"feature/{task.task_id}"
+    if not branch.startswith("feature/"):
+        raise PoisonError(f"refusing to push non-feature branch {branch!r}")
+    if not patch.strip():
+        raise PoisonError("escalation returned no patch; nothing to apply")
+    os.makedirs(SANDBOX_WORKDIR, exist_ok=True)
+    workdir = tempfile.mkdtemp(prefix=f"task-{task.task_id[:8]}-esc-", dir=SANDBOX_WORKDIR)
+    env = build_env()
+    gate_env = lane_gate_env(env)
+    remote = _remote(secret)
+    result = RunResult(branch=branch, first_pass_green=False)
+    try:
+        await _run(["git", "clone", "--depth", "1", remote, "repo"], workdir, env, 300)
+        repo = os.path.join(workdir, "repo")
+        await _run(["git", "remote", "set-url", "origin", _remote("")], repo, env, 60)
+        await _run(["git", "checkout", "-b", branch], repo, env, 60)
+        _, base = await _run(["git", "rev-parse", "HEAD"], repo, env, 60)
+        base = base.strip()
+
+        patch_file = os.path.join(workdir, "escalation.patch")
+        with open(patch_file, "w") as f:
+            f.write(patch)
+        code, out = await _run(["git", "apply", "--index", patch_file], repo, env, 60, check=False)
+        if code:
+            raise PoisonError(f"escalation patch does not apply; not pushing.\n{out[-1500:]}")
+
+        timings: dict = {}
+        green, check_out = await check_workspace(repo, gate_env, task.verify_cmd, timings, base)
+        result.gate_stage1_ms = timings["stage1_ms"]
+        result.gate_stage2_ms = timings["stage2_ms"]
+        result.check_output = check_out[-4000:]
+        if not green:
+            raise PoisonError(
+                f"escalated patch is red; not pushing. Last check output:\n{check_out[-1500:]}"
+            )
+
+        title = (task.title or f"task {task.task_id}").splitlines()[0][:72]
+        identity = [
+            "-c",
+            f"user.name={FORGEJO_BOT_USER}",
+            "-c",
+            f"user.email={FORGEJO_BOT_USER}@swarm",
+        ]
+        await _run(["git", *identity, "commit", "-m", f"escalated: {title}"], repo, env, 60)
+        await _run(["git", "push", remote, f"HEAD:refs/heads/{branch}"], repo, env, 300)
+        return result
+    except (RuntimeError, FileNotFoundError) as err:
+        raise PoisonError(str(err).replace(secret, "***") if secret else str(err)) from err
     finally:
         shutil.rmtree(workdir, ignore_errors=True)

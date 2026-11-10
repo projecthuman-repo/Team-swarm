@@ -860,3 +860,62 @@ and `ci.yaml` sync the group into its own environment (`STRIX_ENV`, like
 tests skip, or fail under `REQUIRE_STRIX_ENV=1`.
 (f) *Deferred:* the real scan needs Docker and the model gateway —
 `verify-integration`, step "Strix quick scan".
+
+**D-044 · The three v4.2 capabilities in the task flow (R11).**
+(a) *There was no point that consumed the verifier's verdict.* v4.2's
+verifier is called by its own CLI and by the morning audit, never between
+the gate and the push. R11 adds that point: a pre-push review step
+(`agent/review_gate.py`) the worker runs on a green change. It exists only
+when a flag asks for it — `RUBRIC_ENABLED=1` (every task) or
+`CODEX_REVIEW=1` (swarm-hard tasks). When it runs, a swarm-hard task gets
+the three lenses (the verifier's documented fan-out), plus Codex when
+asked; a task that is not swarm-hard gets the rubric only. A BLOCK — or a
+lens ERROR, as `aggregate` always treated it — is not pushed and takes the
+needs-human path; it does not buy a revision.
+(b) *"Labelled swarm-hard" had no way to reach the worker.* Issue labels
+were read at ingest for the role and tier and then dropped; only the
+`[swarm-hard]` title marker survived. Migration 011 adds `tasks.labels`
+and the Forgejo sync writes it. A task is swarm-hard by label or by the
+marker (`planner.should_decompose`, unchanged). The worker reads the row
+only when one of the three flags is set.
+(c) *Flags off is the old code path.* `task_flow` returns before any
+query, `run_sandboxed_aider` is called with the arguments it always had,
+and the failure is the same `PoisonError` with the same text; a test
+passes a pool that fails on any access.
+(d) *The dedicated subject is `swarm.tasks.escalation`, inside
+`SWARM_TASKS`,* with its own durable consumer `escalation`. A separate
+stream was the alternative; inside `SWARM_TASKS` a failed escalation
+reaches `SWARM_DLQ` through the advisory subject that stream already
+captures, and `make dlq` resolves it like any task.
+(e) *Hand-off.* One transaction: `tasks.status` `claimed` → `escalated`
+(new status value) with `escalated_at`, the `escalations` row, the outbox
+row for the lane and a `PROGRESS` audit event. "At most one" is enforced
+twice — the primary key of `escalations` and `escalated_at IS NULL` in the
+compare-and-set — so an operator who re-injects an escalated task gets the
+DLQ on its next failure, not a second escalation.
+(f) *The lane makes one attempt.* No repair loop: the patch applies and
+the gate is green, or the task goes to the DLQ with the reason.
+(g) *The lane's gate runs model-written code on the host.* The task asked
+for a host-run worker that runs the same gate; there is no container seal
+around it. Mitigations in the code: the gate's environment has no
+variable naming a secret and none pointing at the swarm's services
+(`lane_gate_env`), the leased bot token is used for the clone and the push
+and is not in the clone's stored remote, and the Claude key goes to the
+SDK's CLI process only (`ClaudeAgentOptions.env`) — v4.2 put it into the
+worker's own environment, which every gate subprocess would inherit. The
+SDK runs with `tools=[]`: it returns a patch as text and cannot edit files
+or run commands on the host. Both option names were read from
+claude-agent-sdk 0.2.180's `types.py`. This stays in OWNER_STOP as a thing
+to decide: which host the lane may run on.
+(h) *Not wired:* the LangGraph orchestrator option calls the sandbox with
+its old arguments, so it keeps the plain path.
+(i) *A test assertion changed, and why:* `tests/test_embedding_api.py`
+asserted that the newest migration is `010_lessons_embedder.sql`. With 011
+that statement is false for a reason unrelated to what the test checks
+(010 is idempotent); it now asserts that 010 is in the list.
+(j) *`verify-integration` can report SKIP.* A step that exits 77 is
+recorded as SKIP and does not fail the run; only the real-escalation step
+uses it, and it prints which precondition is off.
+(k) *Deferred:* the real escalation run (`scripts/escalation_lane.sh
+--smoke`) stages a hand-off the way the worker writes it and lets the lane
+handle it against the real SDK, the real gate and Forgejo.

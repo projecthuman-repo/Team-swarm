@@ -243,3 +243,18 @@ where it went) or `generated` (the file stays, with a header saying so).
 | `.forgejo/workflows/security.yaml` | extended | R10 — runs the shared script (was an inline copy of the same commands since R7); still advisory |
 | `STRIX_IMAGE`, `STRIX_SCAN_MODE`, `STRIX_TARGET` in `.env.example`; Zone A row "Strix sandbox" | generated (new) | R10 — the image tag is the locked strix-agent's own default |
 | `scripts/ci_local.sh`, `.forgejo/workflows/ci.yaml` | extended | R10 — sync the `security` group into `STRIX_ENV` for the tests that read the CLI's defaults |
+| v4.2 — `agent/escalation_claude.py` (`escalate`) | extended | R11 — called by the escalation lane; the leased key goes to the SDK's CLI process only, `tools=[]`, an SDK error result is `EscalationUnavailable` |
+| v4.2 — `agent/verifier.py` (`grade_rubric`, `aggregate`) | extended | R11 — `grade_rubric` called by the pre-push review step; `aggregate` takes `advisory_errors` (default: none, as before) |
+| v4.2 — `agent/codex_review.py` (`review`) | kept | R11 — now called as the fourth reviewer |
+| `agent/sandbox.py` (`run_sandboxed_aider`) | extended | R11 — optional `review` and `escalate` arguments (defaults: the old behaviour); `EscalationHandoff`, `workspace_diff`, `revision_message`, `run_escalated_patch`, `extract_patch`, `lane_gate_env` |
+| `agent/agent_worker.py` | extended | R11 — `task_flow`, `try_hand_off`; flags off = the old call |
+| `agent/escalation.py`, `agent/escalation_worker.py`, `agent/review_gate.py` | generated (new) | R11 |
+| `db/migrations/011_escalation.sql` (mirrored in `db/schema.sql`) | generated (new) | R11 — `tasks.labels`, `tasks.rubric_misses`, `tasks.escalated_at`, table `escalations`; task status value `escalated` |
+| `ingest/forgejo_issue_sync.py` | extended | R11 — stores the issue's labels on the task row |
+| `scripts/bootstrap_jetstream.sh` | extended | R11 — durable consumer `escalation` on `swarm.tasks.escalation` |
+| `make escalation`, `scripts/escalation_lane.sh` | generated (new) | R11 — the host-run lane; `--smoke` is the `verify-integration` step |
+| `scripts/vi_step.sh`, `scripts/vi_summary.sh` | extended | R11 — exit 77 is recorded as SKIP |
+| `ROUTE_API_FALLBACK` | extended | R11 — also enables the hand-off for swarm-hard tasks; default 0 unchanged |
+| `RUBRIC_ENABLED`, `CODEX_REVIEW`, `CODEX_REVIEW_REQUIRED`, `ESCALATION_ENV` | generated (new) | R11 — all default off; `.env.example` |
+| `conventions/escalation.md` | generated (new) | R11 |
+| `verify-integration` | extended | R11 — real escalation run (SKIP unless opted in) |

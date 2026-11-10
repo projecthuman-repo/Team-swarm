@@ -21,7 +21,7 @@ endif
 .PHONY: quickstart up down bootstrap swarm forgejo chat vllm qdrant \
         observability openobserve headroom litellm strix codex-engine \
         relay relay-cdc agent graph crew verify-diff codex-review \
-        codex-audit agents-md-check ingest inject qualify dlq dlq-replay \
+        codex-audit agents-md-check escalation ingest inject qualify dlq dlq-replay \
         sla seed index-repo shadow-eval shadow-eval-engines strix-findings strix-scan \
         doomloop morning speculative test lint gate gen \
         models models-35b models-bf16 migrate logs footprint \
@@ -166,6 +166,9 @@ codex-audit: ## Codex offline egress audit — sealed vs lane (v4.2 T7.1)
 agents-md-check: ## AGENTS.md <= 32 KiB cross-tool constitution (v4.2 T7.5)
 	python .forgejo/scripts/agents_md_gate.py
 
+escalation: ## escalation lane (v4.2 T7.7; R11): HOST-RUN worker for swarm-hard tasks handed off after repair — needs ROUTE_API_FALLBACK=1 and the Claude key in OpenBao; never in a container or an image
+	./scripts/escalation_lane.sh
+
 strix-scan: ## same lane as `make strix` (one script): a quick scan of this repo; needs Docker + the model gateway
 	./scripts/strix_quick_scan.sh
 
@@ -259,4 +262,5 @@ verify-integration: ## run every deferred integration check (runtime host)
 	@$(VI) "R7 v4.2 Codex lane image builds and `codex --version` runs in it" $(RUNTIME) build -f deploy/Containerfile.codex -t swarm-codex:dev .
 	@$(VI) "R7 v4.2 Codex offline-egress audit (the lane image on the internal network; needs the spine's Ollama with a model)" ./scripts/codex_egress_audit.sh
 	@$(VI) "R7 v4.2 Strix quick scan from the locked security group (needs Docker + the model gateway)" ./scripts/strix_quick_scan.sh
+	@$(VI) "R11 v4.2 real escalation run: staged hand-off -> lane -> gate -> feature/* branch (SKIP unless ROUTE_API_FALLBACK=1 and the Claude key lease succeeds; needs the spine with the relay and Forgejo)" ./scripts/escalation_lane.sh --smoke
 	@./scripts/vi_summary.sh

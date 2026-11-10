@@ -87,9 +87,18 @@ def parse_verdict(text: str) -> str:
     return "BLOCK"  # fail-closed: no explicit verdict = block
 
 
-def aggregate(findings: list[dict]) -> dict:
-    """Any BLOCK blocks; ERRORs block too (fail-closed)."""
-    blocking = [f for f in findings if f["verdict"] != "PASS"]
+def aggregate(findings: list[dict], advisory_errors: tuple[str, ...] = ()) -> dict:
+    """Any BLOCK blocks; ERRORs block too (fail-closed).
+
+    `advisory_errors` names reviewers whose ERROR (unavailable, unparseable)
+    is recorded in `findings` but does not block — the optional Codex
+    reviewer unless CODEX_REVIEW_REQUIRED=1 (review R11). Their BLOCK blocks.
+    """
+    blocking = [
+        f
+        for f in findings
+        if f["verdict"] != "PASS" and not (f["verdict"] == "ERROR" and f["lens"] in advisory_errors)
+    ]
     return {
         "verdict": "PASS" if not blocking else "BLOCK",
         "findings": findings,

@@ -70,6 +70,12 @@ def tier_of(issue: dict) -> str:
     )
 
 
+def labels_of(issue: dict) -> list[str]:
+    """Label names as stored on the task row (review R11): the worker reads
+    `swarm-hard` from there when an opt-in v4.2 flag is set."""
+    return [label["name"] for label in issue.get("labels", [])]
+
+
 def subject_for(role: str, tier: str) -> str:
     return f"swarm.tasks.{role}.{tier}" if tier else f"swarm.tasks.{role}"
 
@@ -100,8 +106,8 @@ async def ingest(issues: list[dict]) -> int:
                     title = f"{title}\n\n{spec_text}"
                 await conn.execute(
                     "INSERT INTO tasks(task_id, role, status, ext_id, title, "
-                    "spec_ref, branch, budget_tokens) "
-                    "VALUES($1, $2, 'pending', $3, $4, $5, $6, $7)",
+                    "spec_ref, branch, budget_tokens, labels) "
+                    "VALUES($1, $2, 'pending', $3, $4, $5, $6, $7, $8)",
                     uuid.UUID(tid),
                     role,
                     ext_id,
@@ -109,6 +115,7 @@ async def ingest(issues: list[dict]) -> int:
                     spec_ref or None,
                     f"feature/{tid}",
                     DEFAULT_BUDGET,
+                    labels_of(it),
                 )
                 task = task_pb2.Task(
                     task_id=tid,

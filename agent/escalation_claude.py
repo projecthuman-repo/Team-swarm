@@ -77,21 +77,27 @@ async def escalate(spec: str, failing_diff: str, check_output: str) -> str:
         )
     sdk = _load_sdk()
 
-    # Key as an OpenBao lease (Hard Rule 7) — set for the SDK's transport.
+    # Key as an OpenBao lease (Hard Rule 7). It goes to the SDK's CLI process
+    # only (options.env) — never into this process's environment, which the
+    # lane's gate subprocesses inherit.
     from agent.openbao import lease_secret
 
     try:
-        os.environ.setdefault("ANTHROPIC_API_KEY", lease_secret(CLAUDE_SECRET, field="api_key"))
+        key = lease_secret(CLAUDE_SECRET, field="api_key")
     except Exception as err:  # noqa: BLE001 - lease failure must be explicit
         raise EscalationUnavailable(f"could not lease Claude key: {err}") from err
 
     prompt = build_prompt(spec, failing_diff, check_output)
     chunks: list[str] = []
-    # claude-agent-sdk exposes an async query(); options carry the model.
-    options = (
-        sdk.ClaudeAgentOptions(model=CLAUDE_MODEL) if hasattr(sdk, "ClaudeAgentOptions") else None
-    )
+    # claude-agent-sdk 0.2.x: async query(prompt=, options=); ClaudeAgentOptions
+    # carries the model, `tools=[]` (no built-in tools: the lane wants a patch
+    # as text, not edits or commands on this host) and the CLI's environment.
+    options = sdk.ClaudeAgentOptions(model=CLAUDE_MODEL, tools=[], env={"ANTHROPIC_API_KEY": key})
     async for message in sdk.query(prompt=prompt, options=options):
+        if getattr(message, "is_error", False):
+            raise EscalationUnavailable(
+                f"Claude run failed: {getattr(message, 'result', None) or 'no detail'}"
+            )
         text = getattr(message, "result", None) or getattr(message, "text", None)
         if text:
             chunks.append(str(text))

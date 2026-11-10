@@ -58,6 +58,7 @@ is applied by hand and never by `make migrate`.
 | `007_lessons_fts.sql` | `lessons.fts` (generated tsvector) + GIN index + `match_lessons_hybrid()` (dense + full-text, RRF) |
 | `008_lessons_source.sql` | `lessons.source`, `lessons.content_sha` + a unique index on `source` for `tag='codex-index'` (incremental signature index) |
 | `009_task_tokens.sql` | `tasks.tokens_spent` (source of the `swarm_tokens_per_merged_pr` gauge) |
+| `011_escalation.sql` | `tasks.labels` (issue labels as ingested), `tasks.rubric_misses`, `tasks.escalated_at`; table `escalations` (one row per escalated task: reason, failing diff, gate output, outcome) — review R11 |
 | `010_lessons_embedder.sql` | `lessons.embedder` (`<backend>:<model>` that wrote each vector); `match_lessons_hybrid()` takes the caller's embedder and ranks dense candidates only among its rows (the four-argument function is dropped) |
 
 **Verify:** `\df match_lessons_hybrid` lists the function; `make
@@ -95,6 +96,9 @@ the column, and refuses to null a vector when the embedder is down).
 - `SWARM_TASKS` — work-queue retention, `swarm.tasks.*`, 2m dupe window;
 - one durable pull consumer per role (`--max-deliver=5 --backoff=linear
   --ack-wait=10m --max-pending=8`);
+- the durable consumer `escalation` on `swarm.tasks.escalation` — bound
+  only by the host-run `make escalation` worker (v4.2 T7.7); nothing is
+  published there unless `ROUTE_API_FALLBACK=1`;
 - `SWARM_EVENTS` — limits retention, 168h;
 - `SWARM_DLQ` — captures the `MAX_DELIVERIES` advisory (JetStream has no
   built-in DLQ).
@@ -383,6 +387,35 @@ Additive to everything above; `aider` stays default, `bandit` stays on.
   Claude key leased into OpenBao (`secret/data/swarm/claude`, field
   `api_key`). The escalated patch re-enters the green-build gate before any
   PR. With the flag off it fails closed to local retry — no egress.
+  *The flow (review R11, `conventions/escalation.md`):* a `swarm-hard` task
+  (issue label, or `[swarm-hard]` in the title) whose gate is still red
+  after its repair budget is handed to the escalation lane instead of the
+  DLQ. One Postgres transaction sets the task to `escalated`, stores the
+  failing diff and the gate output in `escalations`, and writes the outbox
+  row on `swarm.tasks.escalation` (durable consumer `escalation`, created
+  by `make bootstrap`). The lane is a **host-run** worker:
+  `ROUTE_API_FALLBACK=1 make escalation` (environment
+  `uv sync --group agent --extra escalation`; never a container, never an
+  image). It claims the task by compare-and-set, calls the SDK, applies
+  the patch to a fresh clone, runs the same two-stage gate once, and on
+  green pushes `feature/<task_id>` and emits `PR_OPENED` with
+  `escalated=1`. A patch that does not apply, a red gate, a missing SDK or
+  a failed key lease is `FAILED` with the reason → DLQ, nothing pushed. At
+  most one escalation per task. The lane's gate runs model-written code on
+  the host without the swarm's secrets; choose the host accordingly.
+  `psql -c "SELECT task_id, outcome FROM escalations"` shows what the lane
+  did; a row with no outcome is waiting for `make escalation`.
+- **Rubric (T7.8):** `RUBRIC_ENABLED=1` adds a pre-push review step that
+  grades every green change (`grade_rubric`, threshold
+  `RUBRIC_PASS_THRESHOLD`). First MISS: exactly one revision carrying the
+  grader's notes. Second MISS: the escalation lane when it is enabled for
+  the task, otherwise needs-human (DLQ). The counter is
+  `tasks.rubric_misses`; there is never a third round.
+- **Codex as the fourth reviewer (T7.4):** `CODEX_REVIEW=1` adds
+  `codex_review.review` to `swarm-hard` reviews beside Architect, Security
+  and QA, in the same pre-push step. A BLOCK from any of the four stops the
+  push. A Codex ERROR (CLI missing, output unparseable) is recorded and
+  does not block unless `CODEX_REVIEW_REQUIRED=1`.
 - **Strix security lane (T8):** `make strix` (and `make strix-scan` — one
   script, `scripts/strix_quick_scan.sh`) runs the Strix CLI from the locked
   `security` dependency group on the security-lane host: `STRIX_SCAN_MODE`
@@ -407,7 +440,10 @@ Additive to everything above; `aider` stays default, `bandit` stays on.
   is in an image. The Codex lane image builds from `uv.lock` with
   `@openai/codex` pinned (`deploy/Containerfile.codex`).
 - **Deferred v4.2 checks** (`make verify-integration`): the Codex lane
-  image build, `make codex-audit`, `make strix-scan`.
+  image build, `make codex-audit`, `make strix-scan`, and one real
+  escalation run (`scripts/escalation_lane.sh --smoke`) — reported as SKIP,
+  with the reason, unless `ROUTE_API_FALLBACK=1` and the Claude key lease
+  succeeds.
 - **Antidoom (T9, offline GPU host only):** `deploy/antidoom/` — measure the
   baseline (`make doomloop`), train (`deploy/antidoom/train.sh`), then serve
   behind a distinct tag and `make shadow-eval CANDIDATE=AIDER_MODEL=<tag>`.

@@ -128,7 +128,7 @@ CREATE INDEX lessons_embedding_idx ON lessons USING hnsw (embedding vector_cosin
 Then, in this order:
 
 ```bash
-make migrate                                  # 002–010; never the optional bge-m3 switch; stops on the first error
+make migrate                                  # 002–011; never the optional bge-m3 switch; stops on the first error
 make bootstrap                                # idempotent; keeps stored secrets
 make models                                   # the Ornith model and the embedding model (all-minilm)
 python scripts/seed_knowledge.py --reembed    # stored vectors only match once they carry the current embedder

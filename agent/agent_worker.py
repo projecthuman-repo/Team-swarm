@@ -35,6 +35,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "gen"))
 
 from swarm.v1 import event_pb2, task_pb2  # noqa: E402
 
+from agent import escalation, review_gate  # noqa: E402
 from agent.budget import (  # noqa: E402
     BudgetExceeded,
     CircuitBreaker,
@@ -44,7 +45,9 @@ from agent.budget import (  # noqa: E402
 )
 from agent.health import serve_health  # noqa: E402
 from agent.openbao import lease_secret  # noqa: E402
+from agent.planner import should_decompose  # noqa: E402
 from agent.sandbox import (  # noqa: E402
+    EscalationHandoff,
     PoisonError,
     missing_gate_tools,
     reap_orphans,
@@ -135,6 +138,46 @@ async def emit(
             )
 
 
+async def task_flow(pool: asyncpg.Pool, task: task_pb2.Task):
+    """(escalate, review) for one task — review R11, the opt-in v4.2 flow.
+
+    With ROUTE_API_FALLBACK, RUBRIC_ENABLED and CODEX_REVIEW all unset this
+    returns (False, None) without touching the database, and the task runs
+    exactly as it did before. Otherwise: `escalate` is True for a swarm-hard
+    task when ROUTE_API_FALLBACK=1; `review` is the pre-push review step
+    when a flag asks for it on this task.
+    """
+    if not (escalation.enabled() or review_gate.RUBRIC_ENABLED or review_gate.CODEX_REVIEW):
+        return False, None
+    labels = await pool.fetchval(
+        "SELECT labels FROM tasks WHERE task_id=$1", uuid.UUID(task.task_id)
+    )
+    hard = should_decompose(task.title, list(labels or []))
+    can_escalate = escalation.enabled() and hard
+    review = None
+    if review_gate.wanted(hard):
+        review = review_gate.ReviewGate(pool, task.task_id, hard, can_escalate)
+    return can_escalate, review
+
+
+async def try_hand_off(pool: asyncpg.Pool, task: task_pb2.Task, err: Exception) -> bool:
+    """True when a failure went to the escalation lane instead of the DLQ (R11).
+
+    Only an EscalationHandoff can — the sandbox raises one solely for a
+    swarm-hard task with ROUTE_API_FALLBACK=1 — and only once per task: a
+    refused hand-off returns False and the caller takes the DLQ path.
+    The hand-off itself is one transaction (agent/escalation.py).
+    """
+    if not isinstance(err, EscalationHandoff):
+        return False
+    if not await escalation.hand_off(pool, task, str(err), err.failing_diff, err.gate_output, ROLE):
+        log.error("task %s: escalation refused (already escalated once)", task.task_id)
+        return False
+    log.warning("task %s handed to the escalation lane: %s", task.task_id, err)
+    emit_trace("escalated", task.task_id, ROLE, detail=str(err))
+    return True
+
+
 async def handle_task(pool: asyncpg.Pool, task: task_pb2.Task, budget: ValkeyBudget) -> None:
     ttl = max(60, int(task.deadline_unix - time.time())) if task.deadline_unix else 3600
     if os.environ.get("CONTEXT_PACK", "") == "1":  # v4.1 T2.4 bounded RAG
@@ -143,7 +186,10 @@ async def handle_task(pool: asyncpg.Pool, task: task_pb2.Task, budget: ValkeyBud
         task.title += await build_context(pool, task.title, ROLE)
     async with valkey_lock(f"task:{task.task_id}", ttl=ttl):
         secret = lease_secret("forgejo")  # leased, short TTL, never persisted
-        result = await run_sandboxed_aider(task, secret, budget=budget)
+        escalate, review = await task_flow(pool, task)
+        # R11: with every opt-in flag off this is the call it always was.
+        flow = {"review": review, "escalate": escalate} if (escalate or review) else {}
+        result = await run_sandboxed_aider(task, secret, budget=budget, **flow)
         async with pool.acquire() as conn:  # v4.1 T2.1 quality metrics
             await conn.execute(
                 "UPDATE tasks SET first_pass_green=$2, repair_cycles=$3, "
@@ -265,6 +311,9 @@ async def main() -> None:
                 )
                 await m.term()
             except PoisonError as err:
+                if await try_hand_off(pool, task, err):
+                    await m.ack()  # R11: on the escalation lane now, not the DLQ
+                    continue
                 log.error("task %s poisoned: %s", task.task_id, err)
                 emit_trace("failed", task.task_id, ROLE, detail=str(err))
                 await emit(

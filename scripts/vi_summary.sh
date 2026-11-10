@@ -19,4 +19,5 @@ if [ "$failed" -gt 0 ]; then
   echo "verify-integration: $failed step(s) FAILED"
   exit 1
 fi
-echo "verify-integration: all $(wc -l < "$LOG") step(s) passed"
+skipped="$(grep -c '^SKIP' "$LOG")"
+echo "verify-integration: $(grep -c '^PASS' "$LOG") step(s) passed, $skipped skipped (opt-in, precondition off)"

@@ -255,7 +255,7 @@ async def test_migration_010_is_idempotent_and_replaces_the_function(pg):
     )
     assert [r[0] for r in await pg.fetch(signature)] == [five]  # db/schema.sql mirrors 010
     migrations = sorted(glob.glob(os.path.join(ROOT, "db", "migrations", "*.sql")))
-    assert os.path.basename(migrations[-1]) == "010_lessons_embedder.sql"
+    assert "010_lessons_embedder.sql" in [os.path.basename(m) for m in migrations]
     await _insert(pg, "keeps its vector", unit(0), "api:all-minilm")
     for _ in range(2):  # 007 re-creates the four-argument function; 010 drops it again
         for path in migrations:
