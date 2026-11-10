@@ -25,10 +25,12 @@ GENERATED=(
   requirements-dev.txt
   requirements-elevation.txt
   requirements-embeddings.txt
+  requirements-escalation.txt
   requirements-headroom-proxy.txt
   requirements-ingest.txt
   requirements-orchestration.txt
   requirements-routing.txt
+  requirements-security.txt
   requirements-vector.txt
   agent/gen/swarm/v1/event_pb2.py
   agent/gen/swarm/v1/event_pb2.pyi

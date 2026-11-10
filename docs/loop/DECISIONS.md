@@ -726,3 +726,76 @@ the "expected honest failure" of D-017, D-028 and D-033 for image sizes;
 the real numbers still come from `./scripts/image_sizes.sh` on the
 runtime host. Dated phase sections in STATE.md and
 `docs/footprint-baseline.md` keep the figures they recorded at the time.
+
+**D-041 · v4.2 "Elevation+" lands on this branch (R7).** `ce2edd9` was
+cherry-picked (not committed on its own: the raw pick fails four lean
+tests and the format hook, so it lands with its integration in one
+commit). (a) *Conflicts: five files, not four* — R5 had since touched
+`deploy/compose.yaml`. Both sides kept everywhere: the `.PHONY` union and
+v4.2's five targets beside lean's `migrate` header; lean's loopback port
+line plus v4.2's two services; lean's Footprint section then v4.2's
+operations section; the generated `requirements-elevation.txt` stub (its
+`claude-agent-sdk` line moves into `pyproject.toml`). Title:
+`v4.2.0 "Elevation+" on "Lean & Precise"`; version 4.2.0 in
+`pyproject.toml`, `uv.lock`, `relay/package.json` and its lockfile.
+(b) *Dependencies in the lock.* `claude-agent-sdk>=0.2` is the extra
+`escalation` (locks 0.2.180, one entry, no conflict). `strix-agent>=1.0.4`
+is the group `security` (locks 1.7.0, +17 entries). It cannot co-resolve
+with `agent` (openai and litellm pins), and is also declared in conflict
+with `ingest` and `headroom-proxy` because otherwise their image pins move
+(cryptography, websockets). Checked: the agent, ingest and headroom
+exports and all nine pre-existing generated requirements files are
+byte-identical before and after. `requirements-security.txt` is now
+generated (`--only-group security`), `requirements-escalation.txt` is new
+(add-on), both in the diff-size generated list. (c) *Licenses.* Neither
+package is in an image, so both are Zone B: `cvss` (LGPL-3.0-or-later,
+required by every strix-agent version) and `caido-server-auth` (no
+metadata) pass the denylist and must never enter an image — Zone C would
+block them. **claude-agent-sdk's wheel bundles the Claude Code CLI
+binary, which is under Anthropic's Commercial Terms, while the metadata
+the gate reads says MIT**; recorded in licensing.md, and the extra stays
+on the hosted-fallback lane (opt-in, off by default — INV-027). The Codex
+lane image is a fourth Zone C closure (same selection as the agent
+image); gate result unchanged: exit 0, 373 lock entries, 184 in no image.
+(d) *Corrections to v4.2, each checked against the tool's own source at
+the version now pinned, none of them runnable here:*
+`deploy/Containerfile.codex` installed Node with a remote script, then
+purged it — but `@openai/codex` is a Node launcher — and hid any failure
+behind `|| echo`; it now builds from `uv.lock`, pins `@openai/codex`
+0.167.0 (npm registry: Apache-2.0) and keeps Node, copied from
+`node:22-slim`. `codex review --base B --json --oss` is not a valid
+invocation at `rust-v0.167.0` (`--json` and `--oss` belong to
+`codex exec`, whose `review` subcommand takes `--base`); the lane now
+calls `codex exec <flags> --json review --base B`, and fails closed — a
+missing binary, a non-zero exit or unparseable output is ERROR (the test
+that pinned "garbage is PASS" was rewritten to assert the failure, as R3
+did for the gate). The egress audit wrote config keys the CLI does not
+have (`disable_update_check`, `telemetry`; real: `check_for_update_on_startup`,
+`[analytics] enabled`) and ran the container with `--network=none`
+against a localhost model, which cannot pass; it now runs the lane image
+on the swarm's internal network with `CODEX_OSS_BASE_URL`. The Strix lane
+set `STRIX_MODEL` / `STRIX_SCAN_MODE` / `STRIX_TARGET`, which strix-agent
+1.7.0 does not read (`STRIX_LLM` is the model; mode and target are
+flags), passed `--output json` (no such flag: the report is
+`strix_runs/<run>/vulnerabilities.json`, a top-level list) and left
+telemetry on; corrected in compose, k8s, the workflow and the findings
+router (which accepts both shapes). The workflow installs Strix from the
+locked group. `make shadow-eval-engines` compared aider with aider
+(`ENGINE` is read at import); it now runs each engine in its own process.
+Antidoom's `train.sh` passed five flags upstream does not define; rank
+and learning rate now go through a derived config. `codex-engine` in
+compose is read-only with the capped tmpfs of the sealed agents.
+(e) *Not verified, and said so where it stands:* the image names
+`ghcr.io/usestrix/strix:latest` (compose, k8s) and the old
+`ghcr.io/openai/codex:latest` — ghcr.io refuses an anonymous token for
+both, and neither appears in its project's repository; the audit no
+longer uses the latter. The mapping from Codex's JSONL event stream to
+review findings has never seen real output. `deploy/k8s/strix.yaml` has
+a pod-level `runAsNonRoot` over a privileged DinD sidecar, sits under the
+default-deny egress policy and has nothing that fills `/work`; the
+compose `strix` service mounts the host's `docker.sock`. `grade_rubric`,
+`escalate` and `codex_review.review` have no caller — v4.2 ships them as
+opt-in entry points. All of this is in OWNER_STOP.
+(f) *Deferred checks:* the Codex lane image build (the build itself runs
+`codex --version`), `make codex-audit` and `make strix-scan` joined
+`verify-integration`. Antidoom stays its own offline target.

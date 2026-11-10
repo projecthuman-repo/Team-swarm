@@ -362,6 +362,53 @@ lines; the per-phase tables are in `docs/footprint-baseline.md`.
   observability smokes, real-Postgres tests, the embedder shadow-eval) and
   fails if any step fails.
 
+## v4.2 operations (Elevation+ — engines, security, model improvement)
+
+Additive to everything above; `aider` stays default, `bandit` stays on.
+
+- **Codex egress audit (T7.1, do first):** `make codex-audit`. PASS → Codex
+  may be `AGENT_ENGINE=codex` inside the sealed container. FAIL (any
+  auth/telemetry callout) → run it on the `codex-engine` lane
+  (`make codex-engine`, controlled egress). The decision is recorded, never
+  silent. Needs the `codex` binary (see `requirements-codex.md`).
+- **Cross-engine adoption (T7.6):** `make shadow-eval-engines` compares
+  aider vs codex on the golden pack. Promote Codex to default **only** on a
+  green-rate win within the token threshold — otherwise it stays opt-in.
+- **Codex review lane (T7.4):** `make codex-review BASE=integration` adds a
+  second heterogeneous reviewer whose findings feed the verifier
+  `aggregate()`. Optional, and fail-closed: a missing `codex`, a non-zero
+  exit or output with no parseable findings is an ERROR finding, never a
+  PASS.
+- **Claude escalation (T7.7):** only with `ROUTE_API_FALLBACK=1` and the
+  Claude key leased into OpenBao (`secret/data/swarm/claude`, field
+  `api_key`). The escalated patch re-enters the green-build gate before any
+  PR. With the flag off it fails closed to local retry — no egress.
+- **Strix security lane (T8):** `make strix-scan` runs a quick scan of this
+  repository from the locked `security` dependency group (strix-agent,
+  pinned in `uv.lock`; needs Docker and the model gateway, `LLM_API_BASE` /
+  `STRIX_LLM`; telemetry is off). CI runs
+  `.forgejo/workflows/security.yaml` from the same group, **advisory** first
+  (findings posted, PR not blocked); drop `continue-on-error` to promote to
+  blocking once the false-positive rate is acceptable. Strix writes
+  `strix_runs/<run>/vulnerabilities.json`;
+  `make strix-findings REPORT=<that file>` routes validated findings to
+  `lessons(tag='strix')` + needs-human issues. `make strix` (compose profile
+  `security`) and `deploy/k8s/strix.yaml` name a container image this
+  session could not verify — see `conventions/licensing.md`.
+  Targets are in-org repos only (`conventions/security-scope.md`).
+- **v4.2 dependencies:** `claude-agent-sdk` is the extra `escalation`,
+  `strix-agent` the group `security` (conflicts with `agent`, `ingest` and
+  `headroom-proxy`, so it never shares an environment with them). Neither
+  is in an image. The Codex lane image builds from `uv.lock` with
+  `@openai/codex` pinned (`deploy/Containerfile.codex`).
+- **Deferred v4.2 checks** (`make verify-integration`): the Codex lane
+  image build, `make codex-audit`, `make strix-scan`.
+- **Antidoom (T9, offline GPU host only):** `deploy/antidoom/` — measure the
+  baseline (`make doomloop`), train (`deploy/antidoom/train.sh`), then serve
+  behind a distinct tag and `make shadow-eval CANDIDATE=AIDER_MODEL=<tag>`.
+  Promote only on a measured doom-loop + tokens/PR drop with no green-rate
+  regression. Never on the runtime path; 9B/35B only, never LFM2.
+
 ## Agent coding guidelines (Appendix D)
 
 `karpathy-guidelines.md` is vendored from `multica-ai/andrej-karpathy-skills`

@@ -4,4 +4,5 @@
 #   headroom-ai          -> the `ingest` group (requirements-ingest.txt,
 #                           deploy/Containerfile.ingest) and `make tools`
 #   litellm              -> the litellm gateway container (compose profile `litellm`)
+#   claude-agent-sdk     -> extra `escalation` (requirements-escalation.txt; v4.2 T7.7)
 # Installing this file is a no-op; it is kept so existing commands still work.

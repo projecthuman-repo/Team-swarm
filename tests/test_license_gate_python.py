@@ -206,12 +206,13 @@ def test_closures_come_from_uv_export_and_a_failure_is_fatal():
         return b"# comment\nnumpy==1.26.4 ; python_version < '3.13'\nPy_YAML[extra]==6.0\n"
 
     out = gate.closures(run=export)
-    assert set(out) == {"agent", "ingest", "headroom"}
+    assert set(out) == {"agent", "ingest", "headroom", "codex"}  # codex: v4.2 lane image (R7)
     assert out["agent"] == {("numpy", "1.26.4"), ("py-yaml", "6.0")}
     base = ["uv", "export", "--frozen", "--no-hashes", "--no-emit-project"]
     assert seen[0] == [*base, "--no-dev", "--group", "agent", "--group", "gate"]
     assert seen[1] == [*base, "--only-group", "ingest"]
     assert seen[2] == [*base, "--only-group", "headroom-proxy"]
+    assert seen[3] == seen[0]  # the Codex lane image installs the agent selection
 
     def failing(cmd, cwd, stderr):
         raise subprocess.CalledProcessError(2, cmd)

@@ -76,6 +76,8 @@ Every compose service and Kubernetes image the swarm runs but does not build.
 | Perses | `persesdev/perses:v0.55.1` | Apache-2.0 | A | `--profile observability` (canonical dashboards, L3.2) |
 | OpenObserve | `public.ecr.aws/zinclabs/openobserve:latest` | AGPL-3.0 | A | `--profile openobserve`; optional swap, unmodified, over HTTP |
 | Grafana | `grafana/grafana` (operator-run) | AGPL-3.0 | A | option: import `deploy/observability/grafana-sla.json`; unmodified, over HTTP |
+| Strix | `ghcr.io/usestrix/strix:latest` | Apache-2.0 | A | `--profile security` and `deploy/k8s/strix.yaml` (v4.2 T8). Image name not verified — ghcr.io refuses an anonymous pull token for it; the locked path is the `security` dependency group |
+| Docker-in-Docker | `docker:27-dind` | Apache-2.0 | A | sidecar of the Strix Job in `deploy/k8s/strix.yaml` (v4.2 T8) |
 
 ## Built images (Zone C contents)
 
@@ -84,6 +86,7 @@ Every compose service and Kubernetes image the swarm runs but does not build.
 | swarm-agent | `deploy/Containerfile.agent` | Zone C — `uv.lock` agent + gate group closure + `agent/ ingest/ skills/ scripts/ conventions/` |
 | swarm-ingest | `deploy/Containerfile.ingest` | Zone C — `uv.lock` ingest group closure + `ingest/` |
 | swarm-relay | `deploy/Containerfile.relay` | Zone C — esbuild bundle of `relay/` + `relay/package-lock.json` closure |
+| swarm-codex | `deploy/Containerfile.codex` | Zone C — the agent image's closure (`uv.lock` agent + gate groups) + the Codex CLI (`@openai/codex` 0.167.0, Apache-2.0, npm) and the Node.js runtime it needs (MIT), copied from `node:22-slim` (v4.2 T7.3) |
 | swarm-headroom | `deploy/Containerfile.headroom` | Zone C — `uv.lock` headroom-proxy group closure (headroom-ai[proxy] 0.31.0, Apache-2.0) |
 
 ## Dependencies added by Lean & Precise v4.1.1
@@ -104,13 +107,17 @@ metadata unless noted.
 | prometheus-client | 0.26.0 | Apache-2.0 AND BSD-2-Clause | C | base deps, `/metrics` (L3.2) |
 | ruff / pytest | (lock) | MIT / MIT | C | group `gate` — the agent image runs the quality gate with them (Phase-3 review) |
 | headroom-ai[proxy] → magika / sqlite-vec / watchdog | 1.0.3 / 0.1.9 / 7.1.0 | Apache-2.0 / MIT OR Apache-2.0 / Apache-2.0 | C | group `headroom-proxy` — the three packages the `proxy` extra adds to the lock (review R1) |
+| claude-agent-sdk | 0.2.180 | MIT (the SDK). **Its wheel bundles the Claude Code CLI binary, which is under Anthropic's Commercial Terms, not MIT** | B — in no image | extra `escalation` (v4.2 T7.7): the hosted-fallback lane, opt-in and off by default (INV-027). Installing the extra accepts those terms; the gate reads only the MIT metadata |
+| strix-agent | 1.7.0 | Apache-2.0; its closure includes `cvss` 3.6 (LGPL-3.0-or-later) and `caido-server-auth` 0.1.3 (no license metadata; MIT per the caido-community/sdk-py repository) | B — in no image | group `security` (v4.2 T8): the advisory security workflow and `make strix-scan`. Must stay out of every image — Zone C would block `cvss` |
+| @openai/codex | 0.167.0 | Apache-2.0 | C | npm, installed in the Codex lane image only (v4.2 T7.3) |
 | esbuild | ^0.25.12 | MIT | B | relay builder stage only — not in the runtime image (L1.4) |
 | pre-commit | 4.x | MIT | B | dev group (L1.3) |
 | packaging | 26.0 | Apache-2.0 OR BSD-2-Clause | B | dev group — SPDX parsing in the license gate (R2); also in the agent image through pytest |
 | pre-commit hooks: ruff-pre-commit, uv-pre-commit, pre-commit-hooks | v0.17.3 / 0.11.32 / v6.0.0 | MIT / MIT OR Apache-2.0 / MIT | B | developer machines only |
 | uv | 0.11 (`ghcr.io/astral-sh/uv:0.11`) | MIT OR Apache-2.0 | B | builder stages only — copied out of the runtime images |
 | `gcr.io/distroless/nodejs22-debian12:nonroot` | — | Apache-2.0 (distroless) + Debian package licenses | base layer | relay runtime base (L1.4) |
-| `node:22-slim` | — | MIT (Node.js) + Debian package licenses | base layer | relay builder only |
+| `node:22-slim` | — | MIT (Node.js) + Debian package licenses | base layer | relay builder; source of the Node runtime in the Codex lane image |
+| `nvidia/cuda:12.4.0-runtime-ubuntu22.04` | — | NVIDIA's container license (proprietary; terms not checked in this session) + Ubuntu package licenses | off-swarm base layer | `deploy/antidoom/compose.yaml` only — the offline Antidoom training host (v4.2 T9). Never started by the swarm, not on its networks, not built into or redistributed with any swarm image |
 
 Adding a service: give it a row above with its SPDX license and zone. A
 service under AGPL/SSPL/BUSL stays Zone A only while it runs unmodified in
@@ -163,7 +170,7 @@ stops on it until these rows exist.
 ## What the Zone C gate shows
 
 **Python — run for real** (`license_gate.py --zone C --python-only`,
-2026-11-10, publisher metadata for all 355 registry packages in `uv.lock`):
+2026-11-10, publisher metadata for all 373 registry packages in `uv.lock`):
 exit 0.
 
 | image | pins | SPDX `license_expression` | SPDX id in `license` | classifiers | override row |
@@ -171,13 +178,15 @@ exit 0.
 | agent | 120 | 43 | 35 | 39 | 3 |
 | ingest | 69 | 33 | 20 | 13 | 3 |
 | headroom | 92 | 46 | 24 | 17 | 5 |
+| codex (v4.2 lane) | 120 | 43 | 35 | 39 | 3 |
 
-- 166 lock entries are in no image (opt-in extras, dev tools, the other
-  resolution fork) and pass the Zone B denylist. Among them are the 16
-  proprietary NVIDIA CUDA wheels the torch extras pull in, torch itself and
-  pypdfium2. They are not distributed; an operator who installs an extra
-  takes on its licenses. `make torch-cpu-lock` still removes the NVIDIA
-  wheels from the lock.
+- 184 lock entries are in no image (opt-in extras, the `security` group, dev
+  tools, the other resolution forks) and pass the Zone B denylist. Among
+  them are the 16 proprietary NVIDIA CUDA wheels the torch extras pull in,
+  torch itself, pypdfium2, and from v4.2 `cvss` (LGPL-3.0-or-later, via
+  strix-agent) and claude-agent-sdk. They are not distributed; an operator
+  who installs an extra or the security group takes on its licenses.
+  `make torch-cpu-lock` still removes the NVIDIA wheels from the lock.
 - numpy 1.26.4 and scipy 1.15.3 pass on their acknowledgement rows; the gate
   prints them on every run.
 - Allowlist ids that only this run made necessary: `MIT-CMU` (pillow) and

@@ -9,7 +9,19 @@ documents recommend seeding from:
   (v4.1 ledger S1: replaces the earlier mis-wired reference to
   gglucass/headroom-desktop, a paid desktop app)
 - **openai/codex** — agentic coding-CLI patterns (tool-calling loops, diff
-  application, sandboxed execution) to mine for the worker and skills
+  application, sandboxed execution) to mine for the worker and skills.
+  **v4.2:** also a first-class engine (`AGENT_ENGINE=codex`, `codex exec
+  --oss --local-provider ollama`) and a 2nd reviewer (`codex review`);
+  install per `requirements-codex.md`, placement decided by
+  `scripts/codex_egress_audit.sh` (DR-5)
+- **usestrix/strix** (Apache-2.0, `strix-agent`) — autonomous pentest agent
+  used as a dynamic security lane that AUGMENTS bandit (DR-6, `make strix`);
+  self-hosted inference via `LLM_API_BASE` → the LiteLLM gateway
+- **Liquid4All/antidoom** (Apache-2.0) — offline FTPO/LoRA trainer to
+  suppress Ornith doom loops; off the runtime path, shadow-eval-gated (DR-7,
+  `deploy/antidoom/`)
+- **claude-agent-sdk** — Claude escalation on the API-fallback lane only
+  (Claude-model-only, Anthropic egress; never sealed — DR-5)
 - **SafeRL-Lab/nano-claude-code** — the lightweight agent runtime used
   alongside aider
 - **multica-ai/andrej-karpathy-skills** — single-file coding-behavior

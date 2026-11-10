@@ -43,11 +43,13 @@ addon --group dev \
   | emit requirements-ingest.txt "uv export --only-group ingest (ingest image; never with the agent group)"
 "${EXPORT[@]}" --only-group headroom-proxy \
   | emit requirements-headroom-proxy.txt "uv export --only-group headroom-proxy (Headroom proxy image; never with the agent group)"
+"${EXPORT[@]}" --only-group security \
+  | emit requirements-security.txt "uv export --only-group security (v4.2 Strix lane: the advisory security workflow; in no image, never with the agent group)"
 
 { echo "# torch-based option: uv sync --extra embeddings-torch (sentence-transformers)."
   only_extra embeddings; } \
   | emit requirements-embeddings.txt "only extra 'embeddings' (fastembed, no torch) — add-on to requirements.txt"
-for extra in vector orchestration routing ccompat; do
+for extra in vector orchestration routing ccompat escalation; do
   only_extra "$extra" | emit "requirements-$extra.txt" "only extra '$extra' — add-on to requirements.txt"
 done
 
@@ -56,6 +58,7 @@ emit requirements-elevation.txt "no packages: the v4.1 elevation set moved (Lean
 #   headroom-ai          -> the `ingest` group (requirements-ingest.txt,
 #                           deploy/Containerfile.ingest) and `make tools`
 #   litellm              -> the litellm gateway container (compose profile `litellm`)
+#   claude-agent-sdk     -> extra `escalation` (requirements-escalation.txt; v4.2 T7.7)
 # Installing this file is a no-op; it is kept so existing commands still work.
 EOF
 

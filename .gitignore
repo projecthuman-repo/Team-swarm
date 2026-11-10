@@ -16,3 +16,5 @@ eval/default.json
 eval/candidate.json
 eval/*.json
 .cache/
+strix_runs/
+deploy/strix-work/

@@ -46,6 +46,9 @@ uv run --no-sync bandit -q -r agent ingest scripts -x tests --severity-level med
 step "diff-size limit"
 bash .forgejo/scripts/diff_size_gate.sh
 
+step "AGENTS.md size gate (cross-tool constitution, v4.2 T7.5)"
+uv run --no-sync python .forgejo/scripts/agents_md_gate.py
+
 step "headroom gate (the locked headroom environment)"
 "$HEADROOM_PROXY_ENV/bin/python" .forgejo/scripts/headroom_gate.py
 

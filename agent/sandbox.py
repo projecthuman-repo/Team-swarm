@@ -69,11 +69,23 @@ QUALITY_FAST_CHECK = os.environ.get("QUALITY_FAST_CHECK", "ruff check --force-ex
 # Reproduction-test-first policy (v4.1 T2.2)
 REPRO_TEST_POLICY = os.environ.get("REPRO_TEST_POLICY", "1") == "1"
 
-ENGINE = os.environ.get("AGENT_ENGINE", "aider")  # aider|nano-claude-code
+ENGINE = os.environ.get("AGENT_ENGINE", "aider")  # aider|nano-claude-code|codex
 ENGINE_CMD = os.environ.get("AGENT_ENGINE_CMD", "")
+
+# Codex CLI engine (v4.2 T7.2) — runs Ornith self-hosted via
+# `codex --oss --local-provider ollama`. Flags are env-overridable so a
+# pinned Codex version's exact surface can be set without a code change.
+CODEX_EXEC_FLAGS = os.environ.get(
+    "CODEX_EXEC_FLAGS",
+    "--oss --local-provider ollama --skip-git-repo-check",
+)
 
 # aider prints e.g. "Tokens: 4.2k sent, 1.1k received."
 _TOKENS_RE = re.compile(r"Tokens:\s*([\d.]+)(k?)\s*sent,\s*([\d.]+)(k?)\s*received")
+# Codex prints token usage differently, e.g. "tokens used: 5310" or
+# "input: 4200  output: 1100" — parse both shapes (v4.2 T7.2).
+_CODEX_TOTAL_RE = re.compile(r"tokens?\s*(?:used|total)\s*[:=]?\s*([\d,]+)", re.I)
+_CODEX_IO_RE = re.compile(r"input[:=]?\s*([\d,]+).*?output[:=]?\s*([\d,]+)", re.I | re.S)
 
 
 def reap_orphans(
@@ -165,6 +177,12 @@ def engine_cmd(message: str) -> list[str]:
             "--message",
             message,
         ]
+    if ENGINE == "codex":
+        # `codex exec` is the non-interactive headless entry point; --oss
+        # --local-provider ollama keeps inference self-hosted (DR-5). The
+        # sandbox is set egress-free per T7.1's audit; if that audit is
+        # negative, Codex runs on the codex-engine lane (T7.3) instead.
+        return ["codex", "exec", *shlex.split(CODEX_EXEC_FLAGS), message]
     raise PoisonError(f"unknown AGENT_ENGINE {ENGINE!r}")
 
 
@@ -213,6 +231,27 @@ def _parse_tokens(output: str) -> int:
         total += int(float(sent) * (1000 if sk else 1))
         total += int(float(recv) * (1000 if rk else 1))
     return total
+
+
+def _parse_codex_tokens(output: str) -> int:
+    """Codex-shaped token accounting (v4.2 T7.2).
+
+    Codex does not print aider's "Tokens: Xk sent, Yk received" line, so
+    the aider regex would meter only the floor. Handle "input:/output:"
+    pairs and a bare "tokens used: N" total; sum all occurrences.
+    """
+    total = 0
+    for inp, outp in _CODEX_IO_RE.findall(output):
+        total += int(inp.replace(",", "")) + int(outp.replace(",", ""))
+    if total == 0:
+        for m in _CODEX_TOTAL_RE.findall(output):
+            total += int(m.replace(",", ""))
+    return total
+
+
+def parse_tokens(output: str) -> int:
+    """Engine-aware token parser: Codex output differs from aider's."""
+    return _parse_codex_tokens(output) if ENGINE == "codex" else _parse_tokens(output)
 
 
 def build_env() -> dict:
@@ -366,8 +405,9 @@ async def run_sandboxed_aider(task, secret: str, budget: ValkeyBudget) -> RunRes
         for cycle in range(MAX_REPAIR_CYCLES + 1):
             _heartbeat(workdir)
             _, out = await _run(engine_cmd(prompt), repo, env, TASK_TIMEOUT_S)
-            result.tokens_spent += max(_parse_tokens(out), 1)
-            await budget.spend(max(_parse_tokens(out), 1))
+            spent = max(parse_tokens(out), 1)  # engine-aware (aider|codex)
+            result.tokens_spent += spent
+            await budget.spend(spent)
 
             _heartbeat(workdir)
             timings: dict = {}

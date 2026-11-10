@@ -244,7 +244,8 @@ def _generated_list():
 def test_diff_size_gate_excludes_exactly_the_generated_files():
     requirements = [os.path.basename(p) for p in glob.glob(os.path.join(ROOT, "requirements*.txt"))]
     emitted = set(re.findall(r"emit (requirements[\w-]*\.txt)", read("scripts", "lock_export.sh")))
-    emitted |= {f"requirements-{x}.txt" for x in ("vector", "orchestration", "routing", "ccompat")}
+    extras = ("vector", "orchestration", "routing", "ccompat", "escalation")
+    emitted |= {f"requirements-{x}.txt" for x in extras}
     assert set(requirements) == emitted  # every requirements file is one `make lock` writes
     protoc = [
         os.path.relpath(p, ROOT)

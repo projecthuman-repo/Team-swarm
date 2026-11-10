@@ -67,10 +67,12 @@ def test_every_env_var_read_by_code_is_in_env_example():
 
 def test_versions_and_title():
     with open(os.path.join(ROOT, "pyproject.toml"), "rb") as f:
-        assert tomllib.load(f)["project"]["version"] == "4.1.1"
-    assert json.loads(read("relay", "package.json"))["version"] == "4.1.1"
-    assert json.loads(read("relay", "package-lock.json"))["version"] == "4.1.1"
-    assert read("README.md").splitlines()[0].endswith('v4.1.1 "Lean & Precise"')
+        assert tomllib.load(f)["project"]["version"] == "4.2.0"  # R7: v4.2 landed
+    assert json.loads(read("relay", "package.json"))["version"] == "4.2.0"
+    lock = json.loads(read("relay", "package-lock.json"))
+    assert lock["version"] == "4.2.0" and lock["packages"][""]["version"] == "4.2.0"
+    title = read("README.md").splitlines()[0]
+    assert "v4.2.0" in title and '"Elevation+"' in title and '"Lean & Precise"' in title
 
 
 def test_runbook_documents_migrations_zones_observability_and_footprint():

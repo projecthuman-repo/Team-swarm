@@ -24,6 +24,7 @@ def test_addons_agree_with_requirements_txt():
     standalone = (
         "requirements-ingest.txt",
         "requirements-headroom-proxy.txt",
+        "requirements-security.txt",  # v4.2 Strix lane (conflicts with the agent group)
         "requirements-elevation.txt",
     )
     addons = [p for p in glob.glob(os.path.join(ROOT, "requirements-*.txt"))

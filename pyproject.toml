@@ -1,6 +1,6 @@
 [project]
 name = "overnight-agent-swarm"
-version = "4.1.1"
+version = "4.2.0"
 description = "Overnight Agent Swarm v4.1.1 — JetStream + transactional outbox + sandboxed coding agents"
 # Every image and CI job runs Python 3.12; the upper bound keeps the
 # universal lock solvable (aider-chat pins numpy==1.26.4, which has no
@@ -31,6 +31,11 @@ vector = ["qdrant-client>=1.12", "chromadb>=0.5"]
 orchestration = ["langgraph>=0.2", "crewai>=0.80"]
 routing = ["routellm>=0.2", "torch"]
 ccompat = ["confluent-kafka[protobuf]>=2.6"]
+# v4.2 T7.7 — Claude Agent SDK escalation engine, API-fallback lane ONLY
+# (hosted fallback, opt-in and off by default — INV-027; never in an image).
+# Its wheel bundles the Claude Code CLI, which is under Anthropic's
+# Commercial Terms, not the SDK's MIT (conventions/licensing.md).
+escalation = ["claude-agent-sdk>=0.2"]
 
 [dependency-groups]
 agent = ["aider-chat>=0.86"]
@@ -51,6 +56,10 @@ ingest = [
 # `--only-group headroom-proxy`: the proxy needs the `proxy` extra (fastapi,
 # uvicorn, …) — without it `headroom proxy` exits at start-up (review R1).
 headroom-proxy = ["headroom-ai[proxy]==0.31.0"]
+# v4.2 Workstream 8 — the Strix security-review lane (opt-in; the advisory
+# `security` CI workflow installs exactly this group). Never in an image:
+# its closure carries cvss (LGPL-3.0-or-later). conventions/security-scope.md.
+security = ["strix-agent>=1.0.4"]
 dev = [
   "ruff>=0.7",
   "pytest>=8.0",
@@ -68,6 +77,12 @@ package = false
 conflicts = [
   [{ group = "agent" }, { group = "ingest" }],
   [{ group = "agent" }, { group = "headroom-proxy" }],
+  # strix-agent needs openai>=2.45 and litellm>=1.101; aider-chat pins both
+  # lower. The other two pairs keep the ingest and headroom image pins
+  # exactly as they were (cryptography, websockets would otherwise move).
+  [{ group = "agent" }, { group = "security" }],
+  [{ group = "ingest" }, { group = "security" }],
+  [{ group = "headroom-proxy" }, { group = "security" }],
 ]
 
 [[tool.uv.index]]

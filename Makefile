@@ -19,9 +19,11 @@ HOSTPORTS_NET := @true
 endif
 
 .PHONY: quickstart up down bootstrap swarm forgejo chat vllm qdrant \
-        observability openobserve headroom litellm relay relay-cdc agent \
-        graph crew verify-diff ingest inject qualify dlq dlq-replay sla seed \
-        index-repo shadow-eval morning speculative test lint gate gen \
+        observability openobserve headroom litellm strix codex-engine \
+        relay relay-cdc agent graph crew verify-diff codex-review \
+        codex-audit agents-md-check ingest inject qualify dlq dlq-replay \
+        sla seed index-repo shadow-eval shadow-eval-engines strix-findings strix-scan \
+        doomloop morning speculative test lint gate gen \
         models models-35b models-bf16 migrate logs footprint \
         verify-integration tools ingest-container lock sync torch-cpu-lock \
         ci-local hooks up-lite down-lite ollama clean disk-usage perses-migrate
@@ -86,6 +88,12 @@ headroom: ## token-compression proxy sidecar (v4.1; seed assets first)
 litellm: ## model gateway: local primary, opt-in API fallback (v4.1)
 	$(COMPOSE) --profile litellm up -d
 
+strix: ## Strix autonomous pentest lane (v4.2; augments bandit, opt-in)
+	$(COMPOSE) --profile security up -d
+
+codex-engine: ## Codex engine lane (v4.2 T7.3; if not egress-sealable)
+	$(COMPOSE) --profile codex up -d --build
+
 relay: ## run the outbox relay on the host (needs node 22: cd relay && npm install)
 	cd relay && npm start
 
@@ -135,6 +143,11 @@ index-repo: ## RAG-index a repo's files + signatures (REPO=/path)
 shadow-eval: ## compare a candidate config vs default on the golden pack
 	python scripts/shadow_eval.py $(foreach kv,$(CANDIDATE),--candidate $(kv))
 
+shadow-eval-engines: ## cross-engine eval: aider (default) vs codex (v4.2 T7.6)
+	env AGENT_ENGINE=aider python scripts/shadow_eval.py --single engine-aider
+	env AGENT_ENGINE=codex python scripts/shadow_eval.py --single engine-codex
+	python scripts/shadow_eval.py --report eval/engine-aider.json eval/engine-codex.json
+
 morning: ## Morning Operator Routine: dlq + sla + verifier audit + learn
 	./scripts/morning_routine.sh
 
@@ -143,6 +156,24 @@ speculative: ## multi-candidate patch fan-out for a swarm-hard task (TASK=<id>)
 
 verify-diff: ## independent verifier over a diff+spec (DIFF=<f> SPEC=<f>)
 	python -m agent.verifier --diff $(DIFF) --spec $(SPEC)
+
+codex-review: ## Codex as a 2nd independent reviewer over a diff (v4.2 T7.4)
+	python -m agent.codex_review --base $(or $(BASE),integration)
+
+codex-audit: ## Codex offline egress audit — sealed vs lane (v4.2 T7.1)
+	./scripts/codex_egress_audit.sh
+
+agents-md-check: ## AGENTS.md <= 32 KiB cross-tool constitution (v4.2 T7.5)
+	python .forgejo/scripts/agents_md_gate.py
+
+strix-scan: ## Strix quick scan of this repo from the locked `security` group (v4.2 T8; needs Docker + the model gateway)
+	./scripts/strix_quick_scan.sh
+
+strix-findings: ## route a Strix JSON report -> lessons + issues (REPORT=<f>)
+	python scripts/strix_findings.py --report $(REPORT)
+
+doomloop: ## measure Ornith doom-loop + snowball rate (v4.2 T9.2)
+	python scripts/doomloop_probe.py --snowball-rate
 
 migrate: ## apply db/migrations/*.sql in order (idempotent; optional/ is applied by hand)
 	for f in db/migrations/*.sql; do \
@@ -225,4 +256,7 @@ verify-integration: ## run every deferred integration check (runtime host)
 	@$(VI) "L2.3/L3.3/R4 shadow-eval, full ten-task golden pack per embedder: api default and fastembed first-pass green rate >= the v4.1 baseline" ./scripts/embeddings_shadow.sh
 	@$(VI) "L3.2 observability: gauges scraped, task span in Jaeger, Perses dashboard" ./scripts/observability_smoke.sh
 	@$(VI) "L3.2 percli lint of the Perses dashboard (needs percli)" percli lint -f deploy/observability/perses-sla.json
+	@$(VI) "R7 v4.2 Codex lane image builds and `codex --version` runs in it" $(RUNTIME) build -f deploy/Containerfile.codex -t swarm-codex:dev .
+	@$(VI) "R7 v4.2 Codex offline-egress audit (needs the codex CLI and a local model)" ./scripts/codex_egress_audit.sh
+	@$(VI) "R7 v4.2 Strix quick scan from the locked security group (needs Docker + the model gateway)" ./scripts/strix_quick_scan.sh
 	@./scripts/vi_summary.sh

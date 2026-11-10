@@ -1,0 +1,57 @@
+# Codex engine lane image (v4.2 T7.3) — the agent worker with the Codex
+# CLI installed, for when scripts/codex_egress_audit.sh shows Codex cannot
+# run egress-free inside the sealed container. This lane has controlled
+# egress (like the LiteLLM lane); it consumes the SAME JetStream subjects
+# and pushes only to feature/* — the sealed container is never weakened.
+#
+# Lean toolchain (review R7): the Python closure comes from uv.lock, the
+# same selection as the agent image (`agent` + `gate` groups), and the
+# Codex CLI is pinned. @openai/codex is a Node launcher (bin/codex.js,
+# `#!/usr/bin/env node`) around a per-platform binary, so the Node runtime
+# stays in the image — it is copied from the official node image instead of
+# being installed with a remote script and purged again.
+
+FROM python:3.12-slim AS builder
+COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /bin/uv
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
+    UV_LINK_MODE=copy \
+    UV_COMPILE_BYTECODE=0 \
+    UV_PYTHON_DOWNLOADS=never
+WORKDIR /src
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project --group agent --group gate \
+ && find /opt/venv -depth -type d \( -name tests -o -name test \) -exec rm -rf {} + \
+ && find /opt/venv -name '*.pyc' -delete
+
+# Codex CLI — Apache-2.0, npm @openai/codex. Pinned; raise it deliberately.
+FROM node:22-slim AS codex
+ARG CODEX_VERSION=0.167.0
+RUN npm install -g "@openai/codex@${CODEX_VERSION}" \
+ && test -f /usr/local/lib/node_modules/@openai/codex/bin/codex.js
+
+FROM python:3.12-slim
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /opt/venv /opt/venv
+COPY --from=codex /usr/local/bin/node /usr/local/bin/node
+COPY --from=codex /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -s ../lib/node_modules/@openai/codex/bin/codex.js /usr/local/bin/codex \
+ && codex --version
+ENV PATH=/opt/venv/bin:$PATH \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    AGENT_ENGINE=codex
+
+WORKDIR /app
+COPY agent/ agent/
+COPY ingest/ ingest/
+COPY scripts/ scripts/
+COPY skills/ skills/
+COPY AGENTS.md identity.md user.md guardrails.md karpathy-guidelines.md .aider.conf.yml ./
+COPY conventions/ conventions/
+
+RUN useradd --create-home --uid 10001 swarm
+USER swarm
+
+CMD ["python", "-m", "agent.agent_worker"]

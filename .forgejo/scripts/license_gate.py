@@ -120,6 +120,8 @@ IMAGES = {
     "agent": ["--no-dev", "--group", "agent", "--group", "gate"],
     "ingest": ["--only-group", "ingest"],
     "headroom": ["--only-group", "headroom-proxy"],
+    # v4.2 Codex lane image: the same Python selection as the agent image
+    "codex": ["--no-dev", "--group", "agent", "--group", "gate"],
 }
 
 DEFAULT_PATHS = {
