@@ -629,3 +629,16 @@ with `--python-only` it is an error, so no combination skips the lock
 silently. (h) Result on the real lock: exit 0; agent 43 / 35 / 39 / 3,
 ingest 33 / 20 / 13 / 3 (as the independent review measured), headroom
 46 / 24 / 17 / 5. `packaging>=24.2` joined the dev group (locked 26.0).
+
+**D-037 · Fail-closed quality gate (R3).** (a) A missing gate tool is red
+in both stages; the "(skipped: … not installed)" note is gone. (b) The
+escape `QUALITY_ALLOW_MISSING_TOOLS=1` only lets the worker start; it does
+not bring the skip back — with it set, a gated task is still red. A
+worker that could pass tasks without its checks is the defect this task
+removes, so no setting restores it. (c) The check lives in
+`require_gate_tools()` and runs before the database and NATS connections,
+so a mis-built image fails fast instead of claiming tasks. (d) A missing
+binary for a task's own `verify_cmd` keeps its v4.1 behaviour (the task
+fails with the error) — it is task input, not gate configuration.
+(e) No existing test asserted the skip, so the "rewrite those tests" part
+of the task had nothing to rewrite; four tests were added instead.

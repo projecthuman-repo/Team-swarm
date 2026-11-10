@@ -211,7 +211,7 @@ decisions: [docs/loop/DECISIONS.md](docs/loop/DECISIONS.md), ledger:
 | Toolchain | `pyproject.toml` + `uv.lock` are the source of truth (`make lock`, `make sync`); `requirements*.txt` are generated for the pip fallback; CI installs from the lock with a cache; `make ci-local` runs the same gates; `make hooks` installs pre-commit |
 | Images | `.dockerignore`, multi-stage agent/ingest/relay images (uv/npm builders, slim and distroless runtimes); headroom-ai lives only in the ingest image (it cannot co-resolve with aider) |
 | Lite path | `make up-lite` (nats, postgres+pgvector, valkey, openbao) + `make ollama`; `make clean`, `make disk-usage`; capped sandbox tmpfs and orphan-workdir reaping |
-| Quality gate | two stages — a fast lint of the Python files the task changed, then the full checks + the task's verify command (`QUALITY_FAST_CHECK`); stage timings in `make sla` |
+| Quality gate | two stages — a fast lint of the Python files the task changed, then the full checks + the task's verify command (`QUALITY_FAST_CHECK`); stage timings in `make sla`. Fails closed: a configured check whose tool is missing is red, and a worker without its gate tools exits at start-up (`QUALITY_ALLOW_MISSING_TOOLS=1` is the development escape) |
 | Retrieval | hybrid lesson search (pgvector + Postgres full-text, RRF); fastembed default embedder (no torch); signature index for Python/TS/JS/Go/Rust/Java, incremental (`make index-repo`) |
 | Storage | morning routine prunes published outbox rows (`OUTBOX_RETENTION_DAYS`) and runs `VACUUM (ANALYZE)` |
 | Licensing | three-zone gate: Zone C (ships) fail-closed permissive, Zone B (linked) denylist, Zone A (network services) any OSI licence — `make gate` |

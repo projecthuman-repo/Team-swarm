@@ -54,6 +54,30 @@ from agent.tracing import emit_trace  # noqa: E402
 
 log = logging.getLogger("agent")
 
+
+def require_gate_tools() -> None:
+    """Refuse to start without the quality gate's tools (review R3).
+
+    A missing tool makes every gate red (sandbox.check_workspace), so a
+    worker without them can only burn tasks. QUALITY_ALLOW_MISSING_TOOLS=1
+    lets it start anyway — a development escape; the gate stays red.
+    """
+    missing = missing_gate_tools()
+    if not missing:
+        return
+    if os.environ.get("QUALITY_ALLOW_MISSING_TOOLS") == "1":
+        log.error(
+            "quality gate tools not installed: %s — starting anyway "
+            "(QUALITY_ALLOW_MISSING_TOOLS=1); every gated task will be red",
+            missing,
+        )
+        return
+    raise SystemExit(
+        f"quality gate tools not installed: {', '.join(missing)}. Install them (the agent "
+        "image carries the `gate` group) or set QUALITY_ALLOW_MISSING_TOOLS=1 for development."
+    )
+
+
 ROLE = os.environ.get("AGENT_ROLE", "backend")  # backend|frontend|review|triage
 NATS_URL = os.environ.get("NATS_URL", "nats://localhost:4222")
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:dev@localhost:5432/swarm")
@@ -155,8 +179,7 @@ async def main() -> None:
     )
     log.info("worker %s starting (role=%s)", WORKER_ID, ROLE)
     reap_orphans()  # L1.6: workdirs left behind by a crashed or killed worker
-    if missing := missing_gate_tools():
-        log.error("quality gate tools not installed: %s — their checks will be SKIPPED", missing)
+    require_gate_tools()
 
     pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=4)
     nc = await nats.connect(NATS_URL)

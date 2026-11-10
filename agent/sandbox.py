@@ -110,9 +110,10 @@ def reap_orphans(
 def missing_gate_tools() -> list[str]:
     """Quality-gate binaries that are configured but not on PATH.
 
-    check_workspace() skips a check whose binary is missing, so a worker
-    image without them would call every task green. The agent image installs
-    them (group `gate`); the worker logs this list at start-up.
+    check_workspace() turns a check whose binary is missing red, so a worker
+    image without them could never finish a task. The agent image installs
+    them (group `gate`); the worker refuses to start when this list is not
+    empty (agent_worker.require_gate_tools).
     """
     commands = [QUALITY_FAST_CHECK] + QUALITY_CHECKS.split(";")
     tools = [shlex.split(c)[0] for c in commands if c.strip()]
@@ -288,8 +289,9 @@ async def check_workspace(
     task's starting commit); red returns
     immediately with just that output. Skipped when no Python changed.
     Stage 2: every QUALITY_CHECKS command, then verify_cmd (T3.1).
-    pytest exit code 5 (no tests collected) counts as green; a check
-    binary missing from the workspace image is skipped with a note.
+    pytest exit code 5 (no tests collected) counts as green. The gate fails
+    closed: a configured check whose binary is missing is RED ("gate tool
+    <name> is not installed"), never skipped (review R3).
     `timings`, when given, receives stage1_ms / stage2_ms (None = not run).
     """
     timings = {} if timings is None else timings
@@ -303,24 +305,21 @@ async def check_workspace(
         try:
             code, out = await _run(argv, repo, env, QUALITY_CHECK_TIMEOUT_S, check=False)
         except FileNotFoundError:
-            code, out = None, f"(skipped: {argv[0]} not installed)"
-        else:
-            timings["stage1_ms"] = _ms_since(start)
+            return False, f"$ {shown}\ngate tool {argv[0]} is not installed"
+        timings["stage1_ms"] = _ms_since(start)
         if code:
             return False, f"$ {shown}\n{out}"
-        stage1_note = [f"$ {shown}\n{out}"] if code is None else []
-    else:
-        stage1_note = []
 
     start = time.monotonic()
-    outputs = stage1_note
+    outputs = []
     green = True
     for check_cmd in [c.strip() for c in QUALITY_CHECKS.split(";") if c.strip()]:
         argv = shlex.split(check_cmd)
         try:
             code, out = await _run(argv, repo, env, QUALITY_CHECK_TIMEOUT_S, check=False)
         except FileNotFoundError:
-            outputs.append(f"$ {check_cmd}\n(skipped: {argv[0]} not installed)")
+            outputs.append(f"$ {check_cmd}\ngate tool {argv[0]} is not installed")
+            green = False
             continue
         outputs.append(f"$ {check_cmd}\n{out}")
         if argv[0] == "pytest" and code == 5:

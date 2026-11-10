@@ -167,3 +167,61 @@ async def test_fast_check_default_respects_ruff_excludes(tmp_path, monkeypatch):
     monkeypatch.setattr(sandbox, "QUALITY_CHECKS", "ruff check .")
     green, out = await sandbox.check_workspace(str(repo), env, "", {})
     assert green is True, out
+
+
+# --- Review R3: the gate fails closed on a missing tool ---------------------
+
+
+async def test_missing_stage1_tool_is_red(tmp_path, monkeypatch):
+    repo, env = git_repo(tmp_path)
+    (repo / "app.py").write_text("def add(a, b):\n    return b + a\n")  # a changed .py file
+    monkeypatch.setattr(sandbox, "QUALITY_FAST_CHECK", "no-such-linter --strict")
+    monkeypatch.setattr(sandbox, "QUALITY_CHECKS", "ruff check .")
+    timings = {}
+    green, out = await sandbox.check_workspace(str(repo), env, timings=timings)
+    assert green is False
+    assert "gate tool no-such-linter is not installed" in out
+    assert "skipped" not in out
+    assert timings == {"stage1_ms": None, "stage2_ms": None}  # stage 2 never ran
+
+
+async def test_missing_stage2_tool_is_red(tmp_path, monkeypatch):
+    repo, env = git_repo(tmp_path)
+    monkeypatch.setattr(sandbox, "QUALITY_FAST_CHECK", "")
+    monkeypatch.setattr(sandbox, "QUALITY_CHECKS", "ruff check .;no-such-tester -q")
+    green, out = await sandbox.check_workspace(str(repo), env)
+    assert green is False
+    assert "$ no-such-tester -q\ngate tool no-such-tester is not installed" in out
+    assert "$ ruff check ." in out  # the other checks still ran and are reported
+    # the same workspace is green once every configured tool exists
+    monkeypatch.setattr(sandbox, "QUALITY_CHECKS", "ruff check .")
+    assert (await sandbox.check_workspace(str(repo), env))[0] is True
+
+
+def test_worker_refuses_to_start_without_gate_tools(monkeypatch, caplog):
+    from agent import agent_worker
+
+    monkeypatch.setattr(agent_worker, "missing_gate_tools", lambda: ["pytest", "ruff"])
+    monkeypatch.delenv("QUALITY_ALLOW_MISSING_TOOLS", raising=False)
+    with pytest.raises(SystemExit) as err:
+        agent_worker.require_gate_tools()
+    assert err.value.code not in (0, None) and "pytest, ruff" in str(err.value)
+    # the development escape lets it start, and says the gate stays red
+    monkeypatch.setenv("QUALITY_ALLOW_MISSING_TOOLS", "1")
+    with caplog.at_level("ERROR", logger="agent"):
+        agent_worker.require_gate_tools()
+    assert "every gated task will be red" in caplog.text
+    # nothing missing: no exit, whatever the variable says
+    monkeypatch.delenv("QUALITY_ALLOW_MISSING_TOOLS")
+    monkeypatch.setattr(agent_worker, "missing_gate_tools", lambda: [])
+    agent_worker.require_gate_tools()
+
+
+def test_worker_main_checks_the_tools_before_it_connects():
+    import inspect
+
+    from agent import agent_worker
+
+    src = inspect.getsource(agent_worker.main)
+    assert "require_gate_tools()" in src
+    assert src.index("require_gate_tools()") < src.index("asyncpg.create_pool")

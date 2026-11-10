@@ -184,3 +184,5 @@ where it went) or `generated` (the file stays, with a header saying so).
 | CI and `ci-local` license steps | extended | R2 — `--python-only` for zones C and B always runs in `ci-local`; CI caches the metadata |
 | `tests/test_license_gate_python.py`, `tests/fixtures/license_gate/` (12 recorded PyPI records) | generated (new) | R2 |
 | `tests/test_license_gate.py` | extended | R2 — syft-side cases kept; laundering, Boost and allowlist cases added; the inventory test replaced by the metadata tests |
+| `sandbox.check_workspace` missing-tool handling | extended | R3 — red with `gate tool <name> is not installed` (was a skip note); every other path unchanged |
+| `agent_worker.require_gate_tools()`; `QUALITY_ALLOW_MISSING_TOOLS` | generated (new) | R3 — replaces the start-up log line of D-033; `missing_gate_tools()` kept |
