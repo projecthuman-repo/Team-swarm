@@ -279,3 +279,7 @@ where it went) or `generated` (the file stays, with a header saying so).
 | v4.2 — `scripts/codex_egress_audit.sh` | extended | R8 (review) — the engine's flags, the model by name, the extended offline profile |
 | `deploy/Containerfile.codex` | extended | R8 (review) — bundled bubblewrap and voice runtime removed from the platform package |
 | `agent/sandbox.py` `_run` | extended | R8 (review) — subprocesses get `/dev/null` as stdin |
+| `agent/agent_worker.py` (`process`), `agent/escalation_worker.py` (`process`) | extended | R8 (review) — the message-loop bodies as functions, unchanged in behaviour |
+| `agent/sandbox.py` (`lane_gate_env`, `extract_patch`, `check_workspace` `git_env`) | extended | R8 (review) — allowlist; every fenced diff; the gate's own git keeps the worker's environment |
+| `scripts/dlq_triage.py` (`make dlq-replay`) | extended | R8 (review) — a message from the escalation subject is re-injected on the task's role subject |
+| License gate: `STANDARD_PASSAGES`, `REFUSED["AGPL"]` | extended | R8 (review) — §13 literal; `Affero` without the GNU prefix |

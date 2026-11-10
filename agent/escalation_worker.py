@@ -18,9 +18,10 @@ One task at a time, from the durable consumer `escalation` on
   5. green: push feature/<task_id> and emit PR_OPENED exactly as the normal
      path does, marked escalated in the event and the trace (the task row
      already carries escalated_at);
-     anything else — the patch does not apply, the gate is red, the SDK is
-     not installed, the key lease fails — FAILED with the reason and
-     term(): the DLQ, nothing pushed.
+     anything else — the patch does not apply, the gate is red or times
+     out, the SDK is not installed or fails, a key lease fails — FAILED
+     with the reason (status `failed`, the event, `escalations.outcome`)
+     and term(); nothing is pushed.
 
 There is no second escalation: a task reaches this lane at most once
 (agent/escalation.py), and this worker never hands anything back.
@@ -91,11 +92,11 @@ async def handle(pool, task, escalate_fn=escalate, lease=lease_secret) -> bool:
     Never raises for a task-level failure: every outcome is recorded on the
     task row, in `escalations` and as an outbox event.
     """
-    row = await pool.fetchrow(
-        "SELECT failing_diff, gate_output FROM escalations WHERE task_id=$1",
-        uuid.UUID(task.task_id),
-    )
     try:
+        row = await pool.fetchrow(
+            "SELECT failing_diff, gate_output FROM escalations WHERE task_id=$1",
+            uuid.UUID(task.task_id),
+        )
         if row is None:
             raise PoisonError("no escalation record for this task")
         try:
@@ -107,10 +108,13 @@ async def handle(pool, task, escalate_fn=escalate, lease=lease_secret) -> bool:
         except Exception as err:  # noqa: BLE001 - any lease failure is the DLQ reason
             raise PoisonError(f"could not lease the Forgejo token: {err}") from err
         result = await run_escalated_patch(task, secret, extract_patch(reply))
-    except PoisonError as err:
-        reason = f"reason=escalation-failed {err}"
+    except Exception as err:  # noqa: BLE001 - whatever went wrong, the task must not
+        # stay `claimed` with no record: the lane has no retry, so every failure
+        # ends here, as FAILED with its reason.
+        detail = str(err) if isinstance(err, PoisonError) else f"{type(err).__name__}: {err}"
+        reason = f"reason=escalation-failed {detail}"
         log.error("task %s: %s", task.task_id, reason)
-        await escalation.finish(pool, task.task_id, str(err))
+        await escalation.finish(pool, task.task_id, detail)
         await emit(pool, task.task_id, event_pb2.AgentEvent.FAILED, "failed", reason)
         emit_trace("failed", task.task_id, ROLE, detail=reason)
         return False
@@ -127,6 +131,26 @@ async def handle(pool, task, escalate_fn=escalate, lease=lease_secret) -> bool:
     emit_trace("done", task.task_id, ROLE, detail=f"escalated {task.title}")
     log.info("task %s done (escalated)", task.task_id)
     return True
+
+
+async def process(pool, m, escalate_fn=escalate, lease=lease_secret) -> bool | None:
+    """One message from the escalation consumer, to its end.
+
+    None: not ours (another instance holds the task, or it is finished) —
+    acked. True: PR path — acked. False: failed — term(), no redelivery;
+    the record is the FAILED event and `escalations.outcome`.
+    """
+    task = task_pb2.Task.FromString(m.data)
+    if not await escalation.claim(pool, task.task_id, WORKER_ID):
+        await m.ack()
+        return None
+    log.info("claimed escalated task %s (%s)", task.task_id, task.title)
+    emit_trace("claimed", task.task_id, ROLE, detail=f"escalated {task.title}")
+    if await handle(pool, task, escalate_fn, lease):
+        await m.ack()
+        return True
+    await m.term()
+    return False
 
 
 async def main(once: bool = False) -> int:
@@ -155,20 +179,9 @@ async def main(once: bool = False) -> int:
                 return 1
             continue
         for m in msgs:
-            task = task_pb2.Task.FromString(m.data)
-            if not await escalation.claim(pool, task.task_id, WORKER_ID):
-                await m.ack()  # another instance owns it, or it is already finished
-                continue
-            log.info("claimed escalated task %s (%s)", task.task_id, task.title)
-            emit_trace("claimed", task.task_id, ROLE, detail=f"escalated {task.title}")
-            if await handle(pool, task):
-                await m.ack()
-                if once:
-                    return 0
-            else:
-                await m.term()  # -> the DLQ, like a poisoned task on the normal path
-                if once:
-                    return 1
+            outcome = await process(pool, m)
+            if once and outcome is not None:
+                return 0 if outcome else 1
 
 
 if __name__ == "__main__":

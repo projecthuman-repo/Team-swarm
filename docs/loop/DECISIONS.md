@@ -1034,3 +1034,36 @@ voice; the build removes both and the runtime stage fails when a file of
 that kind is left. The tarball could not be listed here (binary download
 declined), so this rests on the packaging scripts and the registry's file
 count (45 files where the base layout has 7).
+
+**D-047 · Fixes for the review of R9–R11 (R8).** The table is in STATE.
+(a) *The lane has no retry, so it has no unhandled failure.* The normal
+worker returns a timed-out task to `pending`; the lane makes one attempt
+and a task reaches it once, so every exception in `handle()` — not only
+`PoisonError` — ends in `FAILED` with the reason. Only a failure to write
+that record (the database is gone) can still leave a task `claimed`.
+(b) *Gate environment: allowlist.* D-044 (g) said the lane's gate had no
+variable naming a secret or pointing at a service. With a denylist that
+was false (`FORGEJO_URL`, `OLLAMA_API_BASE`, a `GIT_CONFIG_VALUE_n` auth
+header) and it broke git. The gate now gets the tool path, home, locale
+and git identity, and nothing else; the gate's own `git` calls (which
+files changed) run with the worker's environment. This narrows what
+model-written code can read. It is still not a sandbox.
+(c) *Refactor for testability.* `agent_worker.process` and
+`escalation_worker.process` are the bodies of the two message loops, moved
+without change, so a test can drive claim → work → ack/term with a fake
+message. Mutations that un-wire the hand-off now fail tests.
+(d) *"DLQ".* Correcting D-044 (d): a task the worker or the lane fails is
+`term()`-ed. JetStream then publishes a `MSG_TERMINATED` advisory, not
+`MAX_DELIVERIES`, and `SWARM_DLQ` subscribes only to the latter. So a
+poisoned task — on the normal path since v4.0, and on the lane — is
+recorded as status `failed` with a `FAILED` event and its reason, and does
+not appear in `make dlq`; that stream sees messages that exhaust
+`max-deliver` (crash loops, repeated transient failures). The subject
+stays inside `SWARM_TASKS` for the work-queue semantics and that
+max-deliver path. Not changed here: it is how the normal path has always
+behaved, and no NATS runs in the session to prove a change. It is in
+OWNER_STOP as a thing to decide.
+(e) *§13 literal; Affero.* D-042 (b) said the five passages are matched
+verbatim; the first was not. It is now. A test of R9 that passed only
+because of the wildcard (it abbreviated §13 with "…") uses the real
+paragraph.

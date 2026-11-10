@@ -246,3 +246,19 @@ ran); Antidoom's compose service having no Zone A row (it is not a swarm
 network service, and its image has a row among the base layers);
 `codex-engine` on the `egress` network (v4.2's design, which R7 had to
 land intact).
+
+### Adversarial review of R9–R11 (same workflow; range `a0ef813..f6fbb00`)
+
+Fixed from the finders' reports, each with a test (the skeptics' verdicts
+and the final count are added at the close-out):
+
+| # | defect | fix | test |
+|---|---|---|---|
+| 1 | R11: a lane failure that is not a `PoisonError` — a gate that times out, an SDK error, a clone or push timeout — killed the lane and left the task `claimed` for ever, with no `FAILED` event and no reason | `handle()` ends every failure in `FAILED` with its reason; `run_escalated_patch` maps `TimeoutError`; `escalate()` turns SDK errors into `EscalationUnavailable` | `test_a_timeout_or_a_crash_in_the_lane_still_ends_in_failed` (2), `test_sdk_errors_become_escalation_unavailable` |
+| 2 | R11: `extract_patch` applied only the first fenced block; a reply with one fence per file was truncated, and the partial change was pushed when its gate was green | every fenced diff is joined, in order | `test_a_reply_with_one_fence_per_file_is_one_patch` |
+| 3 | R11: the lane's gate environment was a denylist by name: it dropped `GIT_CONFIG_KEY_n` but kept `GIT_CONFIG_COUNT`/`VALUE_n` (every `git` call in the gate failed, stage 1 was silently skipped) and passed `FORGEJO_URL`, `OLLAMA_API_BASE` and others through | an allowlist (tool path, locale, git identity); the gate's own `git` calls keep the worker's environment | `test_the_lanes_gate_survives_git_configuration_from_the_environment`, `test_extract_patch_and_the_gate_environment` |
+| 4 | R11: no test failed when the worker was un-wired — the hand-off in the message loop and the flow arguments in `handle_task` were never executed by a test; the "token not in the clone" assertion could not fail; the lane's `feature/*` guard and token scrubbing were untested | the worker's and the lane's per-message handling are functions (`process`), driven end to end with a fake message; the fixture's remote URL carries the secret | `test_the_worker_hands_a_swarm_hard_failure_to_the_lane`, `test_the_worker_fails_the_task_as_before_without_flag_or_label` (3), `test_the_worker_hands_a_task_off_only_once`, `test_the_lane_acks_terms_or_skips_a_message`, `test_the_lane_refuses_a_branch_that_is_not_feature`, `test_a_lane_failure_never_carries_the_token` |
+| 5 | R11: on a second rubric MISS the grader's notes came before the gate output, and the escalation prompt keeps only the tail | notes last | assertion in `test_second_miss_escalates_when_escalation_is_enabled_for_the_task` |
+| 6 | R9: the GPL-3.0 §13 passage was `heading.*?closing words` — anything between a stray heading and a later real §13 disappeared from the scan | the paragraph is spelled out literally | `test_section_13_is_not_a_wildcard` |
+| 7 | R9: "Affero GPL" / "Affero General Public License" was classified as GPL, which the GCC-exception acknowledgement clears | the AGPL family matches `Affero` | `test_an_acknowledgement_never_clears_the_affero_family_however_it_is_spelled` (4) |
+| 8 | R11: D-044 (d), three comments and `conventions/escalation.md` said a failed escalation reaches `SWARM_DLQ`; `term()` does not feed that stream (it captures `MAX_DELIVERIES` only), and `make dlq-replay` of a message from the lane's subject would have stranded the task | wording corrected to what happens; a replayed escalation message goes back to the task's role subject | `test_a_replayed_escalation_message_goes_back_to_the_role_subject` |

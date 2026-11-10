@@ -102,7 +102,7 @@ DENIED_B_TEXT = re.compile(r"GNU Affero|Server Side Public|Business Source", re.
 
 # Families an override row can never clear (review R2, "no laundering").
 REFUSED = {
-    "AGPL": r"AGPL|GNU Affero",
+    "AGPL": r"AGPL|Affero",  # also "Affero GPL", "Affero General Public License"
     "LGPL": r"LGPL|GNU (?:Lesser|Library)",
     "GPL": r"(?<![AL])GPL|GNU General",
     "EPL": r"\bEPL\b|Eclipse Public",
@@ -131,9 +131,15 @@ ACKNOWLEDGEABLE = {
 # otherwise trip "AGPL", "proprietary" and "non-commercial". They are removed,
 # whitespace-normalised and verbatim, before the scan — nothing else is.
 STANDARD_PASSAGES = [
-    # GPL-3.0 section 13
-    r"13\. Use with the GNU Affero General Public License\..*?"
-    r"will apply to the combination as such\.",
+    # GPL-3.0 section 13 — the whole paragraph, literally: no wildcard, so
+    # nothing but this wording is ever removed (review of R9)
+    r"13\. Use with the GNU Affero General Public License\. Notwithstanding any other "
+    r"provision of this License, you have permission to link or combine any covered work "
+    r"with a work licensed under version 3 of the GNU Affero General Public License into a "
+    r"single combined work, and to convey the resulting work\. The terms of this License "
+    r"will continue to apply to the part which is the covered work, but the special "
+    r"requirements of the GNU Affero General Public License, section 13, concerning "
+    r"interaction through a network will apply to the combination as such\.",
     # GPL-3.0 preamble
     r"we wish to avoid the special danger that patents applied to a free program could "
     r"make it effectively proprietary\.",

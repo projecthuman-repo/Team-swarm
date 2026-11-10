@@ -74,9 +74,10 @@ for role in "${ROLES[@]}"; do
 done
 
 # Escalation lane (review R11; v4.2 T7.7): a dedicated subject with its own
-# durable consumer, inside SWARM_TASKS so a failed escalation reaches
-# SWARM_DLQ like any other task. Only the host-run `make escalation` worker
-# binds it; nothing is published there unless ROUTE_API_FALLBACK=1.
+# durable consumer, inside SWARM_TASKS (work-queue retention; a message
+# that exhausts max-deliver reaches SWARM_DLQ, as for every consumer here).
+# Only the host-run `make escalation` worker binds it; nothing is published
+# there unless ROUTE_API_FALLBACK=1.
 add_consumer escalation swarm.tasks.escalation
 
 # Event/audit stream

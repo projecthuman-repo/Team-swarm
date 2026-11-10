@@ -218,6 +218,70 @@ async def task_created_at(pool: asyncpg.Pool, task_id: str) -> float:
     return float(row["ts"]) if row else time.time()
 
 
+async def process(pool: asyncpg.Pool, m) -> None:
+    """One message from a task consumer, to its end: claim, work, and the
+    ack / nak / term that matches the outcome."""
+    task = task_pb2.Task.FromString(m.data)
+    claimed = await pg_claim(pool, task.task_id)
+    if not claimed:
+        # Another instance owns it (or it's already done): drop ours.
+        await m.ack()
+        return
+
+    log.info("claimed task %s (%s)", task.task_id, task.title)
+    emit_trace("claimed", task.task_id, ROLE, detail=task.title)
+    budget = ValkeyBudget(agent=ROLE, task_id=task.task_id, limit=task.budget_tokens)
+    breaker = CircuitBreaker(task.task_id, await task_created_at(pool, task.task_id))
+    try:
+        await breaker.check(time.time())  # T5.3: trip before spending
+        await handle_task(pool, task, budget)
+        await m.ack()
+        emit_trace(
+            "done",
+            task.task_id,
+            ROLE,
+            detail=task.title,
+            tokens_spent=await budget.spent(),
+        )
+        log.info("task %s done", task.task_id)
+    except (BudgetExceeded, TimeoutError) as err:
+        log.warning("task %s transient failure: %s", task.task_id, err)
+        emit_trace("retry", task.task_id, ROLE, detail=str(err))
+        await pool.execute(
+            "UPDATE tasks SET status='pending', attempt=attempt+1, "
+            "claimed_by=NULL, updated_at=now() WHERE task_id=$1",
+            uuid.UUID(task.task_id),
+        )
+        await m.nak(delay=30)  # retry with backoff
+    except SnowballError as err:
+        # T5.3: expensive-failure circuit breaker -> DLQ, reason
+        # recorded so morning triage sees the snowball explicitly.
+        log.error("task %s snowballed: %s", task.task_id, err)
+        emit_trace("failed", task.task_id, ROLE, detail=f"reason=snowball {err}")
+        await emit(
+            pool,
+            task.task_id,
+            event_pb2.AgentEvent.FAILED,
+            status="failed",
+            detail=f"reason=snowball {err}",
+        )
+        await m.term()
+    except PoisonError as err:
+        if await try_hand_off(pool, task, err):
+            await m.ack()  # R11: on the escalation lane now, not the DLQ
+            return
+        log.error("task %s poisoned: %s", task.task_id, err)
+        emit_trace("failed", task.task_id, ROLE, detail=str(err))
+        await emit(
+            pool,
+            task.task_id,
+            event_pb2.AgentEvent.FAILED,
+            status="failed",
+            detail=str(err),
+        )
+        await m.term()  # -> MAX_DELIVERIES advisory -> SWARM_DLQ
+
+
 async def main() -> None:
     logging.basicConfig(
         level=os.environ.get("LOG_LEVEL", "INFO"),
@@ -265,65 +329,7 @@ async def main() -> None:
                 continue  # nothing pending on this tier; try the next
 
         for m in msgs:
-            task = task_pb2.Task.FromString(m.data)
-            claimed = await pg_claim(pool, task.task_id)
-            if not claimed:
-                # Another instance owns it (or it's already done): drop ours.
-                await m.ack()
-                continue
-
-            log.info("claimed task %s (%s)", task.task_id, task.title)
-            emit_trace("claimed", task.task_id, ROLE, detail=task.title)
-            budget = ValkeyBudget(agent=ROLE, task_id=task.task_id, limit=task.budget_tokens)
-            breaker = CircuitBreaker(task.task_id, await task_created_at(pool, task.task_id))
-            try:
-                await breaker.check(time.time())  # T5.3: trip before spending
-                await handle_task(pool, task, budget)
-                await m.ack()
-                emit_trace(
-                    "done",
-                    task.task_id,
-                    ROLE,
-                    detail=task.title,
-                    tokens_spent=await budget.spent(),
-                )
-                log.info("task %s done", task.task_id)
-            except (BudgetExceeded, TimeoutError) as err:
-                log.warning("task %s transient failure: %s", task.task_id, err)
-                emit_trace("retry", task.task_id, ROLE, detail=str(err))
-                await pool.execute(
-                    "UPDATE tasks SET status='pending', attempt=attempt+1, "
-                    "claimed_by=NULL, updated_at=now() WHERE task_id=$1",
-                    uuid.UUID(task.task_id),
-                )
-                await m.nak(delay=30)  # retry with backoff
-            except SnowballError as err:
-                # T5.3: expensive-failure circuit breaker -> DLQ, reason
-                # recorded so morning triage sees the snowball explicitly.
-                log.error("task %s snowballed: %s", task.task_id, err)
-                emit_trace("failed", task.task_id, ROLE, detail=f"reason=snowball {err}")
-                await emit(
-                    pool,
-                    task.task_id,
-                    event_pb2.AgentEvent.FAILED,
-                    status="failed",
-                    detail=f"reason=snowball {err}",
-                )
-                await m.term()
-            except PoisonError as err:
-                if await try_hand_off(pool, task, err):
-                    await m.ack()  # R11: on the escalation lane now, not the DLQ
-                    continue
-                log.error("task %s poisoned: %s", task.task_id, err)
-                emit_trace("failed", task.task_id, ROLE, detail=str(err))
-                await emit(
-                    pool,
-                    task.task_id,
-                    event_pb2.AgentEvent.FAILED,
-                    status="failed",
-                    detail=str(err),
-                )
-                await m.term()  # -> MAX_DELIVERIES advisory -> SWARM_DLQ
+            await process(pool, m)
 
     health.cancel()
 

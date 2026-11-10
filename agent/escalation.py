@@ -29,7 +29,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "gen"))
 
 from swarm.v1 import event_pb2  # noqa: E402
 
-SUBJECT = "swarm.tasks.escalation"  # in SWARM_TASKS: its failures reach SWARM_DLQ too
+SUBJECT = "swarm.tasks.escalation"  # in SWARM_TASKS, the work-queue stream
 DURABLE = "escalation"
 MAX_DIFF_CHARS = 400_000  # context for the escalation model, never applied
 MAX_OUTPUT_CHARS = 20_000

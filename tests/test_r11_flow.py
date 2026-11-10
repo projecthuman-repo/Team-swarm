@@ -124,7 +124,9 @@ def forgejo(tmp_path, monkeypatch):
     (seed / "test_app.py").write_text(
         "from app import add\n\n\ndef test_add():\n    assert add(1, 2) == 3\n"
     )
-    bare = tmp_path / "remote.git"
+    store = tmp_path / "store"
+    store.mkdir()
+    bare = store / "remote.git"
     for cmd in (
         ["git", "init", "-q", "-b", "integration"],
         ["git", "add", "-A"],
@@ -135,8 +137,12 @@ def forgejo(tmp_path, monkeypatch):
     seen = []
 
     def remote(secret):
+        # the secret is part of the URL, as the bot token is in the real one
         seen.append(secret)
-        return f"file://{bare}"
+        link = tmp_path / (secret or "anonymous")
+        if not link.exists():
+            link.symlink_to(store, target_is_directory=True)
+        return f"file://{link}/remote.git"
 
     monkeypatch.setattr(sandbox, "_remote", remote)
     monkeypatch.setattr(sandbox, "SANDBOX_WORKDIR", str(tmp_path / "work"))
@@ -300,6 +306,146 @@ async def test_escalation_needs_the_flag_and_the_label(
     assert escalate is expected
 
 
+class Message:
+    """A JetStream message as the workers use it."""
+
+    def __init__(self, task):
+        self.data = task.SerializeToString()
+        self.calls = []
+
+    async def ack(self):
+        self.calls.append("ack")
+
+    async def nak(self, delay=0):
+        self.calls.append("nak")
+
+    async def term(self):
+        self.calls.append("term")
+
+
+@pytest.fixture
+def worker(monkeypatch):
+    """agent_worker.process with its infrastructure stubbed; the sandbox is scripted."""
+
+    @contextlib.asynccontextmanager
+    async def no_lock(key, ttl):
+        yield
+
+    class Breaker:
+        def __init__(self, *a):
+            pass
+
+        async def check(self, now):
+            return None
+
+    class Budget:
+        def __init__(self, **kw):
+            pass
+
+        async def spent(self):
+            return 0
+
+    calls, traces = [], []
+
+    async def sandbox_run(task, secret, budget, review=None, escalate=False):
+        calls.append({"review": review, "escalate": escalate})
+        if escalate:
+            raise EscalationHandoff("red after 2 repair cycle(s); not pushing.", "the diff", "out")
+        raise PoisonError("red after 2 repair cycle(s); not pushing.")
+
+    monkeypatch.setattr(agent_worker, "valkey_lock", no_lock)
+    monkeypatch.setattr(agent_worker, "CircuitBreaker", Breaker)
+    monkeypatch.setattr(agent_worker, "ValkeyBudget", Budget)
+    monkeypatch.setattr(agent_worker, "lease_secret", lambda name: "leased")
+    monkeypatch.setattr(agent_worker, "run_sandboxed_aider", sandbox_run)
+    monkeypatch.setattr(agent_worker, "emit_trace", lambda kind, *a, **k: traces.append(kind))
+    return types.SimpleNamespace(calls=calls, traces=traces)
+
+
+async def test_the_worker_hands_a_swarm_hard_failure_to_the_lane(pg, flags, worker):
+    flags(fallback="1", rubric=True)
+    task = new_task(title="add slugify")
+    await insert(pg, task, status="pending", labels=["swarm-hard"])
+    m = Message(task)
+    await agent_worker.process(Pool(pg), m)
+    # the flow reached the sandbox: escalation on, and the review step for RUBRIC_ENABLED
+    (call,) = worker.calls
+    assert call["escalate"] is True and isinstance(call["review"], review_gate.ReviewGate)
+    assert (call["review"].hard, call["review"].can_escalate) == (True, True)
+    # ...and the failure went to the lane, not to FAILED
+    assert m.calls == ["ack"]
+    assert (await task_row(pg, task))["status"] == "escalated"
+    (announce,) = await handoffs(pg)
+    assert task_pb2.Task.FromString(announce["payload"]).task_id == task.task_id
+    assert await pg.fetchval("SELECT failing_diff FROM escalations") == "the diff"
+    kinds = [e.kind for e in await events(pg, task)]
+    assert event_pb2.AgentEvent.FAILED not in kinds and worker.traces[-1] == "escalated"
+
+
+@pytest.mark.parametrize(
+    "fallback, labels", [("0", ["swarm-hard"]), ("1", []), ("1", ["swarm-ready"])]
+)
+async def test_the_worker_fails_the_task_as_before_without_flag_or_label(
+    pg, flags, worker, fallback, labels
+):
+    flags(fallback=fallback)
+    task = new_task(title="add slugify")
+    await insert(pg, task, status="pending", labels=labels)
+    m = Message(task)
+    await agent_worker.process(Pool(pg), m)
+    assert m.calls == ["term"]  # exactly the old path
+    assert (await task_row(pg, task))["status"] == "failed"
+    assert await handoffs(pg) == []  # no hand-off event
+    assert await pg.fetchval("SELECT count(*) FROM escalations") == 0
+    (failed,) = await events(pg, task)
+    assert failed.kind == event_pb2.AgentEvent.FAILED and failed.detail.startswith("red after 2")
+    assert worker.traces[-1] == "failed"
+
+
+async def test_the_worker_hands_a_task_off_only_once(pg, flags, worker):
+    flags(fallback="1")
+    task = new_task(title="[swarm-hard] add slugify")
+    await insert(pg, task, status="pending")
+    await agent_worker.process(Pool(pg), Message(task))
+    assert (await task_row(pg, task))["status"] == "escalated"
+    await pg.execute("UPDATE tasks SET status='pending'")  # an operator replays it
+    again = Message(task)
+    await agent_worker.process(Pool(pg), again)
+    assert again.calls == ["term"] and (await task_row(pg, task))["status"] == "failed"
+    assert len(await handoffs(pg)) == 1 and worker.traces[-1] == "failed"
+
+
+async def test_the_lane_acks_terms_or_skips_a_message(pg, forgejo, monkeypatch):
+    monkeypatch.setattr(escalation_worker, "emit_trace", lambda *a, **k: None)
+    pool, good = await staged(pg)
+    m = Message(good)
+    assert await escalation_worker.process(pool, m, fake_escalate(GOOD_PATCH), lambda n: "t")
+    assert m.calls == ["ack"] and (await task_row(pg, good))["status"] == "done"
+    again = Message(good)  # a redelivery of a finished task
+    assert await escalation_worker.process(pool, again, fake_escalate(GOOD_PATCH)) is None
+    assert again.calls == ["ack"] and len(branches(forgejo)) == 2
+    bad = new_task()
+    await insert(pg, bad, labels=["swarm-hard"])
+    assert await escalation.hand_off(pool, bad, "red", "d", "g", "b")
+    m = Message(bad)
+    outcome = await escalation_worker.process(pool, m, fake_escalate(RED_PATCH), lambda n: "t")
+    assert outcome is False and m.calls == ["term"]
+    assert (await task_row(pg, bad))["status"] == "failed"
+
+
+def test_a_replayed_escalation_message_goes_back_to_the_role_subject():
+    spec = importlib.util.spec_from_file_location(
+        "dlq_triage_r11", os.path.join(ROOT, "scripts", "dlq_triage.py")
+    )
+    dlq = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(dlq)
+    assert dlq.replay_subject("swarm.tasks.escalation", "backend") == "swarm.tasks.backend"
+    assert dlq.replay_subject("swarm.tasks.backend.35b-q4", "backend") == (
+        "swarm.tasks.backend.35b-q4"
+    )
+    assert "replay_subject(raw.subject, task.role)," in text("scripts", "dlq_triage.py")
+
+
 def test_issue_labels_are_stored_on_the_task_row():
     from ingest.forgejo_issue_sync import labels_of
 
@@ -390,11 +536,11 @@ async def test_good_patch_runs_the_gate_and_takes_the_pr_path(pg, forgejo, monke
     gate_runs, traces, calls = [], [], []
     real_gate = sandbox.check_workspace
 
-    async def gate(repo, env, verify_cmd="", timings=None, base="HEAD"):
+    async def gate(repo, env, verify_cmd="", timings=None, base="HEAD", git_env=None):
         url = subprocess.run(["git", "config", "remote.origin.url"], cwd=repo,
                              capture_output=True, text=True).stdout  # fmt: skip
         gate_runs.append((env, url))
-        return await real_gate(repo, env, verify_cmd, timings, base)
+        return await real_gate(repo, env, verify_cmd, timings, base, git_env=git_env)
 
     monkeypatch.setattr(sandbox, "check_workspace", gate)
     monkeypatch.setattr(escalation_worker, "emit_trace", lambda *a, **k: traces.append((a, k)))
@@ -410,8 +556,13 @@ async def test_good_patch_runs_the_gate_and_takes_the_pr_path(pg, forgejo, monke
     assert len(gate_runs) == 1  # the same two-stage gate, once
     gate_env, stored_remote = gate_runs[0]
     assert "OPENBAO_TOKEN" not in gate_env and "DATABASE_URL" not in gate_env
-    assert "leased-tok" not in stored_remote  # the token is not in the clone the gate runs in
-    assert forgejo.secrets[0] == "leased-tok"  # ...it is used for the clone and the push only
+    assert not {"FORGEJO_URL", "OLLAMA_API_BASE"} & set(gate_env)  # no service addresses
+    assert row_stage1(await task_row(pg, task)) is not None  # stage 1 ran: the same two-stage gate
+    # the token is in the clone URL and the push URL, and not in the clone the gate runs in
+    assert "leased-tok" not in stored_remote and stored_remote.strip().endswith(
+        "/anonymous/remote.git"
+    )
+    assert forgejo.secrets == ["leased-tok", ""]
     assert task.branch in branches(forgejo)  # pushed, feature/* only
     assert "def slugify" in show(forgejo, task.branch, "slug.py")
     row = await task_row(pg, task)
@@ -467,14 +618,136 @@ async def test_the_lane_refuses_to_start_without_the_flag(monkeypatch):
         await escalation_worker.main(once=True)
 
 
+def row_stage1(row):
+    return row["gate_stage1_ms"]
+
+
+async def test_the_lanes_gate_survives_git_configuration_from_the_environment(
+    pg, forgejo, monkeypatch
+):
+    # review of R11: the secret-name filter dropped GIT_CONFIG_KEY_0 and kept its
+    # COUNT/VALUE, so every git call in the gate died and stage 1 was skipped
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "http.extraheader")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "Authorization: bearer s3cret")
+    pool, task = await staged(pg)
+    assert await escalation.claim(pool, task.task_id, "escalation-1")
+    seen = {}
+    real_gate = sandbox.check_workspace
+
+    async def gate(repo, env, verify_cmd="", timings=None, base="HEAD", git_env=None):
+        seen["env"], seen["git_env"] = env, git_env
+        return await real_gate(repo, env, verify_cmd, timings, base, git_env=git_env)
+
+    monkeypatch.setattr(sandbox, "check_workspace", gate)
+    assert await escalation_worker.handle(pool, task, fake_escalate(GOOD_PATCH), lambda n: "tok")
+    assert not [k for k in seen["env"] if k.startswith("GIT_CONFIG")]  # an auth header is a secret
+    assert seen["git_env"]["GIT_CONFIG_KEY_0"] == "http.extraheader"  # the lane's own git
+    row = await task_row(pg, task)
+    assert row["status"] == "done" and row["gate_stage1_ms"] is not None
+
+
+async def test_the_lane_refuses_a_branch_that_is_not_feature(forgejo):
+    task = new_task()
+    task.branch = "main"
+    with pytest.raises(PoisonError, match="refusing to push non-feature branch 'main'"):
+        await sandbox.run_escalated_patch(task, "leased-tok", GOOD_PATCH)
+    assert forgejo.secrets == []  # refused before any clone
+    assert branches(forgejo) == {"integration"}
+
+
+async def test_a_lane_failure_never_carries_the_token(pg, forgejo, monkeypatch):
+    pool, task = await staged(pg)
+    assert await escalation.claim(pool, task.task_id, "escalation-1")
+    real_run = sandbox._run
+
+    async def run(cmd, cwd, env, timeout, check=True):
+        if cmd[:2] == ["git", "push"]:
+            raise RuntimeError(f"git exited 128:\nfatal: unable to access '{cmd[2]}': denied")
+        return await real_run(cmd, cwd, env, timeout, check)
+
+    monkeypatch.setattr(sandbox, "_run", run)
+    ok = await escalation_worker.handle(pool, task, fake_escalate(GOOD_PATCH), lambda n: "s3cr3t")
+    assert ok is False
+    outcome = await pg.fetchval("SELECT outcome FROM escalations")
+    (failed,) = [e for e in await events(pg, task) if e.kind == event_pb2.AgentEvent.FAILED]
+    for record in (outcome, failed.detail):
+        assert "s3cr3t" not in record and "/***/remote.git" in record
+
+
+@pytest.mark.parametrize("where", ["sdk", "gate"])
+async def test_a_timeout_or_a_crash_in_the_lane_still_ends_in_failed(
+    pg, forgejo, monkeypatch, where
+):
+    # review of R11: only PoisonError was handled; anything else killed the lane
+    # and left the task `claimed` for ever, with no reason anywhere
+    pool, task = await staged(pg)
+    assert await escalation.claim(pool, task.task_id, "escalation-1")
+    reply = GOOD_PATCH
+    if where == "sdk":
+        reply = ConnectionError("CLIConnectionError: the CLI exited")
+    else:
+
+        async def hangs(*args, **kwargs):
+            raise TimeoutError("pytest exceeded 300s")
+
+        monkeypatch.setattr(sandbox, "check_workspace", hangs)
+    ok = await escalation_worker.handle(pool, task, fake_escalate(reply), lambda n: "tok")
+    assert ok is False and branches(forgejo) == {"integration"}
+    assert (await task_row(pg, task))["status"] == "failed"
+    outcome = await pg.fetchval("SELECT outcome FROM escalations")
+    assert ("CLIConnectionError" if where == "sdk" else "pytest exceeded 300s") in outcome
+    assert [e.kind for e in await events(pg, task)][-1] == event_pb2.AgentEvent.FAILED
+
+
+async def test_a_reply_with_one_fence_per_file_is_one_patch(pg, forgejo):
+    # review of R11: only the first fenced block was applied — here the dropped
+    # block is the failing test, so a truncated patch would have been green and pushed
+    first, second = RED_PATCH.split("diff --git a/test_slug.py")
+    reply = first + "```\n\nand the test:\n\n```diff\ndiff --git a/test_slug.py" + second
+    patch = sandbox.extract_patch(reply)
+    assert patch.count("diff --git ") == 2 and "+def test_slugify():" in patch
+    pool, task = await staged(pg)
+    assert await escalation.claim(pool, task.task_id, "escalation-1")
+    ok = await escalation_worker.handle(pool, task, fake_escalate(reply), lambda n: "tok")
+    assert ok is False and branches(forgejo) == {"integration"}
+    assert "escalated patch is red" in await pg.fetchval("SELECT outcome FROM escalations")
+
+
+def test_sdk_errors_become_escalation_unavailable(monkeypatch):
+    import asyncio
+
+    from agent import escalation_claude as esc
+
+    class Sdk:
+        class ClaudeAgentOptions:
+            def __init__(self, **kw):
+                pass
+
+        @staticmethod
+        async def query(prompt, options):
+            raise RuntimeError("ProcessError: exit code 1")
+            yield  # pragma: no cover
+
+    monkeypatch.setattr(esc, "ROUTE_API_FALLBACK", True)
+    monkeypatch.setattr(esc, "_load_sdk", lambda: Sdk)
+    monkeypatch.setattr("agent.openbao.lease_secret", lambda name, field="token": "sk-leased")
+    with pytest.raises(EscalationUnavailable, match="Claude Agent SDK error: RuntimeError"):
+        asyncio.run(esc.escalate("spec", "diff", "checks"))
+
+
 def test_extract_patch_and_the_gate_environment():
     assert sandbox.extract_patch(GOOD_PATCH).startswith("diff --git a/slug.py b/slug.py\n")
     assert sandbox.extract_patch("prose\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b").endswith("+b\n")
     assert sandbox.extract_patch("no diff here") == ""
-    env = {"PATH": "/bin", "HOME": "/h", "OPENBAO_TOKEN": "t", "ANTHROPIC_API_KEY": "k",
-           "LITE_SMOKE_FORGEJO_TOKEN": "t", "DATABASE_URL": "u", "NATS_URL": "n",
-           "LANGFUSE_SECRET_KEY": "s", "PGPASSWORD": "p"}  # fmt: skip
-    assert sandbox.lane_gate_env(env) == {"PATH": "/bin", "HOME": "/h"}
+    env = {"PATH": "/bin", "HOME": "/h", "LC_ALL": "C", "OPENBAO_TOKEN": "t",
+           "ANTHROPIC_API_KEY": "k", "LITE_SMOKE_FORGEJO_TOKEN": "t", "DATABASE_URL": "u",
+           "NATS_URL": "n", "LANGFUSE_SECRET_KEY": "s", "PGPASSWORD": "p",
+           # service addresses and things a denylist over names would miss
+           "FORGEJO_URL": "http://localhost:3000", "OLLAMA_API_BASE": "http://localhost:11434",
+           "HEADROOM_URL": "h", "OTEL_EXPORTER_OTLP_ENDPOINT": "o", "OPENBAO_INJECTED_DIR": "/bao",
+           "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_VALUE_0": "Authorization: bearer x"}  # fmt: skip
+    assert sandbox.lane_gate_env(env) == {"PATH": "/bin", "HOME": "/h", "LC_ALL": "C"}
 
 
 def test_the_claude_key_never_enters_the_lane_process_environment(monkeypatch):
@@ -600,6 +873,12 @@ async def test_second_miss_escalates_when_escalation_is_enabled_for_the_task(
     assert "+def test_new():" in failure.value.failing_diff
     assert "2. no tests updated (MISS)" in failure.value.gate_output
     assert len(engine.prompts) == 2 and task.branch not in branches(forgejo)
+    # the notes are why it was escalated: they come last, where the prompt keeps them
+    from agent.escalation_claude import build_prompt
+
+    long_gate = "x" * 6000 + "\n\n" + failure.value.gate_output
+    assert failure.value.gate_output.rstrip().endswith("2. no tests updated (MISS)")
+    assert "2. no tests updated (MISS)" in build_prompt("spec", "diff", long_gate)
 
 
 async def test_a_redelivered_task_cannot_buy_another_revision(pg, forgejo, engine, graded):

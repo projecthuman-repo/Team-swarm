@@ -372,6 +372,7 @@ async def check_workspace(
     verify_cmd: str = "",
     timings: dict | None = None,
     base: str = "HEAD",
+    git_env: dict | None = None,
 ) -> tuple[bool, str]:
     """Run the two-stage quality gate (T2.1, L2.1). Returns (green, output).
 
@@ -383,11 +384,16 @@ async def check_workspace(
     closed: a configured check whose binary is missing is RED ("gate tool
     <name> is not installed"), never skipped (review R3).
     `timings`, when given, receives stage1_ms / stage2_ms (None = not run).
+    `git_env` is the environment for the gate's own `git` calls (which files
+    changed) when the checks themselves run with a reduced `env` — the
+    escalation lane.
     """
     timings = {} if timings is None else timings
     timings["stage1_ms"] = timings["stage2_ms"] = None
 
-    files = await changed_python_files(repo, env, base) if QUALITY_FAST_CHECK.strip() else []
+    files = (
+        await changed_python_files(repo, git_env or env, base) if QUALITY_FAST_CHECK.strip() else []
+    )
     if files:
         start = time.monotonic()
         argv = shlex.split(QUALITY_FAST_CHECK) + files
@@ -548,8 +554,9 @@ async def run_sandboxed_aider(
                 # A block, or a second MISS: never pushed, never a third round.
                 result.check_output = check_out[-4000:]
                 if verdict.action == "escalate" and escalate:
+                    # notes last: the escalation prompt keeps the tail of this text
                     raise EscalationHandoff(
-                        verdict.reason, diff, f"{verdict.notes}\n\n{check_out}".strip()
+                        verdict.reason, diff, f"{check_out}\n\n{verdict.notes}".strip()
                     )
                 raise PoisonError(f"{verdict.reason}; not pushing. {verdict.notes[-1500:]}")
 
@@ -585,29 +592,45 @@ _FENCE_RE = re.compile(r"```[\w+-]*\n(.*?)```", re.S)
 def extract_patch(reply: str) -> str:
     """The unified diff inside an escalation reply, or "" when there is none.
 
-    Accepts a fenced block or a bare diff after prose; the diff must start
-    at a `diff --git` or `--- ` line.
+    Fenced blocks that hold a diff are joined in order — a reply with one
+    fence per file is one patch, and applying only its first block would
+    push a change the model did not write. Without fences, the diff is
+    everything from the first `diff --git` or `--- ` line.
     """
-    candidates = _FENCE_RE.findall(reply) + [reply]
-    for text in candidates:
-        m = re.search(r"^(diff --git |--- )", text, re.M)
+    start = re.compile(r"^(diff --git |--- )", re.M)
+    parts = []
+    for block in _FENCE_RE.findall(reply):
+        m = start.search(block)
         if m:
-            return text[m.start() :].rstrip("\n") + "\n"
-    return ""
+            parts.append(block[m.start() :].rstrip("\n") + "\n")
+    if parts:
+        return "".join(parts)
+    m = start.search(reply)
+    return reply[m.start() :].rstrip("\n") + "\n" if m else ""
 
 
-_SECRET_ENV_RE = re.compile(r"TOKEN|SECRET|PASSWORD|PASSWD|KEY|CREDENTIAL", re.I)
-_SERVICE_ENV = {"DATABASE_URL", "VALKEY_URL", "NATS_URL", "OPENBAO_ADDR"}
+# What the escalation lane's gate may see of the worker's environment: how
+# to find and run tools, the locale, and the git identity. An allowlist — a
+# denylist over os.environ cannot know every variable that names a secret or
+# points at a swarm service (FORGEJO_URL, OLLAMA_API_BASE, GIT_CONFIG_VALUE_n
+# with an auth header, …).
+_LANE_GATE_ENV = {
+    "PATH", "HOME", "USER", "LOGNAME", "SHELL", "TERM", "TMPDIR", "TZ",
+    "LANG", "LANGUAGE", "VIRTUAL_ENV",
+    "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL",
+    "GIT_TERMINAL_PROMPT",
+}  # fmt: skip
 
 
 def lane_gate_env(env: dict) -> dict:
     """The environment the escalation lane gives the patched workspace.
 
     The lane runs on the host, outside the sealed agent container, and the
-    gate executes code the escalation model wrote. So it gets no variable
-    that names a secret and none that points at the swarm's services.
+    gate executes code the escalation model wrote. It gets the variables in
+    _LANE_GATE_ENV and the locale (LC_*) — nothing that names a secret,
+    nothing that points at the swarm's services.
     """
-    return {k: v for k, v in env.items() if not _SECRET_ENV_RE.search(k) and k not in _SERVICE_ENV}
+    return {k: v for k, v in env.items() if k in _LANE_GATE_ENV or k.startswith("LC_")}
 
 
 async def run_escalated_patch(task, secret: str, patch: str) -> RunResult:
@@ -649,7 +672,9 @@ async def run_escalated_patch(task, secret: str, patch: str) -> RunResult:
             raise PoisonError(f"escalation patch does not apply; not pushing.\n{out[-1500:]}")
 
         timings: dict = {}
-        green, check_out = await check_workspace(repo, gate_env, task.verify_cmd, timings, base)
+        green, check_out = await check_workspace(
+            repo, gate_env, task.verify_cmd, timings, base, git_env=env
+        )
         result.gate_stage1_ms = timings["stage1_ms"]
         result.gate_stage2_ms = timings["stage2_ms"]
         result.check_output = check_out[-4000:]
@@ -668,7 +693,8 @@ async def run_escalated_patch(task, secret: str, patch: str) -> RunResult:
         await _run(["git", *identity, "commit", "-m", f"escalated: {title}"], repo, env, 60)
         await _run(["git", "push", remote, f"HEAD:refs/heads/{branch}"], repo, env, 300)
         return result
-    except (RuntimeError, FileNotFoundError) as err:
+    except (RuntimeError, FileNotFoundError, TimeoutError) as err:
+        # the lane makes one attempt: a timeout is a failure with a reason too
         raise PoisonError(str(err).replace(secret, "***") if secret else str(err)) from err
     finally:
         shutil.rmtree(workdir, ignore_errors=True)

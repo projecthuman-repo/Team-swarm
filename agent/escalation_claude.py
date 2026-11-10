@@ -93,14 +93,20 @@ async def escalate(spec: str, failing_diff: str, check_output: str) -> str:
     # carries the model, `tools=[]` (no built-in tools: the lane wants a patch
     # as text, not edits or commands on this host) and the CLI's environment.
     options = sdk.ClaudeAgentOptions(model=CLAUDE_MODEL, tools=[], env={"ANTHROPIC_API_KEY": key})
-    async for message in sdk.query(prompt=prompt, options=options):
-        if getattr(message, "is_error", False):
-            raise EscalationUnavailable(
-                f"Claude run failed: {getattr(message, 'result', None) or 'no detail'}"
-            )
-        text = getattr(message, "result", None) or getattr(message, "text", None)
-        if text:
-            chunks.append(str(text))
+    try:
+        async for message in sdk.query(prompt=prompt, options=options):
+            if getattr(message, "is_error", False):
+                raise EscalationUnavailable(
+                    f"Claude run failed: {getattr(message, 'result', None) or 'no detail'}"
+                )
+            text = getattr(message, "result", None) or getattr(message, "text", None)
+            if text:
+                chunks.append(str(text))
+    except EscalationUnavailable:
+        raise
+    except Exception as err:  # noqa: BLE001 - the SDK's own errors (CLI not found,
+        # connection, process, JSON decode) are all "no escalation happened"
+        raise EscalationUnavailable(f"Claude Agent SDK error: {type(err).__name__}: {err}") from err
     return "\n".join(chunks)
 
 

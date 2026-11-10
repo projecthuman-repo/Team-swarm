@@ -113,6 +113,15 @@ async def triage(watch: bool) -> None:
     await nc.drain()
 
 
+def replay_subject(subject: str, role: str) -> str:
+    """Where a replayed task is re-injected: its own subject, except that a
+    message from the escalation lane's subject goes back to the task's role.
+    The lane claims only tasks in status `escalated`, and a task is escalated
+    at most once (review R11) — a replay is a normal attempt.
+    """
+    return f"swarm.tasks.{role}" if subject == "swarm.tasks.escalation" else subject
+
+
 async def replay(stream_seq: int) -> None:
     """v4.1 T5.1 — DLQ replay drill: re-inject a fixed task by sequence."""
     pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=2)
@@ -130,7 +139,7 @@ async def replay(stream_seq: int) -> None:
             )
             await conn.execute(
                 "INSERT INTO outbox(subject, msg_id, payload) VALUES($1, $2, $3)",
-                raw.subject,
+                replay_subject(raw.subject, task.role),
                 f"replay-{stream_seq}-{uuid.uuid4().hex[:8]}",  # fresh dedupe key
                 task.SerializeToString(),
             )

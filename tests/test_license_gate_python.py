@@ -210,18 +210,63 @@ def test_real_numpy_and_scipy_name_only_gpl_and_lgpl_once_the_boilerplate_is_gon
         assert tally["acknowledged"][0][2] == ["LGPL", "GPL"]
 
 
+SECTION_13 = (
+    "13. Use with the GNU Affero General Public License.\n\n  Notwithstanding any other "
+    "provision of this License, you have permission to link or combine any covered work with "
+    "a work licensed under version 3 of the GNU Affero General Public License into a single "
+    "combined work, and to convey the resulting work.  The terms of this License will "
+    "continue to apply to the part which is the covered work, but the special requirements "
+    "of the GNU Affero General Public License, section 13, concerning interaction through a "
+    "network will apply to the combination as such."
+)
+
+
 def test_only_the_verbatim_standard_sentences_are_removed():
-    section_13 = (
-        "13. Use with the GNU Affero General Public License.\n  Notwithstanding any other "
-        "provision of this License, you have permission … will apply to the combination as such."
-    )
-    assert gate.refused_families(section_13) == []
+    assert SECTION_13.replace("\n\n  ", " ").replace("  ", " ") in " ".join(
+        meta(*NUMPY)["license"].split()
+    )  # the real text, as numpy reproduces it
+    assert gate.refused_families(SECTION_13) == []
     # the same words outside the standard sentences still count
-    assert gate.refused_families(section_13 + " Also AGPL-3.0 for the server.") == ["AGPL"]
+    assert gate.refused_families(SECTION_13 + " Also AGPL-3.0 for the server.") == ["AGPL"]
     assert gate.refused_families("This program is proprietary.") == ["proprietary"]
     assert gate.refused_families("could make it effectively proprietary") == ["proprietary"]
     assert gate.refused_families("allowed only occasionally and noncommercially") == [
         "non-commercial"]  # fmt: skip
+
+
+def test_section_13_is_not_a_wildcard():
+    # review of R9: the passage was `heading.*?closing words`, so anything
+    # between a stray heading and a later real section 13 vanished from the scan
+    heading = "13. Use with the GNU Affero General Public License."
+    closing = "will apply to the combination as such."
+    hidden = f"{heading} (see below) The bundled solver is Proprietary and EPL-2.0. {SECTION_13}"
+    # the stray heading itself names the Affero license; nothing in between is hidden
+    assert gate.refused_families(hidden) == ["AGPL", "EPL", "proprietary"]
+    reworded = f"{heading} You may not use this commercially: non-commercial only. {closing}"
+    assert "non-commercial" in gate.refused_families(reworded)
+    # and with an acknowledgement the package still blocks, naming the families
+    key = NUMPY
+    numpy = dict(meta(*NUMPY))
+    numpy["license"] = numpy["license"].replace(
+        "13. Use with the GNU Affero General Public License.",
+        f"{heading} (see below) The bundled solver is Proprietary. {heading}",
+        1,
+    )
+    (violation,) = judge({key: numpy}, [key], acks=ACKS)
+    assert "proprietary" in violation[1] and "does not cover" in violation[1]
+
+
+@pytest.mark.parametrize(
+    "spelling", ["Affero GPL v3", "Affero General Public License", "GNU AGPL", "AGPL-3.0-only"]
+)
+def test_an_acknowledgement_never_clears_the_affero_family_however_it_is_spelled(spelling):
+    # review of R9: "Affero GPL" was classified as GPL, which the GCC-exception row clears
+    assert "AGPL" in gate.refused_families(f"The server component is under the {spelling}.")
+    key = NUMPY
+    numpy = dict(meta(*NUMPY))
+    numpy["license"] += f"\nThe server component is under the {spelling}."
+    (violation,) = judge({key: numpy}, [key], acks=ACKS)
+    assert "AGPL" in violation[1] and "does not cover" in violation[1]
 
 
 # --- scope: what ships -------------------------------------------------------

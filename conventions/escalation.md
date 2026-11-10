@@ -6,7 +6,7 @@ it did before, and when a step cannot do its job the change is not pushed.
 
 | flag | what it turns on | when it cannot run |
 |---|---|---|
-| `ROUTE_API_FALLBACK=1` | a `swarm-hard` task that exhausts its repair budget is handed to the escalation lane instead of the DLQ | DLQ with the reason |
+| `ROUTE_API_FALLBACK=1` | a `swarm-hard` task that exhausts its repair budget is handed to the escalation lane instead of failing | `FAILED` with the reason, as on the normal path |
 | `RUBRIC_ENABLED=1` | every green change is graded against the rubric before the push | a grader that cannot be reached is a MISS |
 | `CODEX_REVIEW=1` | `swarm-hard` reviews get Codex as a fourth reviewer | recorded; blocks only with `CODEX_REVIEW_REQUIRED=1` |
 
@@ -34,17 +34,28 @@ A task is `swarm-hard` when its issue carries that label (stored in
 4. **Green:** it pushes `feature/<task_id>` and emits `PR_OPENED` exactly
    as the normal path does, with `escalated=1` in the event and the trace;
    `tasks.escalated_at` marks the row.
-   **Anything else** — the patch does not apply, the gate is red, the SDK
-   is not installed, a key lease fails — is `FAILED` with the reason and
-   goes to the DLQ. Nothing is pushed.
+   **Anything else** — the patch does not apply, the gate is red or times
+   out, the SDK is not installed or fails, a key lease fails — is `FAILED`
+   with the reason: status `failed`, a `FAILED` event, the reason also in
+   `escalations.outcome`, and `term()` so the message is not redelivered —
+   what a poisoned task gets on the normal path. Nothing is pushed.
 5. **At most one escalation per task.** `escalations.task_id` is the
    primary key and `escalated_at` is never cleared: a second hand-off is
-   refused and the task takes the DLQ path.
+   refused and the task fails as it would without the flag. `make
+   dlq-replay` of a message from the lane's subject re-injects the task on
+   its role's subject — a normal attempt.
 
 The lane's gate executes model-written code on the host, outside the
-container seal. It runs without the swarm's secrets and service addresses,
-and the bot token is not in the clone it runs in. Run the lane on a host
-where that is acceptable.
+container seal. Its environment is an allowlist — the tool path, the
+locale, the git identity — so it holds none of the swarm's secrets or
+service addresses, and the bot token is not in the clone it runs in. That
+narrows what the code can read; it does not sandbox it. Run the lane on a
+host where that is acceptable.
+
+"DLQ" in this file means what the normal path does with a poisoned task:
+status `failed`, a `FAILED` event with the reason, `term()`. The
+`SWARM_DLQ` stream itself captures only messages that exhaust
+`max-deliver`.
 
 ## Rubric (T7.8)
 
@@ -56,7 +67,8 @@ The pre-push review step grades the hand-off bundle (spec + diff) with
   grader's notes, then the gate, then the grader.
 - **second MISS** — no further revision. The task is escalated when
   escalation is enabled for it (`swarm-hard` and `ROUTE_API_FALLBACK=1`),
-  otherwise it takes the needs-human path (DLQ).
+  otherwise it takes the needs-human path (it fails with the reason, as
+  above).
 
 The counter is `tasks.rubric_misses`. It lives on the row, so a redelivered
 task cannot buy another revision: there is never a third round.

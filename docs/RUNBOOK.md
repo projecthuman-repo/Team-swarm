@@ -408,7 +408,9 @@ Additive to everything above; `aider` stays default, `bandit` stays on.
   aider. The lane image carries the offline profile at
   `/etc/codex/config.toml` (analytics, feedback, metrics export and the
   plugins sync off — `deploy/codex/config.toml`); `make codex-audit` checks
-  the same profile on the internal network.
+  the same profile on the internal network. Keep `CODEX_API_KEY` and
+  `CODEX_ACCESS_TOKEN` unset there: with a credential Codex also calls its
+  hosted backend.
 - **Claude escalation (T7.7):** only with `ROUTE_API_FALLBACK=1` and the
   Claude key leased into OpenBao (`secret/data/swarm/claude`, field
   `api_key`). The escalated patch re-enters the green-build gate before any
@@ -426,9 +428,11 @@ Additive to everything above; `aider` stays default, `bandit` stays on.
   the patch to a fresh clone, runs the same two-stage gate once, and on
   green pushes `feature/<task_id>` and emits `PR_OPENED` with
   `escalated=1`. A patch that does not apply, a red gate, a missing SDK or
-  a failed key lease is `FAILED` with the reason → DLQ, nothing pushed. At
+  a failed key lease is `FAILED` with the reason (status `failed`, the
+  event, `escalations.outcome`), nothing pushed. At
   most one escalation per task. The lane's gate runs model-written code on
-  the host without the swarm's secrets; choose the host accordingly.
+  the host with an allowlisted environment (no swarm secrets or service
+  addresses) but no sandbox; choose the host accordingly.
   `psql -c "SELECT task_id, outcome FROM escalations"` shows what the lane
   did; a row with no outcome is waiting for `make escalation`.
 - **Rubric (T7.8):** `RUBRIC_ENABLED=1` adds a pre-push review step that
