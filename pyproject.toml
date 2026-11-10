@@ -1,7 +1,7 @@
 [project]
 name = "overnight-agent-swarm"
 version = "4.2.0"
-description = "Overnight Agent Swarm v4.1.1 — JetStream + transactional outbox + sandboxed coding agents"
+description = "Overnight Agent Swarm v4.2.0 — JetStream + transactional outbox + sandboxed coding agents"
 # Every image and CI job runs Python 3.12; the upper bound keeps the
 # universal lock solvable (aider-chat pins numpy==1.26.4, which has no
 # 3.14 wheels while fastembed needs numpy>=2.3 there). See DECISIONS D-009.

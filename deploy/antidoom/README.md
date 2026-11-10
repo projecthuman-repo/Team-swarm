@@ -21,8 +21,10 @@ path**. It never blocks the runtime swarm (Phase 5, offline track).
 
 ## Steps (T9.1 → T9.5)
 
-1. **T9.1 Environment.** `docker compose -f deploy/antidoom/compose.yaml up`
-   on a GPU host. NVIDIA/CUDA is the default; for AMD/ROCm (MI-series) use
+1. **T9.1 Environment.** Clone `Liquid4All/antidoom` into
+   `deploy/antidoom/antidoom-src`, then
+   `UV_BIN=$(command -v uv) docker compose -f deploy/antidoom/compose.yaml up`
+   on a GPU host (the container runs in the clone and uses the host's `uv`). NVIDIA/CUDA is the default; for AMD/ROCm (MI-series) use
    the upstream `configs/default_amd.yaml` with
    `attention_backend: TRITON_ATTN`. Verify:
    `uv run antidoom -c configs/default.yaml --model-name <ornith-9b-hf-id>`

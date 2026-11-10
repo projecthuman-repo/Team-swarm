@@ -919,3 +919,56 @@ uses it, and it prints which precondition is off.
 (k) *Deferred:* the real escalation run (`scripts/escalation_lane.sh
 --smoke`) stages a hand-off the way the worker writes it and lets the lane
 handle it against the real SDK, the real gate and Forgejo.
+
+**D-045 · Fixes for the review of R1–R7 (R8).** Eleven defects, listed
+with their tests in STATE. The decisions among them:
+(a) *Alternate indexes.* The R2 text says "any fetch failure is exit 2"
+and reads pypi.org for every registry package; the lock `make
+torch-cpu-lock` produces has `torch <v>+cpu` from PyTorch's own index,
+which pypi.org cannot know. The gate now accepts lock entries from
+pypi.org and from the indexes in `ALTERNATE_INDEXES` (one: the PyTorch CPU
+index, the one `pyproject.toml` declares) and judges an entry with a local
+version by the pypi.org metadata of its public version — the same project
+and license, a different build. The report names every such entry. This
+corrects D-034, which said torch would then show "no license found" and
+could be given an override row: after R2 it was exit 2 with no remedy.
+(b) *Unjudgeable is exit 2.* D-036 (b) said "every lock entry now gets a
+verdict by construction". That held only while the lock had no git, URL
+or path dependency: such an entry was in none of the three lists the gate
+walks and passed. It is now a `GateError`, as is an image closure line
+that is not a `name==version` pin; a shipped pin with no metadata is a
+violation. The real lock has none of these.
+(c) *Strix exit codes.* Read from the installed strix-agent 1.7.0
+(`strix/interface/main.py`, `report/state.py`): exit 2 means findings (any
+finding without `--fail-on`), and `vulnerabilities.json` is written only
+when there are findings. An argparse error is also exit 2, so the script
+tells them apart by whether a new report exists. The lane stays advisory:
+a completed scan is exit 0 whatever it found. `STRIX_FAIL_ON` (new,
+unset by default) passes `--fail-on` and makes findings at or above it
+exit 2 — with removing `continue-on-error`, that is how the workflow
+becomes blocking.
+(d) *Routing from CI* never worked (no dependencies, no database). The
+workflow sets `STRIX_ROUTE=0` and prints the findings; lessons are written
+by `make strix` on the lane host. LEDGER records the step as moved.
+(e) *Headroom upstream.* `OPENAI_TARGET_API_URL`, read from the installed
+0.31.0 package (`proxy/server.py`, `providers/registry.py`) and confirmed
+with a request through the real proxy to a fake upstream. The wrong
+variable predates this round; R1's `/health` check could not see it.
+(f) *The Codex image's npm payload is a committed lock.*
+`deploy/codex/package-lock.json` (generated with `npm install
+--package-lock-only --ignore-scripts`): the launcher and six platform
+packages, all `@openai/codex` 0.167.0, Apache-2.0, with integrity hashes.
+The image installs it with `npm ci` and copies only that directory and the
+`node` binary. `ARG CODEX_VERSION` stays as a build-time check against the
+lock. The lock joined the Zone C syft paths; the test that pins that list
+was updated accordingly.
+(g) *Antidoom's image* is unchanged (`nvidia/cuda:…-runtime`); uv comes
+from the host as a read-only volume, because whether that image has `pip`
+could not be checked here. Still never run: it needs a GPU host.
+(h) *Tier B model pull.* A temporary NetworkPolicy for `app: embeddings`
+(TCP 443), applied and deleted by hand around the pull; `install.sh` does
+not apply it. The embeddings pod is a model server, not an agent.
+(i) *Rejected findings* are listed in STATE with the reason. The Zone B
+free-text gap stays as specified: Zone B's Python verdict reads the
+declaration and the classifiers, and the full Zone B run has syft over the
+lock as well.

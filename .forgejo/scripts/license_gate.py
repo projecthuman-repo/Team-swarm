@@ -18,8 +18,10 @@ the exact version in uv.lock (cached under .cache/license-gate/): the SPDX
 `license_expression`, else the `license` field when it is a short SPDX
 expression, else the `License ::` trove classifiers. Zone C applies the
 allowlist to the closures of the images the swarm builds (`uv export` for
-the agent, ingest and headroom images, matched by name AND version); every
-other lock entry is in no image and is judged by the Zone B denylist.
+the agent, ingest, headroom and codex images, matched by name AND version);
+every other lock entry is in no image and is judged by the Zone B denylist.
+A lock entry the gate cannot judge — a git, URL or path source, or a
+registry that is neither pypi.org nor in ALTERNATE_INDEXES — is exit 2.
 `--python-only` runs just this part — no syft needed.
 
 Everything else is scanned by syft (`dir:` / `file:` sources, one scan per
@@ -54,6 +56,16 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 LICENSING_MD = os.path.join(ROOT, "conventions", "licensing.md")
 CACHE_DIR = os.path.join(ROOT, ".cache", "license-gate")
 PYPI_URL = "https://pypi.org/pypi/{name}/{version}/json"
+PYPI_REGISTRY = "https://pypi.org/simple"
+# Indexes other than pypi.org a lock entry may come from (review of R2). Each
+# serves builds of projects that are published on pypi.org, under a local
+# version (`2.15.0+cpu`); such an entry is judged by the pypi.org metadata of
+# its public version, and the report names it. An entry from any other
+# registry — or with a git, URL or path source — cannot be judged: exit 2.
+ALTERNATE_INDEXES = {
+    # PyTorch's own index, CPU builds — what `make torch-cpu-lock` switches torch to
+    "https://download.pytorch.org/whl/cpu": "pytorch-cpu",
+}
 
 ALLOWED = {
     "MIT",
@@ -100,6 +112,11 @@ REFUSED = {
     "proprietary": r"proprietary",
     "non-commercial": r"non[- ]?commercial",
     "Creative Commons": r"Creative Commons|\bCC[- ]BY",
+    # Hard Rule 9's own families, spelled as publishers write them in free
+    # text (review of R2): the SPDX ids are caught by DENIED_C as before.
+    "BUSL": r"BUSL|\bBSL\b(?![- ]1\.0)|Business Source",
+    "Commons Clause": r"Commons[ -]Clause",
+    "Elastic": r"Elastic[- ]License|Elastic-2\.0|\bELv2\b",
 }
 # The only licenses a bundled-runtime acknowledgement may carry, and the one
 # refused family each of them clears (review R9): an acknowledgement clears
@@ -154,7 +171,17 @@ IMAGES = {
 }
 
 DEFAULT_PATHS = {
-    "C": ["agent", "ingest", "relay", "skills", "scripts", "relay/package-lock.json"],
+    "C": [
+        "agent",
+        "ingest",
+        "relay",
+        "skills",
+        "scripts",
+        "relay/package-lock.json",
+        # the Codex lane image's npm payload (deploy/Containerfile.codex installs
+        # exactly this lock with `npm ci`)
+        "deploy/codex/package-lock.json",
+    ],
     "B": ["dir:."],
 }
 
@@ -267,10 +294,32 @@ def first_party(root: str = ROOT) -> set[str]:
 
 
 def locked_packages(root: str = ROOT) -> list[tuple[str, str]]:
-    """(name, version) of every registry package in uv.lock."""
+    """(name, version) of every dependency in uv.lock — or exit 2.
+
+    Every entry must be one the gate can judge: a pin from pypi.org or from
+    an index in ALTERNATE_INDEXES. The project's own entry is skipped; a
+    git, URL or path source, or any other registry, is a GateError.
+    """
     with open(os.path.join(root, "uv.lock"), "rb") as f:
         packages = tomllib.load(f)["package"]
-    return [(p["name"], p["version"]) for p in packages if "registry" in p.get("source", {})]
+    out = []
+    for p in packages:
+        source = p.get("source", {})
+        if source in ({"virtual": "."}, {"editable": "."}):
+            continue  # the project itself
+        registry = source.get("registry")
+        if registry != PYPI_REGISTRY and registry not in ALTERNATE_INDEXES:
+            raise GateError(
+                f"uv.lock: {p['name']} {p.get('version', '')} comes from {source or 'no source'} — "
+                "the gate judges pins from pypi.org and the indexes in ALTERNATE_INDEXES only"
+            )
+        out.append((p["name"], p["version"]))
+    return out
+
+
+def public_version(version: str) -> str:
+    """The version pypi.org knows: without the local segment (`+cpu`)."""
+    return version.split("+", 1)[0]
 
 
 def _download(url: str) -> dict:
@@ -285,7 +334,7 @@ def fetch_metadata(name: str, version: str, cache_dir: str = CACHE_DIR) -> dict:
         with open(path) as f:
             return json.load(f)
     try:
-        info = _download(PYPI_URL.format(name=name, version=version))["info"]
+        info = _download(PYPI_URL.format(name=name, version=public_version(version)))["info"]
     except Exception as err:  # network, HTTP status, bad JSON — all mean "cannot judge"
         raise GateError(f"cannot read pypi.org metadata for {name} {version}: {err}") from err
     meta = {
@@ -346,6 +395,10 @@ def closures(run=subprocess.check_output) -> dict[str, set[tuple[str, str]]]:
             m = re.match(r"^([A-Za-z0-9_.\-]+)(?:\[[^\]]*\])?==([^\s;]+)", line)
             if m:
                 pins.add((canonical(m.group(1)), m.group(2)))
+            elif line.strip() and not line.lstrip().startswith("#"):
+                # `name @ https://…`, `-e ./path`, a git requirement: it ships,
+                # and there is no publisher metadata to judge it by.
+                raise GateError(f"{image} image installs something that is not a pin: {line!r}")
         if not pins:
             raise GateError(f"`{' '.join(cmd)}` listed no package")
         out[image] = pins
@@ -410,6 +463,9 @@ def judge_python(
             bad.append((label, f"{expr} (from the publisher's {source})"))
         for image in images:
             tally[image][source] = tally[image].get(source, 0) + 1
+    for image, pins in sorted(shipped.items()):
+        for name, version in sorted(pins - set(metas)):
+            bad.append((f"{name} {version}", f"in the {image} image but not judged: no lock entry"))
     tally["acknowledged"] = acknowledged
     return bad, tally
 
@@ -437,6 +493,12 @@ def python_verdicts(zone: str) -> list[tuple[str, str]]:
     shipped = closures() if zone == "C" else {}
     bad, tally = judge_python(metas, shipped, zone, license_overrides(), acknowledgements())
     report_python(tally, zone, len(packages))
+    for name, version in packages:
+        if public_version(version) != version:
+            print(
+                f"  alternate index: {name} {version} judged by the pypi.org metadata of "
+                f"{name} {public_version(version)}"
+            )
     return bad
 
 

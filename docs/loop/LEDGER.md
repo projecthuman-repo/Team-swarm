@@ -258,3 +258,15 @@ where it went) or `generated` (the file stays, with a header saying so).
 | `RUBRIC_ENABLED`, `CODEX_REVIEW`, `CODEX_REVIEW_REQUIRED`, `ESCALATION_ENV` | generated (new) | R11 — all default off; `.env.example` |
 | `conventions/escalation.md` | generated (new) | R11 |
 | `verify-integration` | extended | R11 — real escalation run (SKIP unless opted in) |
+| License gate: lock sources | extended | R8 (review) — pypi.org and `ALTERNATE_INDEXES` (the PyTorch CPU index) are judged; any other source or registry is exit 2; a shipped pin without metadata is a violation. `make torch-cpu-lock` and the gate now work together |
+| License gate: `REFUSED` | extended | R8 (review) — BUSL / Business Source, Commons Clause, Elastic |
+| License gate: Zone C syft paths | extended | R8 (review) — plus `deploy/codex/package-lock.json` |
+| `deploy/codex/package.json`, `deploy/codex/package-lock.json` | generated (new) | R8 (review) — the npm payload of the Codex lane image |
+| `deploy/Containerfile.codex` | extended | R8 (review) — `npm ci` from the lock; npm and corepack are no longer copied into the image |
+| `scripts/strix_quick_scan.sh` | extended | R8 (review) — exit codes of strix-agent 1.7.0 handled; `STRIX_FAIL_ON` (new, unset = advisory) |
+| `.forgejo/workflows/security.yaml` — findings routed to lessons from CI | moved | R8 (review) — from the workflow step (which could not run: no dependencies, no database) to `make strix` / `make strix-findings` on the security-lane host; the workflow prints the findings (`STRIX_ROUTE=0`) |
+| compose service `headroom`, `deploy/k8s/headroom.yaml` | extended | R8 (review) — upstream set through `OPENAI_TARGET_API_URL`, the variable the 0.31.0 proxy reads |
+| `deploy/antidoom/compose.yaml`, `deploy/antidoom/README.md` | extended | R8 (review) — runs in the clone; `UV_BIN` (the host's uv) |
+| `deploy/k8s/embeddings-model-pull.yaml` | generated (new) | R8 (review) — temporary egress policy for the one-time model pull |
+| `verify-integration` step label (Codex image) | kept | R8 (review) — reworded, no backticks; same command |
+| `pyproject.toml` description, Perses dashboard title | extended | R8 (review) — v4.2.0 |

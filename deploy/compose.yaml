@@ -243,9 +243,12 @@ services:
       dockerfile: deploy/Containerfile.headroom
     profiles: [headroom]
     environment:
-      # upstream the proxy forwards to; point at litellm:4000/v1 when the
-      # litellm profile is also up (chain: agent -> headroom -> litellm -> model)
-      OPENAI_BASE_URL: http://ollama:11434/v1
+      # The upstream the proxy forwards OpenAI-style requests to. The 0.31.0
+      # proxy reads OPENAI_TARGET_API_URL (not OPENAI_BASE_URL, the client-side
+      # variable): without it every request goes to api.openai.com, which this
+      # no-egress network answers with a 502. Point it at litellm:4000/v1 when
+      # the litellm profile is also up (agent -> headroom -> litellm -> model).
+      OPENAI_TARGET_API_URL: http://ollama:11434/v1
     volumes:
       - ./headroom-assets:/assets:ro # seeded by scripts/seed_headroom_assets.sh
     networks: [swarm-internal] # NO egress: assets are pre-provisioned (T1.4)

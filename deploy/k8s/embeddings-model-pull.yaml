@@ -1,0 +1,23 @@
+# TEMPORARY — apply only for the one-time model pull of deploy/k8s/embeddings.yaml,
+# then delete it (the three commands are in that file's header). install.sh
+# does not apply it.
+#
+# networkpolicy-default-deny.yaml lets no pod in the namespace reach the
+# internet. NetworkPolicies are additive, so this one opens HTTPS egress for
+# the embeddings pod alone — a model server, not an agent (Hard Rule 1 is
+# about agents; Tier A's ollama sits on the egress network for the same
+# reason). No agent pod carries the label it selects.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: embeddings-model-pull
+  namespace: swarm
+spec:
+  podSelector:
+    matchLabels: { app: embeddings }
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock: { cidr: 0.0.0.0/0 }
+      ports:
+        - { protocol: TCP, port: 443 }

@@ -6,7 +6,7 @@
   },
   "spec": {
     "display": {
-      "name": "Swarm SLA — v4.1.1",
+      "name": "Swarm SLA — v4.2.0",
       "description": "Runbook §17 SLAs from the agents' /metrics (Lean & Precise L3.2). Thresholds: 70% of tasks done within 24h; publish->claim under 10 minutes."
     },
     "duration": "24h",

@@ -8,8 +8,8 @@
 # same selection as the agent image (`agent` + `gate` groups), and the
 # Codex CLI is pinned. @openai/codex is a Node launcher (bin/codex.js,
 # `#!/usr/bin/env node`) around a per-platform binary, so the Node runtime
-# stays in the image — it is copied from the official node image instead of
-# being installed with a remote script and purged again.
+# stays in the image — the `node` binary is copied from the official node
+# image instead of being installed with a remote script and purged again.
 
 FROM python:3.12-slim AS builder
 COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /bin/uv
@@ -23,20 +23,31 @@ RUN uv sync --frozen --no-dev --no-install-project --group agent --group gate \
  && find /opt/venv -depth -type d \( -name tests -o -name test \) -exec rm -rf {} + \
  && find /opt/venv -name '*.pyc' -delete
 
-# Codex CLI — Apache-2.0, npm @openai/codex. Pinned; raise it deliberately.
+# Codex CLI — Apache-2.0, npm @openai/codex. The image's whole npm payload is
+# deploy/codex/package-lock.json: the launcher and the platform package that
+# carries the native binary, with integrity hashes. The license gate scans
+# that lock (Zone C). To raise the version: edit deploy/codex/package.json
+# and CODEX_VERSION, then `npm install --package-lock-only --ignore-scripts`
+# in deploy/codex. The build fails when the two disagree.
 FROM node:22-slim AS codex
 ARG CODEX_VERSION=0.167.0
-RUN npm install -g "@openai/codex@${CODEX_VERSION}" \
- && test -f /usr/local/lib/node_modules/@openai/codex/bin/codex.js
+WORKDIR /opt/codex
+COPY deploy/codex/package.json deploy/codex/package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts \
+ && test -f node_modules/@openai/codex/bin/codex.js \
+ && test "$(node -p "require('./node_modules/@openai/codex/package.json').version")" = "${CODEX_VERSION}"
 
 FROM python:3.12-slim
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /opt/venv /opt/venv
+# Node itself and the Codex packages — nothing else of the node image. Its
+# global node_modules (npm, Artistic-2.0; corepack) stay behind: nothing at
+# run time needs them, and no gate would judge them.
 COPY --from=codex /usr/local/bin/node /usr/local/bin/node
-COPY --from=codex /usr/local/lib/node_modules /usr/local/lib/node_modules
-RUN ln -s ../lib/node_modules/@openai/codex/bin/codex.js /usr/local/bin/codex \
+COPY --from=codex /opt/codex/node_modules /opt/codex/node_modules
+RUN ln -s /opt/codex/node_modules/@openai/codex/bin/codex.js /usr/local/bin/codex \
  && codex --version
 ENV PATH=/opt/venv/bin:$PATH \
     PYTHONUNBUFFERED=1 \

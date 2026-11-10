@@ -259,7 +259,7 @@ verify-integration: ## run every deferred integration check (runtime host)
 	@$(VI) "L2.3/L3.3/R4 shadow-eval, full ten-task golden pack per embedder: api default and fastembed first-pass green rate >= the v4.1 baseline" ./scripts/embeddings_shadow.sh
 	@$(VI) "L3.2 observability: gauges scraped, task span in Jaeger, Perses dashboard" ./scripts/observability_smoke.sh
 	@$(VI) "L3.2 percli lint of the Perses dashboard (needs percli)" percli lint -f deploy/observability/perses-sla.json
-	@$(VI) "R7 v4.2 Codex lane image builds and `codex --version` runs in it" $(RUNTIME) build -f deploy/Containerfile.codex -t swarm-codex:dev .
+	@$(VI) "R7 v4.2 Codex lane image builds (the build itself runs codex --version)" $(RUNTIME) build -f deploy/Containerfile.codex -t swarm-codex:dev .
 	@$(VI) "R7 v4.2 Codex offline-egress audit (the lane image on the internal network; needs the spine's Ollama with a model)" ./scripts/codex_egress_audit.sh
 	@$(VI) "R7 v4.2 Strix quick scan from the locked security group (needs Docker + the model gateway)" ./scripts/strix_quick_scan.sh
 	@$(VI) "R11 v4.2 real escalation run: staged hand-off -> lane -> gate -> feature/* branch (SKIP unless ROUTE_API_FALLBACK=1 and the Claude key lease succeeds; needs the spine with the relay and Forgejo)" ./scripts/escalation_lane.sh --smoke

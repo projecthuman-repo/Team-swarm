@@ -5,9 +5,15 @@
 # (384-dim) — the same model and vector space as Tier A, so lessons move
 # between tiers without a re-embed.
 #
-# The model is NOT pulled automatically (default-deny egress). Once, from a
-# host that may reach the Ollama registry, or by pre-seeding the PVC:
+# The model is NOT pulled automatically: the pull is made by this pod, and
+# the namespace's default-deny egress policy blocks it. Pull it once, with
+# the temporary policy that lets only this pod reach the registry over
+# HTTPS, and remove that policy again:
+#   kubectl apply  -f deploy/k8s/embeddings-model-pull.yaml
 #   kubectl exec -n swarm deploy/embeddings -- ollama pull all-minilm
+#   kubectl delete -f deploy/k8s/embeddings-model-pull.yaml
+# The model stays on the PVC. Until it is there, agents log the embedding
+# error and retrieval is text-only.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

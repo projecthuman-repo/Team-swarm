@@ -43,7 +43,7 @@ kubectl apply -f runtimeclass-gvisor.yaml
 kubectl apply -f networkpolicy-default-deny.yaml
 kubectl apply -f relay.yaml
 kubectl apply -f vllm.yaml
-kubectl apply -f embeddings.yaml # R4: /v1/embeddings for the lessons memory (pull all-minilm once)
+kubectl apply -f embeddings.yaml # R4: /v1/embeddings for the lessons memory; pull all-minilm once — see its header (embeddings-model-pull.yaml)
 kubectl apply -f agent-backend.yaml
 kubectl apply -f agent-roles.yaml # frontend / review / triage
 kubectl create configmap litellm-config -n swarm \

@@ -33,9 +33,16 @@ jobs:
           LLM_API_BASE: ${{ env.LLM_API_BASE }} # self-hosted Ornith gateway
           STRIX_LLM: ${{ env.STRIX_LLM }} # model id at that gateway
           STRIX_ENV: /tmp/strix-env # isolated: the `security` group conflicts with `agent`
+          # The runner has no route to the swarm's Postgres, so findings are
+          # printed in this job's log and not written as lessons from CI;
+          # `make strix` on the security-lane host writes them. To route from
+          # CI, give the job a DATABASE_URL it can reach and set this to "1".
+          STRIX_ROUTE: "0"
         # The shared lane script (review R10): Strix from the locked `security`
-        # group, pinned sandbox image, telemetry off, then validated findings
-        # -> lessons (no issues from CI). The same script as `make strix`.
+        # group, pinned sandbox image, telemetry off. The same script as
+        # `make strix`. A completed scan is exit 0 whatever it found; to make
+        # the job blocking, remove continue-on-error and set STRIX_FAIL_ON
+        # (critical|high|medium|low|info).
         run: |
           ./scripts/strix_quick_scan.sh --scope-mode diff --diff-base origin/integration
 

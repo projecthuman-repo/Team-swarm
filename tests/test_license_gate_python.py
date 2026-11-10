@@ -50,6 +50,11 @@ def judge(metadata, shipped, zone="C", overrides=None, acks=None):
 ACKS = gate.acknowledgements()
 
 
+def text_of(*parts):
+    with open(os.path.join(ROOT, *parts)) as f:
+        return f.read()
+
+
 # --- where the declaration comes from ---------------------------------------
 
 
@@ -367,7 +372,8 @@ def test_full_run_merges_python_and_syft_verdicts(monkeypatch):
 
 def test_zone_c_syft_paths_and_image_selections_match_the_containerfiles():
     assert gate.DEFAULT_PATHS["C"] == [
-        "agent", "ingest", "relay", "skills", "scripts", "relay/package-lock.json"]  # fmt: skip
+        "agent", "ingest", "relay", "skills", "scripts", "relay/package-lock.json",
+        "deploy/codex/package-lock.json"]  # fmt: skip
     for image, selection in gate.IMAGES.items():
         text = open(os.path.join(ROOT, "deploy", f"Containerfile.{image}")).read()
         sync = next(line for line in text.splitlines() if "uv sync" in line)
@@ -384,3 +390,139 @@ def test_ci_local_runs_the_python_verdict():
     src = open(os.path.join(ROOT, "scripts", "ci_local.sh")).read()
     assert "license_gate.py --zone C --python-only" in src
     assert ".cache/" in open(os.path.join(ROOT, ".gitignore")).read()
+
+
+# --- review of R2: what the gate cannot judge is exit 2, never a pass ----------
+
+LOCK_HEAD = """version = 1
+[[package]]
+name = "team-swarm"
+version = "4.2.0"
+source = { virtual = "." }
+
+[[package]]
+name = "requests"
+version = "2.32.5"
+source = { registry = "https://pypi.org/simple" }
+"""
+
+
+def _lock(tmp_path, extra=""):
+    (tmp_path / "uv.lock").write_text(LOCK_HEAD + extra)
+    return str(tmp_path)
+
+
+def test_a_torch_cpu_lock_entry_is_judged_by_its_public_version(tmp_path, monkeypatch):
+    # what a successful `make torch-cpu-lock` writes (scripts/torch_cpu_lock.sh)
+    root = _lock(
+        tmp_path,
+        """
+[[package]]
+name = "torch"
+version = "2.15.0+cpu"
+source = { registry = "https://download.pytorch.org/whl/cpu" }
+""",
+    )
+    assert gate.locked_packages(root) == [("requests", "2.32.5"), ("torch", "2.15.0+cpu")]
+    assert "https://download.pytorch.org/whl/cpu" in text_of("pyproject.toml")  # the declared index
+    calls = []
+
+    def download(url):
+        calls.append(url)
+        return {"info": {"license": "BSD-3-Clause", "classifiers": []}}
+
+    monkeypatch.setattr(gate, "_download", download)
+    cache = tmp_path / "cache"
+    found = gate.fetch_metadata("torch", "2.15.0+cpu", str(cache))
+    assert calls == ["https://pypi.org/pypi/torch/2.15.0/json"]  # pypi.org has no +cpu version
+    assert found["license"] == "BSD-3-Clause"
+    assert (cache / "torch-2.15.0+cpu.json").exists()  # cached under what the lock says
+    assert judge({("torch", "2.15.0+cpu"): found}, [("torch", "2.15.0+cpu")]) == []
+
+
+def test_the_python_run_passes_on_a_cpu_lock_and_names_the_entry(monkeypatch, tmp_path, capsys):
+    torch = ("torch", "2.15.0+cpu")
+    monkeypatch.setattr(gate, "locked_packages", lambda: [("fsspec", "2026.7.0"), torch])
+    monkeypatch.setattr(gate, "closures", lambda: {"agent": {("fsspec", "2026.7.0")}})
+    monkeypatch.setattr(
+        gate, "load_metadata",
+        lambda packages, cache_dir=None: {
+            ("fsspec", "2026.7.0"): meta("fsspec", "2026.7.0"),
+            torch: text_meta("BSD-3-Clause"),
+        },
+    )  # fmt: skip
+    assert gate.main(["--zone", "C", "--python-only"]) == 0
+    assert gate.main(["--zone", "B", "--python-only"]) == 0
+    out = capsys.readouterr().out
+    assert (
+        "alternate index: torch 2.15.0+cpu judged by the pypi.org metadata of torch 2.15.0" in out
+    )
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        '{ registry = "https://packages.example.invalid/simple" }',  # an index nobody reviewed
+        '{ git = "https://example.invalid/evil.git?rev=abc123#abc123" }',
+        '{ url = "https://example.invalid/evil-1.0-py3-none-any.whl" }',
+        '{ path = "vendor/evil-1.0-py3-none-any.whl" }',
+        '{ directory = "vendor/evil" }',
+        '{ editable = "vendor/evil" }',
+    ],
+)
+def test_a_lock_entry_the_gate_cannot_judge_is_exit_2(tmp_path, monkeypatch, capsys, source):
+    root = _lock(tmp_path, f'\n[[package]]\nname = "evil"\nversion = "1.0"\nsource = {source}\n')
+    with pytest.raises(gate.GateError, match="evil 1.0 comes from"):
+        gate.locked_packages(root)
+    monkeypatch.setattr(gate, "ROOT", root)
+    real = gate.locked_packages
+    monkeypatch.setattr(gate, "locked_packages", lambda: real(root))
+    assert gate.main(["--zone", "C", "--python-only"]) == 2
+    assert gate.main(["--zone", "B", "--python-only"]) == 2
+    assert "LICENSE GATE FAILED (fail-closed)" in capsys.readouterr().out
+
+
+def test_the_real_lock_has_only_judgeable_sources():
+    packages = gate.locked_packages()
+    assert len(packages) > 300 and ("team-swarm", "4.2.0") not in packages
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "evil @ https://example.invalid/evil-1.0-py3-none-any.whl",
+        "evil @ git+https://example.invalid/evil.git@abc123",
+        "-e ./vendor/evil",
+        "./vendor/evil",
+    ],
+)
+def test_an_image_closure_with_something_that_is_not_a_pin_is_exit_2(line):
+    header = "# This file was autogenerated by uv\n"
+    export = f"{header}requests==2.32.5 ; python_version >= '3.9'\n    # via x\n{line}\n"
+    with pytest.raises(gate.GateError, match="installs something that is not a pin"):
+        gate.closures(run=lambda cmd, cwd, stderr: export.encode())
+
+
+def test_a_shipped_pin_without_metadata_is_a_violation():
+    bad = judge({}, [("evil", "1.0")])
+    assert bad == [("evil 1.0", "in the agent image but not judged: no lock entry")]
+
+
+@pytest.mark.parametrize(
+    "text, family",
+    [
+        ("Business Source License 1.1", "BUSL"),
+        ("BUSL 1.1, see LICENSE", "BUSL"),
+        ("BSL", "BUSL"),
+        ("Commons Clause + Apache 2.0", "Commons Clause"),
+        ("Elastic License 2.0", "Elastic"),
+        ("Elastic-2.0 license", "Elastic"),
+    ],
+)
+def test_an_override_row_cannot_clear_the_families_hard_rule_9_names(text, family):
+    key = ("pkg", "1.0")
+    (violation,) = judge({key: text_meta(text)}, [key], overrides={"pkg": "MIT"})
+    assert family in violation[1] and "override row cannot clear" in violation[1]
+    assert gate.refused_families("Boost Software License 1.0 (BSL-1.0)") == []
+    # the syft path refuses the same free text, LicenseRef- prefix and all
+    assert family in gate.refused_families("LicenseRef-" + text.replace(" ", "-"))

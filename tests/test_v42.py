@@ -271,6 +271,37 @@ def test_codex_image_is_built_from_the_lock_with_a_pinned_cli():
     assert "useradd --create-home --uid 10001 swarm" in text and "AGENT_ENGINE=codex" in text
 
 
+def test_codex_image_ships_only_the_locked_npm_payload_and_the_gate_scans_it():
+    # review of R7: the image copied node:22-slim's whole global node_modules —
+    # npm (Artistic-2.0) and corepack in a Zone C image, seen by no gate
+    import json
+
+    text = _text("deploy", "Containerfile.codex")
+    assert "/usr/local/lib/node_modules" not in text.split("FROM python:3.12-slim\nRUN apt-get")[1]
+    assert "npm install -g" not in text
+    assert "COPY deploy/codex/package.json deploy/codex/package-lock.json ./" in text
+    assert "npm ci --omit=dev --ignore-scripts" in text
+    assert "COPY --from=codex /opt/codex/node_modules /opt/codex/node_modules" in text
+    lock = json.loads(_text("deploy", "codex", "package-lock.json"))
+    manifest = json.loads(_text("deploy", "codex", "package.json"))
+    arg = re.search(r"^ARG CODEX_VERSION=(\S+)$", text, re.M).group(1)
+    assert manifest["dependencies"] == {"@openai/codex": arg}  # exact, no range
+    packages = {k: v for k, v in lock["packages"].items() if k}
+    assert packages["node_modules/@openai/codex"]["version"] == arg
+    assert len(packages) == 7  # the launcher + six platform packages, nothing else
+    for path, package in packages.items():
+        assert path.startswith("node_modules/@openai/codex"), path
+        assert package["license"] == "Apache-2.0" and package["integrity"].startswith("sha512-")
+    spec = importlib.util.spec_from_file_location(
+        "license_gate_codex", os.path.join(ROOT, ".forgejo", "scripts", "license_gate.py")
+    )
+    gate = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gate)
+    assert "deploy/codex/package-lock.json" in gate.DEFAULT_PATHS["C"]
+    assert gate.source_for("deploy/codex/package-lock.json").startswith("file:")
+    assert "npm (Artistic-2.0) and corepack" in _text("conventions", "licensing.md")
+
+
 def test_codex_lane_is_hardened_like_the_agents_but_keeps_its_egress():
     services = yaml.safe_load(_text("deploy", "compose.yaml"))["services"]
     codex = services["codex-engine"]
@@ -286,7 +317,7 @@ def test_strix_lane_runs_the_cli_from_the_locked_group():
     # review R10: one script behind `make strix`, `make strix-scan` and the workflow
     script = _text("scripts", "strix_quick_scan.sh")
     assert "uv sync -q --frozen --no-install-project --only-group security" in script
-    assert '"$ENV_DIR/bin/strix" -n -t "$TARGET" -m "$MODE" "$@"' in script
+    assert '"$ENV_DIR/bin/strix" -n -t "$TARGET" -m "$MODE" ${gate[@]+"${gate[@]}"} "$@"' in script
     for default in ('MODE="${STRIX_SCAN_MODE:-quick}"', 'TARGET="${STRIX_TARGET:-./}"',
                     'STRIX_TELEMETRY="${STRIX_TELEMETRY:-false}"',
                     'LLM_API_BASE="${LLM_API_BASE:-http://localhost:4000/v1}"'):  # fmt: skip
@@ -298,6 +329,97 @@ def test_strix_lane_runs_the_cli_from_the_locked_group():
     assert "pip install --quiet -r" not in workflow and "--output json" not in workflow
     assert "continue-on-error: true" in workflow  # still advisory, as v4.2 shipped it
     assert not os.path.isdir(os.path.join(ROOT, ".github", "workflows"))  # Forgejo Actions only
+
+
+FAKE_UV = """#!/bin/sh
+# stands in for uv: `sync` installs nothing, `run --no-sync python ...` is recorded
+if [ "$1" = sync ]; then exit 0; fi
+echo "$@" >> "$FAKE_LOG"
+"""
+FAKE_STRIX = """#!/bin/sh
+echo "strix $@" >> "$FAKE_LOG"
+if [ -n "$FAKE_REPORT" ]; then
+  mkdir -p strix_runs/run-1
+  echo "$FAKE_REPORT" > strix_runs/run-1/vulnerabilities.json
+fi
+exit "$FAKE_RC"
+"""
+ONE_FINDING = '[{"id": "v1", "title": "SQL injection in /login", "severity": "high"}]'
+
+
+def run_strix_lane(tmp_path, rc, report="", stale=False, **env):
+    """The lane script in a scratch tree, with a fake uv and a fake strix CLI."""
+    import shutil
+    import subprocess
+
+    (tmp_path / "scripts").mkdir()
+    shutil.copy(os.path.join(ROOT, "scripts", "strix_quick_scan.sh"), tmp_path / "scripts")
+    for name, body in (("uv", FAKE_UV), ("strix", FAKE_STRIX)):
+        path = tmp_path / "bin" / name
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(body)
+        path.chmod(0o755)
+    if stale:  # a report left by an earlier run
+        old = tmp_path / "strix_runs" / "run-0"
+        old.mkdir(parents=True)
+        (old / "vulnerabilities.json").write_text(ONE_FINDING)
+        os.utime(old / "vulnerabilities.json", (1, 1))
+    log = tmp_path / "calls.log"
+    log.write_text("")
+    done = subprocess.run(
+        [str(tmp_path / "scripts" / "strix_quick_scan.sh")],
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "PATH": f"{tmp_path / 'bin'}:{os.environ['PATH']}",
+            "STRIX_ENV": str(tmp_path),
+            "FAKE_LOG": str(log),
+            "FAKE_RC": str(rc),
+            "FAKE_REPORT": report,
+            **env,
+        },
+    )
+    return done, log.read_text()
+
+
+def test_strix_lane_a_scan_with_findings_is_routed_and_is_not_a_failure(tmp_path):
+    # strix-agent 1.7.0 exits 2 when it has findings; that is a completed scan
+    done, calls = run_strix_lane(tmp_path, rc=2, report=ONE_FINDING)
+    assert done.returncode == 0, done.stderr
+    assert "[high] SQL injection in /login" in done.stdout
+    assert "strix -n -t ./ -m quick\n" in calls and "--fail-on" not in calls
+    route = "run --no-sync python scripts/strix_findings.py --report strix_runs/run-1/"
+    assert route in calls and "--no-issues" in calls
+
+
+def test_strix_lane_a_clean_scan_writes_no_report_and_passes(tmp_path):
+    # ...and writes vulnerabilities.json only when there are findings
+    done, calls = run_strix_lane(tmp_path, rc=0, stale=True)
+    assert done.returncode == 0 and "scan completed, no findings" in done.stdout
+    assert "strix_findings.py" not in calls  # the earlier run's report is not routed again
+
+
+def test_strix_lane_failures_stay_failures(tmp_path):
+    done, _ = run_strix_lane(tmp_path, rc=1)
+    assert done.returncode == 1 and "did not complete" in done.stderr
+    (tmp_path / "scripts" / "strix_quick_scan.sh").unlink()
+    (tmp_path / "scripts").rmdir()
+    done, calls = run_strix_lane(tmp_path, rc=2)  # exit 2 with no report: argparse, not findings
+    assert done.returncode == 2 and "usage error" in done.stderr
+    assert "strix_findings.py" not in calls
+
+
+def test_strix_lane_blocks_only_when_asked_and_can_skip_routing(tmp_path):
+    done, calls = run_strix_lane(
+        tmp_path, rc=2, report=ONE_FINDING, STRIX_FAIL_ON="high", STRIX_ROUTE="0"
+    )
+    assert done.returncode == 2 and "at or above STRIX_FAIL_ON=high" in done.stderr
+    assert "strix -n -t ./ -m quick --fail-on high\n" in calls
+    assert "strix_findings.py" not in calls  # STRIX_ROUTE=0: printed, not written as lessons
+    assert "[high] SQL injection in /login" in done.stdout
+    workflow = _text(".forgejo", "workflows", "security.yaml")
+    assert 'STRIX_ROUTE: "0"' in workflow  # the runner has no route to the swarm's Postgres
 
 
 def test_make_strix_and_strix_scan_share_the_script():

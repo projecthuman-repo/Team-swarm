@@ -9,10 +9,10 @@ fail-closed for anything that ships.
 |---|---|---|---|
 | **A** | network services the swarm calls over a socket, each in its own container (no linking, no redistribution of modified code) | any OSI-approved license | `--zone A` prints the table below, exits 0 |
 | **B** | everything linked or imported by swarm code anywhere in the repo (runtime, dev and CI tooling, every lockfile) | no AGPL, SSPL, BUSL/Business Source, Commons Clause | `--zone B` (default path `dir:.`) — denylist |
-| **C** | what is distributed: the contents of the images the swarm builds and the code it ships — `agent/ ingest/ relay/ skills/ scripts/`, the Python closure of each image (`uv export` from `uv.lock` for the agent, ingest and headroom images, by name and version) and the relay's npm closure (`relay/package-lock.json`) | permissive only: MIT, Apache-2.0, BSD-2/3-Clause, MPL-2.0, ISC, 0BSD (+ PostgreSQL, PSF, Python-2.0, CNRI-Python, Unlicense, CC0, BlueOak, MIT-CMU, MIT-0, Zlib); anything else blocks | `--zone C` (default) — fail-closed allowlist |
+| **C** | what is distributed: the contents of the images the swarm builds and the code it ships — `agent/ ingest/ relay/ skills/ scripts/`, the Python closure of each image (`uv export` from `uv.lock` for the agent, ingest, headroom and codex images, by name and version) the relay's npm closure (`relay/package-lock.json`) and the Codex lane image's (`deploy/codex/package-lock.json`) | permissive only: MIT, Apache-2.0, BSD-2/3-Clause, MPL-2.0, ISC, 0BSD (+ PostgreSQL, PSF, Python-2.0, CNRI-Python, Unlicense, CC0, BlueOak, MIT-CMU, MIT-0, Zlib); anything else blocks | `--zone C` (default) — fail-closed allowlist |
 
 **Image contents are Zone C.** Every image built from `deploy/Containerfile.*`
-(agent, ingest, relay, headroom) ships only Zone C application code and
+(agent, ingest, relay, headroom, codex) ships only Zone C application code and
 dependencies. The OS base layers they start from (`python:3.12-slim`,
 `node:22-slim` builder, `gcr.io/distroless/nodejs22-debian12`) are
 distribution aggregates under their own package licenses (glibc LGPL,
@@ -94,23 +94,25 @@ Every compose service and Kubernetes image the swarm runs but does not build.
 | swarm-agent | `deploy/Containerfile.agent` | Zone C — `uv.lock` agent + gate group closure + `agent/ ingest/ skills/ scripts/ conventions/` |
 | swarm-ingest | `deploy/Containerfile.ingest` | Zone C — `uv.lock` ingest group closure + `ingest/` |
 | swarm-relay | `deploy/Containerfile.relay` | Zone C — esbuild bundle of `relay/` + `relay/package-lock.json` closure |
-| swarm-codex | `deploy/Containerfile.codex` | Zone C — the agent image's closure (`uv.lock` agent + gate groups) + the Codex CLI (`@openai/codex` 0.167.0, Apache-2.0, npm) and the Node.js runtime it needs (MIT), copied from `node:22-slim` (v4.2 T7.3) |
+| swarm-codex | `deploy/Containerfile.codex` | Zone C — the agent image's closure (`uv.lock` agent + gate groups) + the npm closure of `deploy/codex/package-lock.json`: the Codex CLI launcher and its platform package with the native binary (`@openai/codex` 0.167.0, Apache-2.0), installed with `npm ci` + the `node` binary it needs (Node.js, MIT), copied from `node:22-slim`. npm (Artistic-2.0) and corepack, which that image carries in its global `node_modules`, are **not** copied (v4.2 T7.3; review of R7) |
 | swarm-headroom | `deploy/Containerfile.headroom` | Zone C — `uv.lock` headroom-proxy group closure (headroom-ai[proxy] 0.31.0, Apache-2.0) |
 
 ## Dependencies added by Lean & Precise v4.1.1
 
-Direct additions only — the full closure is what the gate scans (syft over
-`uv.lock`, with licenses looked up on pypi.org, and over
-`relay/package-lock.json`). Licences read from the installed package
+Direct additions only — the gate judges the full closure: every Python
+lock entry from its publisher's pypi.org metadata (allowlist for what is in
+an image closure, denylist for the rest — "Where the verdict comes from"
+above) and `relay/package-lock.json` with syft. The zone column says which
+of the two applies to the row today. Licences read from the installed package
 metadata unless noted.
 
 | dependency | version | license | zone | where |
 |---|---|---|---|---|
-| fastembed | 0.9.1 | Apache-2.0 | C | extra `embeddings` (L2.3) |
-| ↳ onnxruntime | 1.31.1 | MIT | C | fastembed runtime |
-| ↳ tokenizers | (lock) | Apache-2.0 | C | fastembed runtime |
-| ↳ mmh3 / loguru | (lock) | MIT | C | fastembed runtime |
-| ↳ py-rust-stemmers | 0.1.8 | MIT (the wheel ships the MIT `LICENSE` file but its metadata declares none — see License overrides) | C | fastembed runtime |
+| fastembed | 0.9.1 | Apache-2.0 | B — in no image | extra `embeddings` (L2.3): an option an operator installs, not in an image closure |
+| ↳ onnxruntime | 1.31.1 | MIT | C | fastembed runtime; also in the headroom image closure |
+| ↳ tokenizers | (lock) | Apache-2.0 | C | fastembed runtime; also in every Python image closure |
+| ↳ mmh3 / loguru | (lock) | MIT | B — in no image | fastembed runtime |
+| ↳ py-rust-stemmers | 0.1.8 | MIT (the wheel ships the MIT `LICENSE` file; its PyPI metadata declares nothing) | B — in no image | fastembed runtime. It has no override row: the denylist needs none. Putting it into an image closure would block until a reviewed row exists |
 | tree-sitter-language-pack | 0.13.0 | MIT OR Apache-2.0 | C | already in the agent closure via aider; used by L2.4 |
 | prometheus-client | 0.26.0 | Apache-2.0 AND BSD-2-Clause | C | base deps, `/metrics` (L3.2) |
 | ruff / pytest | (lock) | MIT / MIT | C | group `gate` — the agent image runs the quality gate with them (Phase-3 review) |
@@ -196,7 +198,16 @@ exit 0.
   torch itself, pypdfium2, and from v4.2 `cvss` (LGPL-3.0-or-later, via
   strix-agent) and claude-agent-sdk. They are not distributed; an operator
   who installs an extra or the security group takes on its licenses.
-  `make torch-cpu-lock` still removes the NVIDIA wheels from the lock.
+  `make torch-cpu-lock` still removes the NVIDIA wheels from the lock. The
+  lock then holds `torch <version>+cpu` from PyTorch's own index
+  (`https://download.pytorch.org/whl/cpu`), which pypi.org does not list:
+  the gate judges it by the pypi.org metadata of the public version and
+  prints `alternate index: torch …` on every run.
+- **What the gate cannot judge is exit 2.** A lock entry must be a pin from
+  pypi.org or from an index in the gate's `ALTERNATE_INDEXES` (today: the
+  PyTorch CPU index). A git, URL or path source, any other registry, an
+  image closure line that is not a `name==version` pin, or a shipped pin
+  with no lock metadata stops the gate — it never passes unjudged.
 - numpy 1.26.4 and scipy 1.15.3 pass on their acknowledgement rows; the gate
   prints them on every run.
 - Allowlist ids that only this run made necessary: `MIT-CMU` (pillow) and
@@ -204,7 +215,7 @@ exit 0.
   (numpy 2.5.4) in the headroom image (DECISIONS D-036).
 
 **Still deferred** (needs syft; `make verify-integration`): the syft scan of
-`agent/ ingest/ relay/ skills/ scripts/` and `relay/package-lock.json` for
-Zone C, and of the whole repository for Zone B. syft has not run against
+`agent/ ingest/ relay/ skills/ scripts/`, `relay/package-lock.json` and
+`deploy/codex/package-lock.json` for Zone C, and of the whole repository for Zone B. syft has not run against
 this tree. The relay's npm lock carries a `license` field per package, so a
 package there that syft reports without an SPDX id will need a row above.

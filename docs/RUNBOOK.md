@@ -70,7 +70,12 @@ Ollama, vLLM and LiteLLM serve. It is the default because it works where
 the agents run — their image carries no embedding library and they have no
 egress to fetch a model. Defaults: base `${OLLAMA_API_BASE}/v1`, model
 `all-minilm` (384-dim, matching `vector(384)`); `make models` pulls it into
-the Ollama container. Tier B gets the same model from `deploy/k8s/embeddings.yaml`.
+the Ollama container. Tier B gets the same model from `deploy/k8s/embeddings.yaml`;
+its pod makes the pull itself, which the default-deny egress policy blocks,
+so the one-time pull goes through a temporary policy for that pod alone:
+`kubectl apply -f deploy/k8s/embeddings-model-pull.yaml`, then
+`kubectl exec -n swarm deploy/embeddings -- ollama pull all-minilm`, then
+`kubectl delete -f deploy/k8s/embeddings-model-pull.yaml`.
 A failed call or a vector of the wrong length logs an error and that
 lesson is stored or searched text-only — it never fails a task.
 
@@ -218,8 +223,9 @@ Required checks on the protected branches: `gates` and `proto-compat`.
   and headroom images (`uv export`, by name and version) are judged by the
   allowlist; lock entries in no image by the Zone B denylist.
   `--python-only` runs just this, without syft — `make ci-local` does.
-- *Everything else.* syft scans `agent ingest relay skills scripts` and
-  `relay/package-lock.json`.
+- *Everything else.* syft scans `agent ingest relay skills scripts`,
+  `relay/package-lock.json` and `deploy/codex/package-lock.json` (the npm
+  payload of the Codex lane image).
 - A package with no declared license blocks unless it has a reviewed row in
   "License overrides". A row cannot launder: publisher text or classifiers
   naming a copyleft or proprietary family block whatever the row says. The
