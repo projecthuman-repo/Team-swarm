@@ -1067,3 +1067,18 @@ OWNER_STOP as a thing to decide.
 verbatim; the first was not. It is now. A test of R9 that passed only
 because of the wildcard (it abbreviated §13 with "…") uses the real
 paragraph.
+(f) *Two clones in the lane.* Code the gate runs can write `.git/hooks`
+or `.git/config` in its clone. The lane therefore never runs git with a
+secret there after the gate: it clones again, applies the same patch,
+checks that base commit and tree are the gated ones (if the base branch
+moved in between, the task fails — the gate did not see that tree), and
+commits and pushes from there with `core.hooksPath=/dev/null`,
+`GIT_CONFIG_GLOBAL=/dev/null` and `GIT_CONFIG_NOSYSTEM=1`. What remains,
+and is in OWNER_STOP: the gate's code runs as the lane's user on the host
+and can do what that user can. Env scrubbing and the second clone remove
+the secrets the lane itself would have handed it; they are not a sandbox.
+(g) *swarm-hard before the context pack.* The label decides whether a task
+may leave for a hosted model; it is read from the task as ingested.
+(h) *Tests ignore the caller's opt-in flags.* An autouse fixture clears
+`ROUTE_API_FALLBACK`, `RUBRIC_ENABLED`, `CODEX_REVIEW` and
+`CODEX_REVIEW_REQUIRED`; tests that need one set it themselves.

@@ -180,13 +180,15 @@ async def try_hand_off(pool: asyncpg.Pool, task: task_pb2.Task, err: Exception) 
 
 async def handle_task(pool: asyncpg.Pool, task: task_pb2.Task, budget: ValkeyBudget) -> None:
     ttl = max(60, int(task.deadline_unix - time.time())) if task.deadline_unix else 3600
+    # R11: decided on the task as ingested — before the context pack below
+    # appends retrieved text to the title, which may itself contain the marker.
+    escalate, review = await task_flow(pool, task)
     if os.environ.get("CONTEXT_PACK", "") == "1":  # v4.1 T2.4 bounded RAG
         from agent.context_pack import build_context
 
         task.title += await build_context(pool, task.title, ROLE)
     async with valkey_lock(f"task:{task.task_id}", ttl=ttl):
         secret = lease_secret("forgejo")  # leased, short TTL, never persisted
-        escalate, review = await task_flow(pool, task)
         # R11: with every opt-in flag off this is the call it always was.
         flow = {"review": review, "escalate": escalate} if (escalate or review) else {}
         result = await run_sandboxed_aider(task, secret, budget=budget, **flow)

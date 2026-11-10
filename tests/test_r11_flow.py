@@ -446,6 +446,39 @@ def test_a_replayed_escalation_message_goes_back_to_the_role_subject():
     assert "replay_subject(raw.subject, task.role)," in text("scripts", "dlq_triage.py")
 
 
+async def test_swarm_hard_is_decided_before_the_context_pack_is_appended(pg, flags, monkeypatch):
+    # review of R11: with CONTEXT_PACK=1 retrieved text is appended to the title;
+    # a chunk that mentions the marker must not make an unlabelled task swarm-hard
+    flags(fallback="1")
+    monkeypatch.setenv("CONTEXT_PACK", "1")
+    import agent.context_pack as context_pack
+
+    async def build_context(pool, title, role):
+        return "\n\n# Related\nplanner.py: tasks marked [swarm-hard] fan out"
+
+    monkeypatch.setattr(context_pack, "build_context", build_context)
+
+    @contextlib.asynccontextmanager
+    async def no_lock(key, ttl):
+        yield
+
+    seen = {}
+
+    async def run(task, secret, budget, **flow):
+        seen["title"], seen["flow"] = task.title, flow
+        raise PoisonError("red")
+
+    monkeypatch.setattr(agent_worker, "valkey_lock", no_lock)
+    monkeypatch.setattr(agent_worker, "lease_secret", lambda name: "leased")
+    monkeypatch.setattr(agent_worker, "run_sandboxed_aider", run)
+    task = new_task(title="add slugify")
+    await insert(pg, task)
+    with pytest.raises(PoisonError):
+        await agent_worker.handle_task(Pool(pg), task, budget=None)
+    assert "[swarm-hard]" in seen["title"]  # the pack was appended...
+    assert seen["flow"] == {}  # ...and the task is still not swarm-hard: no escalation
+
+
 def test_issue_labels_are_stored_on_the_task_row():
     from ingest.forgejo_issue_sync import labels_of
 
@@ -562,7 +595,8 @@ async def test_good_patch_runs_the_gate_and_takes_the_pr_path(pg, forgejo, monke
     assert "leased-tok" not in stored_remote and stored_remote.strip().endswith(
         "/anonymous/remote.git"
     )
-    assert forgejo.secrets == ["leased-tok", ""]
+    # one token URL (the clones and the push), and a token-less origin in both clones
+    assert forgejo.secrets == ["leased-tok", "", ""]
     assert task.branch in branches(forgejo)  # pushed, feature/* only
     assert "def slugify" in show(forgejo, task.branch, "slug.py")
     row = await task_row(pg, task)
@@ -662,8 +696,9 @@ async def test_a_lane_failure_never_carries_the_token(pg, forgejo, monkeypatch):
     real_run = sandbox._run
 
     async def run(cmd, cwd, env, timeout, check=True):
-        if cmd[:2] == ["git", "push"]:
-            raise RuntimeError(f"git exited 128:\nfatal: unable to access '{cmd[2]}': denied")
+        if "push" in cmd:
+            url = next(part for part in cmd if part.startswith("file://"))
+            raise RuntimeError(f"git exited 128:\nfatal: unable to access '{url}': denied")
         return await real_run(cmd, cwd, env, timeout, check)
 
     monkeypatch.setattr(sandbox, "_run", run)
@@ -673,6 +708,77 @@ async def test_a_lane_failure_never_carries_the_token(pg, forgejo, monkeypatch):
     (failed,) = [e for e in await events(pg, task) if e.kind == event_pb2.AgentEvent.FAILED]
     for record in (outcome, failed.detail):
         assert "s3cr3t" not in record and "/***/remote.git" in record
+
+
+def new_file_patch(path, content):
+    lines = content.splitlines()
+    body = "\n".join("+" + line for line in lines)
+    return (
+        f"diff --git a/{path} b/{path}\nnew file mode 100644\n--- /dev/null\n+++ b/{path}\n"
+        f"@@ -0,0 +1,{len(lines)} @@\n{body}\n"
+    )
+
+
+# what code written by the escalation model could do while the gate runs it
+HOOKING_TEST = r"""import os
+import stat
+
+
+def test_plants_hooks_and_config():
+    body = "#!/bin/sh\necho \"$0 $@ $OPENBAO_TOKEN\" >> LEAK\n"
+    for name in ("pre-commit", "commit-msg", "pre-push"):
+        path = os.path.join(".git", "hooks", name)
+        with open(path, "w") as f:
+            f.write(body)
+        os.chmod(path, os.stat(path).st_mode | stat.S_IEXEC)
+    with open(os.path.join(".git", "config"), "a") as f:
+        f.write("[core]\n\tfsmonitor = sh -c 'echo fsmonitor >> LEAK'\n")
+"""
+
+
+async def test_code_run_by_the_gate_cannot_reach_the_token_through_git(
+    pg, forgejo, monkeypatch, tmp_path
+):
+    # review of R11: the lane committed and pushed in the clone the gate had run
+    # model-written code in — a planted pre-push hook got the token URL as its
+    # argument and the lane's whole environment
+    leak = tmp_path / "leak"
+    monkeypatch.setenv("OPENBAO_TOKEN", "root-token")
+    pool, task = await staged(pg)
+    assert await escalation.claim(pool, task.task_id, "escalation-1")
+    patch = new_file_patch("test_hooked.py", HOOKING_TEST.replace("LEAK", str(leak)))
+    ok = await escalation_worker.handle(pool, task, fake_escalate(patch), lambda n: "leased-tok")
+    assert ok is True and task.branch in branches(forgejo)  # the push itself worked
+    assert not leak.exists()  # no hook and no config of the gate's clone ever ran
+    assert "def test_plants_hooks_and_config" in show(forgejo, task.branch, "test_hooked.py")
+    source = text("agent", "sandbox.py").split("async def run_escalated_patch")[1]
+    assert 'workdir, "push", remote, branch, patch_file, clean' in source
+    assert '"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"' in source
+    assert 'f"core.hooksPath={os.devnull}"' in source
+
+
+async def test_the_lane_pushes_only_what_the_gate_saw(pg, forgejo, monkeypatch, tmp_path):
+    pool, task = await staged(pg)
+    assert await escalation.claim(pool, task.task_id, "escalation-1")
+    real_gate = sandbox.check_workspace
+
+    async def gate(repo, env, verify_cmd="", timings=None, base="HEAD", git_env=None):
+        # while the gate runs, somebody merges into the base branch
+        other = tmp_path / "other"
+        for cmd in (
+            ["git", "clone", "-q", str(forgejo.path), str(other)],
+            ["git", "-C", str(other), "commit", "-q", "--allow-empty", "-m", "merged meanwhile"],
+            ["git", "-C", str(other), "push", "-q", "origin", "integration"],
+        ):
+            subprocess.run(cmd, env=GIT_ENV, check=True, capture_output=True)
+        return await real_gate(repo, env, verify_cmd, timings, base, git_env=git_env)
+
+    monkeypatch.setattr(sandbox, "check_workspace", gate)
+    ok = await escalation_worker.handle(pool, task, fake_escalate(GOOD_PATCH), lambda n: "tok")
+    assert ok is False and branches(forgejo) == {"integration"}
+    assert "the base branch moved during the escalation" in await pg.fetchval(
+        "SELECT outcome FROM escalations"
+    )
 
 
 @pytest.mark.parametrize("where", ["sdk", "gate"])

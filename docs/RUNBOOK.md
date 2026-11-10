@@ -432,7 +432,8 @@ Additive to everything above; `aider` stays default, `bandit` stays on.
   event, `escalations.outcome`), nothing pushed. At
   most one escalation per task. The lane's gate runs model-written code on
   the host with an allowlisted environment (no swarm secrets or service
-  addresses) but no sandbox; choose the host accordingly.
+  addresses), and the push comes from a second clone that code never ran
+  in — but there is no sandbox; choose the host accordingly.
   `psql -c "SELECT task_id, outcome FROM escalations"` shows what the lane
   did; a row with no outcome is waiting for `make escalation`.
 - **Rubric (T7.8):** `RUBRIC_ENABLED=1` adds a pre-push review step that

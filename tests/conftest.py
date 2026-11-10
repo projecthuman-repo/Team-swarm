@@ -16,6 +16,23 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:dev@localhost:5432/swarm")
 
 
+@pytest.fixture(autouse=True)
+def opt_in_flags_off(monkeypatch):
+    """Every test starts with the opt-in v4.2 flags off, whatever the caller's
+    environment says (review of R11: `ROUTE_API_FALLBACK=1 make
+    verify-integration` — the only way to run the real escalation step —
+    must not change what the unit suite tests)."""
+    for name in ("ROUTE_API_FALLBACK", "RUBRIC_ENABLED", "CODEX_REVIEW", "CODEX_REVIEW_REQUIRED"):
+        monkeypatch.delenv(name, raising=False)
+    try:
+        from agent import escalation_claude, review_gate
+    except ImportError:  # an environment without the agent's dependencies
+        return
+    monkeypatch.setattr(escalation_claude, "ROUTE_API_FALLBACK", False)
+    for name in ("RUBRIC_ENABLED", "CODEX_REVIEW", "CODEX_REVIEW_REQUIRED"):
+        monkeypatch.setattr(review_gate, name, False)
+
+
 @pytest.fixture
 async def pg():
     asyncpg = pytest.importorskip("asyncpg")

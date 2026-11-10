@@ -46,11 +46,15 @@ A task is `swarm-hard` when its issue carries that label (stored in
    its role's subject — a normal attempt.
 
 The lane's gate executes model-written code on the host, outside the
-container seal. Its environment is an allowlist — the tool path, the
-locale, the git identity — so it holds none of the swarm's secrets or
-service addresses, and the bot token is not in the clone it runs in. That
-narrows what the code can read; it does not sandbox it. Run the lane on a
-host where that is acceptable.
+container seal. Three things limit what that code is handed: its
+environment is an allowlist — the tool path, the locale, the git identity
+— so it holds none of the swarm's secrets or service addresses; the bot
+token is not in the clone it runs in; and after the gate the lane never
+runs git with a secret in that clone again (a test could have planted a
+hook there) — it commits and pushes from a second, untouched clone, with
+hooks and user git config off, and only if that clone's base and patched
+tree are the ones the gate saw. None of this is a sandbox: the code runs
+as the lane's user. Run the lane on a host where that is acceptable.
 
 "DLQ" in this file means what the normal path does with a poisoned task:
 status `failed`, a `FAILED` event with the reason, `term()`. The

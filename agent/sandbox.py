@@ -633,6 +633,26 @@ def lane_gate_env(env: dict) -> dict:
     return {k: v for k, v in env.items() if k in _LANE_GATE_ENV or k.startswith("LC_")}
 
 
+async def _patched_clone(
+    workdir: str, name: str, remote: str, branch: str, patch_file: str, env: dict
+) -> tuple[str, str, str]:
+    """A fresh clone on `branch` with the patch applied to its index.
+
+    Returns (repo, base commit, tree of the patched index). The stored
+    remote carries no token.
+    """
+    await _run(["git", "clone", "--depth", "1", remote, name], workdir, env, 300)
+    repo = os.path.join(workdir, name)
+    await _run(["git", "remote", "set-url", "origin", _remote("")], repo, env, 60)
+    await _run(["git", "checkout", "-b", branch], repo, env, 60)
+    _, base = await _run(["git", "rev-parse", "HEAD"], repo, env, 60)
+    code, out = await _run(["git", "apply", "--index", patch_file], repo, env, 60, check=False)
+    if code:
+        raise PoisonError(f"escalation patch does not apply; not pushing.\n{out[-1500:]}")
+    _, tree = await _run(["git", "write-tree"], repo, env, 60)
+    return repo, base.strip(), tree.strip()
+
+
 async def run_escalated_patch(task, secret: str, patch: str) -> RunResult:
     """Escalation lane (review R11; v4.2 T7.7): one patch, the same gate.
 
@@ -641,9 +661,12 @@ async def run_escalated_patch(task, secret: str, patch: str) -> RunResult:
     and pushes the feature/* branch only on green. Anything else is a
     PoisonError with the reason, and nothing is pushed.
 
-    The leased token is used for the clone and the push only: the clone's
-    stored remote is rewritten without it before the gate runs, and the gate
-    runs with lane_gate_env().
+    Two clones. The gate runs model-written code in the first, with
+    lane_gate_env() and no token in its stored remote. That code can write
+    a hook or `.git/config` there, so nothing that holds a secret runs in
+    that clone afterwards: the commit and the push happen in a second,
+    untouched clone, with hooks off and no user or system git config, and
+    only when its base commit and patched tree are the ones that were gated.
     """
     branch = task.branch or f"feature/{task.task_id}"
     if not branch.startswith("feature/"):
@@ -657,19 +680,10 @@ async def run_escalated_patch(task, secret: str, patch: str) -> RunResult:
     remote = _remote(secret)
     result = RunResult(branch=branch, first_pass_green=False)
     try:
-        await _run(["git", "clone", "--depth", "1", remote, "repo"], workdir, env, 300)
-        repo = os.path.join(workdir, "repo")
-        await _run(["git", "remote", "set-url", "origin", _remote("")], repo, env, 60)
-        await _run(["git", "checkout", "-b", branch], repo, env, 60)
-        _, base = await _run(["git", "rev-parse", "HEAD"], repo, env, 60)
-        base = base.strip()
-
         patch_file = os.path.join(workdir, "escalation.patch")
         with open(patch_file, "w") as f:
             f.write(patch)
-        code, out = await _run(["git", "apply", "--index", patch_file], repo, env, 60, check=False)
-        if code:
-            raise PoisonError(f"escalation patch does not apply; not pushing.\n{out[-1500:]}")
+        repo, base, tree = await _patched_clone(workdir, "gate", remote, branch, patch_file, env)
 
         timings: dict = {}
         green, check_out = await check_workspace(
@@ -683,15 +697,28 @@ async def run_escalated_patch(task, secret: str, patch: str) -> RunResult:
                 f"escalated patch is red; not pushing. Last check output:\n{check_out[-1500:]}"
             )
 
+        # From here on, never the gate's clone (see the docstring).
+        clean = {**env, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+        push_repo, push_base, push_tree = await _patched_clone(
+            workdir, "push", remote, branch, patch_file, clean
+        )
+        if (push_base, push_tree) != (base, tree):
+            raise PoisonError(
+                "the base branch moved during the escalation: what would be pushed is not "
+                "what the gate saw; not pushing"
+            )
         title = (task.title or f"task {task.task_id}").splitlines()[0][:72]
-        identity = [
+        git = [
+            "git",
+            "-c",
+            f"core.hooksPath={os.devnull}",
             "-c",
             f"user.name={FORGEJO_BOT_USER}",
             "-c",
             f"user.email={FORGEJO_BOT_USER}@swarm",
         ]
-        await _run(["git", *identity, "commit", "-m", f"escalated: {title}"], repo, env, 60)
-        await _run(["git", "push", remote, f"HEAD:refs/heads/{branch}"], repo, env, 300)
+        await _run([*git, "commit", "-m", f"escalated: {title}"], push_repo, clean, 60)
+        await _run([*git, "push", remote, f"HEAD:refs/heads/{branch}"], push_repo, clean, 300)
         return result
     except (RuntimeError, FileNotFoundError, TimeoutError) as err:
         # the lane makes one attempt: a timeout is a failure with a reason too
