@@ -73,3 +73,31 @@ Compressed wheel bytes per resolved set (PyPI JSON sizes; `*` = sdist fallback).
 | `requirements-dev.txt` | 28 | 32.5 | ruff 10.6, grpcio 7.4, virtualenv 6.0, grpcio-tools 2.8, pygments 1.3 |
 | `requirements-ccompat.txt` | 16 | 11.5 | confluent-kafka 5.0, cryptography 4.8, protobuf 0.3, googleapis-common-protos 0.3, authlib 0.3 |
 | `requirements-elevation.txt` | 0 | 0.0 |  |
+
+## Phase 3 close-out — 2026-11-10 (tag `lean-phase-3`, tree bbd6be5)
+
+Phase 3 added prometheus-client to the base dependencies (L3.2, already in
+the Phase-2 table) and, in the review fixes, the `gate` group: ruff and
+pytest now ship in the agent image so its quality gate can run. They and
+their two dependencies moved from `requirements-dev.txt` into
+`requirements.txt`: 115 → 119 packages, 131.3 → 142.3 MB compressed
+(ruff 10.6 MB); `requirements-dev.txt` 22.0 MB. The agent image forecast
+rises with it, from ≈ 755 to ≈ 785 MB against the 700 MB target (ruff's
+binary is 24 MB installed; DECISIONS D-028, D-033). Image sizes remain
+runtime-host measurements (`make verify-integration`).
+
+### Wheel footprint — Python 3.12 / x86_64-manylinux_2_28
+
+Compressed wheel bytes per resolved set (PyPI JSON sizes; `*` = sdist fallback).
+
+| set | packages | compressed MB | top 5 packages (MB) |
+|---|---:|---:|---|
+| `requirements-routing.txt` | 107 | 3,211.7 | torch 539.2, nvidia-cudnn-cu13 519.2, nvidia-cublas 404.9, triton 285.7, nvidia-cusolver 227.9 |
+| `requirements-orchestration.txt` | 157 | 225.1 | litellm 37.0, onnxruntime 23.8, chromadb 23.3, uv 17.2, numpy 16.7 |
+| `requirements.txt` | 119 | 142.3 | scipy 37.3, tree-sitter-language-pack 20.0, numpy 18.0, litellm 14.5, ruff 10.6 |
+| `requirements-ingest.txt` | 68 | 108.0 | litellm 36.6, headroom-ai 17.8, botocore 16.2, ast-grep-cli 8.9, hf-xet 4.3 |
+| `requirements-vector.txt` | 89 | 104.7 | onnxruntime 23.8, chromadb 23.3, numpy 16.7, grpcio 7.4, kubernetes 4.7 |
+| `requirements-embeddings.txt` | 28 | 59.8 | onnxruntime 23.8, numpy 16.7, pillow 7.1, hf-xet 4.3, tokenizers 3.4 |
+| `requirements-dev.txt` | 27 | 22.0 | grpcio 7.4, virtualenv 6.0, grpcio-tools 2.8, pygments 1.3, setuptools 0.9 |
+| `requirements-ccompat.txt` | 16 | 11.5 | confluent-kafka 5.0, cryptography 4.8, protobuf 0.3, googleapis-common-protos 0.3, authlib 0.3 |
+| `requirements-elevation.txt` | 0 | 0.0 |  |

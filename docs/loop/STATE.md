@@ -162,3 +162,25 @@ refreshed. Deferred to the runtime host, all inside `make verify-integration`:
 
 Follow-up found by accident and fixed in `lean(L1.1): restore pyproject.toml and uv.lock when
 torch-cpu-lock fails`: the script left the CPU-torch source enabled when the re-lock failed.
+
+### Phase 3 — closed 2026-11-10 (tag `lean-phase-3`)
+
+Unit protocol green: `make ci-local` passed end to end on the close-out tree (190 passed,
+2 skipped — the two real-fastembed tests, skipped because ci-local syncs agent+dev only; license
+gate DEFERRED without syft). Real-Postgres tests ran in-session on Postgres 16 + pgvector.
+Footprint table refreshed. Two review rounds (above); the second-round fixes were not
+independently reviewed. Deferred to the runtime host, all inside `make verify-integration`:
+
+- `uv run --no-sync python .forgejo/scripts/license_gate.py --zone C` and `--zone B` — needs syft
+  and pypi.org. **Zone C is expected to fail** until the owner decides on the licenses listed in
+  `conventions/licensing.md` (OWNER_STOP §5); the simulation with real PyPI metadata blocks 23 of
+  352 lock entries
+- `./scripts/observability_smoke.sh` — every SLA gauge scraped by Prometheus, a task span in
+  Jaeger, the Perses dashboard loaded from the provisioning folder
+- `percli lint -f deploy/observability/perses-sla.json` — needs percli v0.55.1
+- `./scripts/embeddings_shadow.sh` — the ten-task golden pack per embedder with the per-role
+  report; writes `eval/last_report.md`
+- `./scripts/image_sizes.sh` — the agent image now also carries ruff and pytest (forecast ≈ 785 MB)
+
+Every task row above is DONE or DONE-DEFERRED-INTEGRATION. What only the owner can do is in
+[OWNER_STOP.md](OWNER_STOP.md).
