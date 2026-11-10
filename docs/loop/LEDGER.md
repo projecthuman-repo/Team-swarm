@@ -234,3 +234,5 @@ where it went) or `generated` (the file stays, with a header saying so).
 | Version | extended | R7 — 4.1.1 → 4.2.0 in `pyproject.toml`, `uv.lock`, `relay/package.json`, `relay/package-lock.json`, README title |
 | License gate `IMAGES` | extended | R7 — fourth closure, `codex` |
 | `verify-integration` | extended | R7 — Codex lane image build, Codex egress audit, Strix quick scan |
+| License gate: bundled-runtime acknowledgements | extended | R9 — a row clears only the family of its own license (was: the whole refusal for that package version); the four rows for numpy and scipy are unchanged |
+| License gate: `STANDARD_PASSAGES`, `strip_standard_passages` | generated (new) | R9 — five verbatim sentences of GPL-3.0 and the GCC Runtime Library Exception removed before the family scan |

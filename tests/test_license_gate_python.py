@@ -137,7 +137,7 @@ def test_numpy_and_scipy_block_without_their_acknowledgement():
 def test_acknowledgement_rows_are_pinned_named_and_limited(tmp_path):
     assert set(ACKS) == {NUMPY, SCIPY}
     for rows in ACKS.values():
-        assert {r["license"] for r in rows} == gate.ACKNOWLEDGEABLE
+        assert {r["license"] for r in rows} == set(gate.ACKNOWLEDGEABLE)
         assert all("lib" in r["bundled library"] and "publisher:" in r["evidence"] for r in rows)
     header = (
         "## Bundled-runtime acknowledgements\n\n"
@@ -155,6 +155,68 @@ def test_acknowledged_packages_are_printed(capsys):
     gate.report_python(tally, "C", 1)
     out = capsys.readouterr().out
     assert "acknowledged bundled runtime: numpy 1.26.4" in out and "libquadmath" in out
+    assert "families in the publisher's text: LGPL, GPL" in out  # R9
+
+
+# --- review R9: an acknowledgement clears only what it declares --------------
+
+BOTH_ROWS = [{"license": lic, "bundled library": "libx"} for lic in gate.ACKNOWLEDGEABLE]
+LGPL_ROW = [{"license": "LGPL-2.1-or-later", "bundled library": "libquadmath"}]
+
+
+def _ack(key, rows=None):
+    return {key: BOTH_ROWS if rows is None else rows}
+
+
+@pytest.mark.parametrize(
+    "text,classifiers,family",
+    [
+        ("Bundles libfoo (LGPL-2.1-or-later). The rest is Proprietary.", (), "proprietary"),
+        ("libquadmath LGPL-2.1-or-later; plugin under the Eclipse Public License 2.0", (), "EPL"),
+        ("LGPL runtime inside", ["License :: OSI Approved :: GNU Affero General Public License v3"],
+         "AGPL"),
+        ("LGPL runtime; the server is under the GNU Affero General Public License", (), "AGPL"),
+        ("LGPL runtime; free for non-commercial use only", (), "non-commercial"),
+        ("LGPL runtime; docs under Creative Commons Attribution", (), "Creative Commons"),
+    ],
+)  # fmt: skip
+def test_an_acknowledgement_does_not_clear_other_families(text, classifiers, family):
+    key = ("mixed", "1.0")
+    bad = judge({key: text_meta(text, classifiers)}, [key], acks=_ack(key))
+    assert len(bad) == 1, bad
+    assert "does not cover" in bad[0][1] and family in bad[0][1].split("which")[0]
+
+
+def test_an_acknowledgement_clears_only_the_family_of_its_own_license():
+    key = NUMPY  # the real text names GPL (libgfortran) and LGPL (libquadmath)
+    bad = judge(metas(key), [key], acks=_ack(key, LGPL_ROW))
+    assert len(bad) == 1 and "names GPL," in bad[0][1] and "(LGPL) does not cover" in bad[0][1]
+    assert judge(metas(key), [key], acks=_ack(key)) == []
+
+
+def test_real_numpy_and_scipy_name_only_gpl_and_lgpl_once_the_boilerplate_is_gone():
+    for key in (NUMPY, SCIPY):
+        text = meta(*key)["license"]
+        # the standard GPL-3.0 text they reproduce says "Affero", "proprietary", "noncommercially"
+        raw = " ".join(text.split())
+        assert "GNU Affero General Public License" in raw and "noncommercially" in raw
+        assert sorted(gate.refused_families(text)) == ["GPL", "LGPL"]
+        _, tally = gate.judge_python(metas(key), {"agent": {key}}, "C", {}, ACKS)
+        assert tally["acknowledged"][0][2] == ["LGPL", "GPL"]
+
+
+def test_only_the_verbatim_standard_sentences_are_removed():
+    section_13 = (
+        "13. Use with the GNU Affero General Public License.\n  Notwithstanding any other "
+        "provision of this License, you have permission … will apply to the combination as such."
+    )
+    assert gate.refused_families(section_13) == []
+    # the same words outside the standard sentences still count
+    assert gate.refused_families(section_13 + " Also AGPL-3.0 for the server.") == ["AGPL"]
+    assert gate.refused_families("This program is proprietary.") == ["proprietary"]
+    assert gate.refused_families("could make it effectively proprietary") == ["proprietary"]
+    assert gate.refused_families("allowed only occasionally and noncommercially") == [
+        "non-commercial"]  # fmt: skip
 
 
 # --- scope: what ships -------------------------------------------------------

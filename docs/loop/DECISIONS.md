@@ -799,3 +799,27 @@ opt-in entry points. All of this is in OWNER_STOP.
 (f) *Deferred checks:* the Codex lane image build (the build itself runs
 `codex --version`), `make codex-audit` and `make strix-scan` joined
 `verify-integration`. Antidoom stays its own offline target.
+
+**D-042 · Acknowledgements clear only their own family (R9).** This
+replaces D-036 (d), which waived the whole refusal for an acknowledged
+package version. (a) A row clears one family, by its license: the
+GCC-exception GPL row clears GPL, the LGPL row clears LGPL. A package
+with only one of the two rows still blocks on the other family.
+(b) *Five standard sentences are removed before the scan, not one.* The
+task named GPL-3.0 §13. Measured on the real fixtures: numpy 1.26.4 and
+scipy 1.15.3 also contain "proprietary" four times and "noncommercially"
+once, all inside license texts they reproduce — the GPL-3.0 preamble
+("…could make it effectively proprietary."), §6(c) ("…only occasionally
+and noncommercially…"), the "How to Apply" paragraph ("…does not permit
+incorporating your program into proprietary programs…") and section 0 of
+the GCC Runtime Library Exception 3.1 ("…non-GPL (including proprietary)
+programs…"). With only §13 removed, the acceptance criteria contradict
+each other: "proprietary text + acknowledgement blocks" and "the real
+numpy and scipy fixtures still pass". So the gate removes those five
+sentences, each matched verbatim (whitespace-normalised) and nothing
+else; the same words anywhere outside them still block — tested with the
+half-sentence "could make it effectively proprietary". (c) The stripping
+applies to every scan, acknowledged or not: a package that merely
+reproduces the GPL text is still caught by "GPL", which no sentence
+removal touches. (d) Result on the real lock: unchanged, exit 0; both
+packages now report exactly `LGPL, GPL`.

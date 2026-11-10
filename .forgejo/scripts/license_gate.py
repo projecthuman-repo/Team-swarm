@@ -101,8 +101,37 @@ REFUSED = {
     "non-commercial": r"non[- ]?commercial",
     "Creative Commons": r"Creative Commons|\bCC[- ]BY",
 }
-# The only licenses a bundled-runtime acknowledgement may carry.
-ACKNOWLEDGEABLE = {"GPL-3.0-or-later WITH GCC-exception-3.1", "LGPL-2.1-or-later"}
+# The only licenses a bundled-runtime acknowledgement may carry, and the one
+# refused family each of them clears (review R9): an acknowledgement clears
+# only what it declares. Any other family in the same text still blocks.
+ACKNOWLEDGEABLE = {
+    "GPL-3.0-or-later WITH GCC-exception-3.1": "GPL",
+    "LGPL-2.1-or-later": "LGPL",
+}
+# Sentences of the standard GPL-3.0 text and of the GCC Runtime Library
+# Exception 3.1 that name ANOTHER family without the package being under it.
+# A publisher who reproduces those license texts (numpy, scipy) would
+# otherwise trip "AGPL", "proprietary" and "non-commercial". They are removed,
+# whitespace-normalised and verbatim, before the scan — nothing else is.
+STANDARD_PASSAGES = [
+    # GPL-3.0 section 13
+    r"13\. Use with the GNU Affero General Public License\..*?"
+    r"will apply to the combination as such\.",
+    # GPL-3.0 preamble
+    r"we wish to avoid the special danger that patents applied to a free program could "
+    r"make it effectively proprietary\.",
+    # GPL-3.0 section 6(c)
+    r"This alternative is allowed only occasionally and noncommercially, and only if you "
+    r"received the object code with such an offer, in accord with subsection 6b\.",
+    # GPL-3.0, "How to Apply These Terms to Your New Programs"
+    r"The GNU General Public License does not permit incorporating your program into "
+    r"proprietary programs\. If your program is a subroutine library, you may consider it "
+    r"more useful to permit linking proprietary applications with the library\.",
+    # GCC Runtime Library Exception 3.1, section 0
+    r"The purpose of this Exception is to allow compilation of non-GPL \(including "
+    r"proprietary\) programs to use, in this way, the header files and runtime libraries "
+    r"covered by this Exception\.",
+]
 
 CLASSIFIER_SPDX = {
     "MIT License": "MIT",
@@ -162,10 +191,18 @@ def _violates(lic: str, zone: str) -> bool:
     return not all(part in ALLOWED for part in parts)
 
 
+def strip_standard_passages(text: str) -> str:
+    """`text`, whitespace-normalised, without the STANDARD_PASSAGES."""
+    flat = " ".join(text.split())
+    for passage in STANDARD_PASSAGES:
+        flat = re.sub(passage, " ", flat)
+    return flat
+
+
 def refused_families(text: str) -> list[str]:
     """Copyleft / proprietary families named in a license text or label."""
-    flat = " ".join(re.sub(r"[-_]", " ", text).split())
-    hyphenated = " ".join(text.split())
+    hyphenated = strip_standard_passages(text)
+    flat = " ".join(re.sub(r"[-_]", " ", hyphenated).split())
     return [
         family
         for family, pattern in REFUSED.items()
@@ -346,14 +383,24 @@ def judge_python(
             continue
         if not meta.get("license_expression"):
             families = refused_families("\n".join([meta.get("license") or "", *labels]))
-            if families and (name, version) in acks:
-                acknowledged.append((label, acks[(name, version)]))
-            elif families:
+            rows = acks.get((name, version), [])
+            cleared = {ACKNOWLEDGEABLE[row["license"]] for row in rows}
+            uncovered = [family for family in families if family not in cleared]
+            if uncovered and rows:
+                bad.append(
+                    (label, f"publisher's license text names {', '.join(uncovered)}, which its "
+                            f"bundled-runtime acknowledgement ({', '.join(sorted(cleared))}) "
+                            "does not cover")
+                )  # fmt: skip
+                continue
+            if uncovered:
                 bad.append(
                     (label, f"publisher's license text names {', '.join(families)} — an override "
                             "row cannot clear this (see 'Bundled-runtime acknowledgements')")
                 )  # fmt: skip
                 continue
+            if families:
+                acknowledged.append((label, rows, families))
         if expr is None:
             expr, source = overrides.get(name), "override row"
             if expr is None:
@@ -376,9 +423,12 @@ def report_python(tally: dict, zone: str, total: int) -> None:
             print(f"  {image} image: {sum(counts.values())} pins judged by the allowlist — {parts}")
     if zone == "C":
         print(f"  in no image: {tally['other']['denylist']} entries judged by the Zone B denylist")
-    for label, rows in tally.get("acknowledged", []):
+    for label, rows, families in tally.get("acknowledged", []):
         libs = "; ".join(f"{r['bundled library']} ({r['license']})" for r in rows)
-        print(f"  acknowledged bundled runtime: {label} — {libs}")
+        print(
+            f"  acknowledged bundled runtime: {label} — {libs}; "
+            f"families in the publisher's text: {', '.join(families)}"
+        )
 
 
 def python_verdicts(zone: str) -> list[tuple[str, str]]:

@@ -26,7 +26,16 @@ shared library of the GCC runtime inside it (numpy and scipy bundle
 version-pinned row per library in
 [Bundled-runtime acknowledgements](#bundled-runtime-acknowledgements), and
 a row may carry only `GPL-3.0-or-later WITH GCC-exception-3.1` or
-`LGPL-2.1-or-later`. The gate prints the acknowledged packages on every run.
+`LGPL-2.1-or-later`. A row clears only the family of its own license (GPL,
+LGPL): if the same text also names AGPL, EPL, CDDL, EUPL, SSPL, a
+proprietary or non-commercial term or Creative Commons, the package still
+blocks, and the message names the family the rows do not cover. Before the
+scan the gate removes five verbatim sentences of the standard GPL-3.0 text
+and of the GCC Runtime Library Exception — section 13 ("Use with the GNU
+Affero General Public License") among them — because a publisher who
+reproduces those license texts would otherwise appear to be under the
+families they merely mention. The gate prints the acknowledged packages,
+and the families found in their text, on every run.
 
 **Where the verdict comes from.** For Python, from the publisher: the gate
 reads pypi.org's metadata for the exact version in `uv.lock` (cached in
@@ -165,7 +174,9 @@ publisher's own license text on PyPI plus the files in the installed wheel.
 Both packages are in the agent image (aider's closure). Their own code is
 BSD-3-Clause; the publisher's license text also reproduces the licenses of
 everything bundled in the wheel, the GPL included, which is why the gate
-stops on it until these rows exist.
+stops on it until these rows exist. With the standard GPL-3.0 sentences
+removed, the only refused families left in either text are GPL and LGPL —
+exactly what the four rows declare.
 
 ## What the Zone C gate shows
 
