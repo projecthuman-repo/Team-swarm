@@ -76,7 +76,7 @@ def test_versions_and_title():
 def test_runbook_documents_migrations_zones_observability_and_footprint():
     runbook = read("docs", "RUNBOOK.md")
     for name in sorted(os.listdir(os.path.join(ROOT, "db", "migrations"))):
-        if name >= "006":
+        if name.endswith(".sql") and name >= "006":
             assert name in runbook, name
     for needle in ("--zone C", "--zone B", "uv lock --check", "## Footprint (v4.1.1)",
                    "Jaeger", "Perses", "OpenSearch", "Langfuse", "OpenObserve"):  # fmt: skip

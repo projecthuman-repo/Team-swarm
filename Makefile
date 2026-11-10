@@ -129,10 +129,10 @@ speculative: ## multi-candidate patch fan-out for a swarm-hard task (TASK=<id>)
 verify-diff: ## independent verifier over a diff+spec (DIFF=<f> SPEC=<f>)
 	python -m agent.verifier --diff $(DIFF) --spec $(SPEC)
 
-migrate: ## apply db/migrations/*.sql in order (idempotent)
+migrate: ## apply db/migrations/*.sql in order (idempotent; optional/ is applied by hand)
 	for f in db/migrations/*.sql; do \
 	  $(RUNTIME) exec -i $$($(RUNTIME) ps -qf name=postgres | head -1) \
-	    psql -U postgres -d swarm < $$f; done
+	    psql -v ON_ERROR_STOP=1 -U postgres -d swarm < $$f || exit 1; done
 
 models: ## pull the default Ornith model into the ollama container
 	$(RUNTIME) exec -it $$($(RUNTIME) ps -qf name=ollama | head -1) \

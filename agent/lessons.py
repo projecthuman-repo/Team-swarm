@@ -14,7 +14,7 @@ truth); the alternative backend mirrors it as the search index.
 Embeddings (EMBEDDING_BACKEND / EMBEDDING_MODEL / EMBEDDING_DIM):
   fastembed (default, L2.3 — ONNX Runtime, no torch; extra `embeddings`)
     BAAI/bge-small-en-v1.5 (default, 384-dim — db/schema.sql)
-    BAAI/bge-m3 (EMBEDDING_DIM=1024 — apply db/migrations/001_bge_m3_embeddings.sql;
+    BAAI/bge-m3 (EMBEDDING_DIM=1024 — apply db/migrations/optional/001_bge_m3_embeddings.sql;
     adopt when retrieval quality > speed)
   sentence-transformers (option; extra `embeddings-torch`, pulls torch)
     all-MiniLM-L6-v2 (its default, 384-dim) or any ST model id

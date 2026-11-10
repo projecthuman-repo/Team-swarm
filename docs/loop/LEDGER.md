@@ -141,3 +141,21 @@ where it went) or `generated` (the file stays, with a header saying so).
 | `.env.example` | extended | L3.4 — 22 previously undocumented variables the code reads, with their defaults |
 | `relay/package.json` + lockfile version | extended | L3.4 — 4.0.0 → 4.1.1 |
 | `tests/test_docs_consistency.py` | generated (new) | L3.4 |
+| License gate: `_license()` (concluded-or-declared) | extended | Phase-3 review (D-033) — replaced by `licenses()`, which judges both SPDX fields; allowlist, denylists and `normalize` unchanged |
+| License gate: Zone C default paths | kept | Phase-3 review — the spec's eight paths, unchanged; syft now looks Python licenses up on pypi.org for them |
+| License gate: missing-license rule, `uv.lock` inventory check, zero-package failure | generated (new) | Phase-3 review — Zone C only; Zone B stays a denylist |
+| `conventions/licensing.md` "License overrides" + "What the first real Zone C run will show" | generated (new) | Phase-3 review — seven reviewed rows; audit of 352 locked packages |
+| `db/migrations/001_bge_m3_embeddings.sql` | moved | Phase-3 review — to `db/migrations/optional/`; content unchanged, applied by hand (README, lessons.py updated) |
+| `make migrate` | extended | Phase-3 review — `ON_ERROR_STOP=1`, stops at the first failing file; applies 002–009 |
+| Dependency group `gate` (ruff, pytest) | generated (new) | Phase-3 review — in the agent image and `requirements.txt`; `dev` keeps its own entries |
+| `requirements.txt`, `requirements-dev.txt`, `uv.lock` | extended | Phase-3 review — regenerated: ruff, pytest and their three dependencies move from the dev add-on into the base file |
+| `sandbox.missing_gate_tools()` + worker start-up error | generated (new) | Phase-3 review — the per-check "skipped: not installed" note is kept |
+| Diff-size gate exclusions | extended | Phase-3 review — the same fourteen generated files, now by exact name instead of two patterns |
+| Perses config mount | moved | Phase-3 review — `/etc/perses/config/config.yaml` → `/etc/perses/config.yaml` (where the image reads it) |
+| `HEADROOM_STATS_URL` in compose and k8s agent env | generated (new) | Phase-3 review — default in code now follows `HEADROOM_URL` |
+| `seed_knowledge.py --reembed` | extended | Phase-3 review — refuses when the embedder is unavailable; text-only degradation in `lessons.py` kept |
+| `shadow_eval.py --report` | extended | Phase-3 review — also writes `eval/last_report.md` (`write_report`, shared with the two-config mode) |
+| Relay `/metrics` listener | extended | Phase-3 review — error handler; the endpoint and counters unchanged |
+| `scripts/torch_cpu_lock.sh` restore | extended | Phase-3 review — also restores `requirements*.txt` |
+| `scripts/lite_smoke.sh` token hand-off | extended | Phase-3 review — jq reads the token from the environment |
+| `tests/test_phase3_review.py`; `tests/test_license_gate.py` syft-shaped cases | generated (new) | Phase-3 review |

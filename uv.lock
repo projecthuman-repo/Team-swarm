@@ -3724,6 +3724,10 @@ dev = [
     { name = "pytest-cov" },
     { name = "ruff" },
 ]
+gate = [
+    { name = "pytest" },
+    { name = "ruff" },
+]
 ingest = [
     { name = "asyncpg" },
     { name = "headroom-ai" },
@@ -3766,6 +3770,10 @@ dev = [
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-asyncio", specifier = ">=0.24" },
     { name = "pytest-cov", specifier = ">=5.0" },
+    { name = "ruff", specifier = ">=0.7" },
+]
+gate = [
+    { name = "pytest", specifier = ">=8.0" },
     { name = "ruff", specifier = ">=0.7" },
 ]
 ingest = [

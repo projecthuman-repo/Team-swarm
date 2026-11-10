@@ -430,3 +430,82 @@ AGENTS.md) describe when the file was introduced and are left alone;
 AGENTS.md is agent context and is only edited where a rule changed (L3.1).
 (d) The relay lockfile's own `version` field was synced with
 `npm install --package-lock-only`; no dependency changed.
+
+**D-033 · Phase-3 review fixes.** 23 confirmed findings (four reviewers
+reported several of them independently), 14 distinct defects, none refuted.
+(1) *The license gate did not judge Python licenses at all* (high). Two
+causes. (a) `_license()` read `licenseConcluded or licenseDeclared`; syft
+writes metadata licenses to `licenseDeclared` and leaves
+`licenseConcluded` as the truthy string `NOASSERTION`, so every such
+package was skipped in both zones — inherited from v4.0, and every test
+fixture set only `licenseConcluded`. (b) The Zone C paths the spec names
+contain no Python license data (`uv.lock` has none) and `NOASSERTION` was
+skipped, so the "fail-closed" zone passed any Python dependency. This
+**supersedes D-027(a)**: its claim that no package that blocked before
+passes now was wrong for the locked CI of L1.2. Design kept inside the
+hard rule (fail-closed, nothing weakened): both SPDX fields are judged;
+in Zone C a package with no license from any scanned path blocks unless
+it is a syft scan root, the swarm's own package, or has a reviewed row in
+the new "License overrides" table of `conventions/licensing.md` (a row
+never replaces a license that was found, and is judged by the same
+allowlist); every registry package in `uv.lock` must appear in the scan;
+a scan with zero packages is exit 2; syft is run with
+`SYFT_PYTHON_SEARCH_REMOTE_LICENSES=true` (config key verified in the
+syft source) so `uv.lock` entries get licenses from pypi.org — offline,
+Zone C fails. The spec's Zone C path list is unchanged. syft still cannot
+run here, so the PyPI metadata of all 352 locked packages was audited
+instead and the result recorded in licensing.md: the first real run is
+expected to be **red** — pillow (MIT-CMU) and regex (CNRI-Python) in the
+agent image, cffi/numpy/torch variants in the lock, and 16 proprietary
+NVIDIA CUDA wheels pulled by the torch extras. The allowlist was **not**
+widened: whether MIT-CMU, MIT-0, CNRI-Python, Zlib, BSL-1.0 and
+`Apache-2.0 WITH LLVM-exception` join Hard Rule 9's list is the owner's
+decision (OWNER_STOP §5); the NVIDIA wheels leave the lock with
+`make torch-cpu-lock`. Seven overrides were added with evidence, all for
+packages whose metadata declares nothing.
+(2) *Perses read no provisioning* — the config was mounted at
+`/etc/perses/config/config.yaml`, but the pinned image starts with
+`--config=/etc/perses/config.yaml` (Dockerfile at v0.55.1 read). Mount
+moved; **D-029(f)'s "the image's default config path" was wrong.**
+(3) *`--reembed` wiped every embedding when the model could not load* —
+a consequence of D-030(3)'s text-only degradation. `reembed()` now probes
+the embedder first and exits non-zero without touching a row.
+(4) *`make migrate` applied the optional bge-m3 switch* (resizes
+`lessons.embedding` to 1024 and nulls it, on every run) — the recipe is
+v4.0's, but L3.4 documented it as the upgrade path. The file moved to
+`db/migrations/optional/` (applied by hand); the recipe now stops at the
+first error. Applying 002–009 twice on Postgres 16 keeps a 384-dim
+embedding (test).
+(5) *The agent image had neither ruff nor pytest*, so in containers both
+gate stages were skipped as "not installed" and every task was green
+unless `verify_cmd` failed — which makes **D-030(1) incomplete**: stage 1
+was fixed only where the dev group is installed. New dependency group
+`gate` (ruff, pytest — both MIT, both already in the lock), installed in
+the agent image and exported into `requirements.txt`; the worker logs an
+error at start-up when a configured gate tool is missing. Cost ≈ +28 MB
+(ruff 24 MB), so the agent image forecast in D-028(6) rises from ≈ 755 to
+≈ 785 MB against the 700 MB target — the deviation grows and stays
+recorded; a gate that runs is worth more than the 28 MB.
+(6) *Diff-size gate bypass* — the `requirements*.txt` and `agent/gen/**`
+patterns also hid hand-written files added beside the generated ones, and
+the "generated" proofs only cover files the generators write. The gate now
+excludes the fourteen generated files by exact name (`:(exclude,literal)`),
+so anything else is counted; a test keeps the list equal to what
+`make lock` and protoc write. This corrects D-028(3).
+(7) *`verify-integration` never wrote `eval/last_report.md`* (only the
+two-config mode did) — `--report` now writes it too, as D-031(f) assumed.
+(8) *Relay `/metrics` listener had no error handler* — a second relay on
+one host died with EADDRINUSE after connecting; now it logs and keeps
+publishing. (9) *`swarm_headroom_savings_ratio` was always NaN in
+containers* (stats URL defaulted to localhost) — set in the compose and
+k8s agent environments, and the default now follows `HEADROOM_URL`.
+(10) *`torch_cpu_lock.sh` restored only two of the files it rewrites* —
+`requirements*.txt` are restored too (proved with a stub `uv`). The
+backup directory in `$TMPDIR` is left for the OS to clean. (11) *The lite
+smoke put the bot token in jq's argv* — it is read from the environment
+(`env.…`); **D-028(4)'s "via stdin, not argv" was wrong for the jq half.**
+(12) Records corrected: the L1.4 row in STATE still showed the superseded
+≈ 670 MB forecast with a pass mark; licensing.md listed prometheus-client
+as Apache-2.0 (it is `Apache-2.0 AND BSD-2-Clause`).
+Every fix has a test that fails on 5d0de86 (28 failed there, 189 pass
+now): `tests/test_phase3_review.py`, `tests/test_license_gate.py`.

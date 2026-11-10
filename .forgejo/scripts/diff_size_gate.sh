@@ -9,12 +9,33 @@
 # size reported but not blocked (DECISIONS D-013).
 #
 # Generated artifacts are not counted (they are regenerated, not authored)
-# — only those CI proves are generated: uv.lock (`uv lock --check`),
-# requirements*.txt (fresh `make lock` must match) and agent/gen/ (fresh
-# protoc must match). relay/package-lock.json is counted.
+# — only the exact files CI proves are generated: uv.lock (`uv lock
+# --check`), the requirements files `make lock` writes (a fresh run must
+# match) and the protoc outputs under agent/gen/ (a fresh run must match).
+# They are listed by name, not by pattern: a hand-written file added next
+# to them (agent/gen/extra.py, requirements-notes.txt) is counted.
+# relay/package-lock.json is counted.
 set -euo pipefail
 
 MAX="${MAX_CHANGED_LINES:-1500}"
+GENERATED=(
+  uv.lock
+  requirements.txt
+  requirements-ccompat.txt
+  requirements-dev.txt
+  requirements-elevation.txt
+  requirements-embeddings.txt
+  requirements-ingest.txt
+  requirements-orchestration.txt
+  requirements-routing.txt
+  requirements-vector.txt
+  agent/gen/swarm/v1/event_pb2.py
+  agent/gen/swarm/v1/event_pb2.pyi
+  agent/gen/swarm/v1/task_pb2.py
+  agent/gen/swarm/v1/task_pb2.pyi
+)
+EXCLUDES=()
+for path in "${GENERATED[@]}"; do EXCLUDES+=(":(exclude,literal)$path"); done
 
 if [ -n "${BASE_BRANCH:-}" ]; then
   BASE="$BASE_BRANCH"
@@ -45,8 +66,7 @@ if ! git merge-base "origin/$BASE" HEAD >/dev/null 2>&1; then
   exit 2
 fi
 
-STAT="$(git diff --shortstat "origin/$BASE"...HEAD -- . \
-  ':(exclude)uv.lock' ':(exclude)requirements*.txt' ':(exclude)agent/gen/**')"
+STAT="$(git diff --shortstat "origin/$BASE"...HEAD -- . "${EXCLUDES[@]}")"
 CHANGED="$(echo "$STAT" | awk '{ins=0; del=0; for(i=1;i<=NF;i++){if($(i+1)~/insertion/)ins=$i; if($(i+1)~/deletion/)del=$i} print ins+del}')"
 CHANGED="${CHANGED:-0}"
 

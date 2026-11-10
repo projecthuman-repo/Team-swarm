@@ -178,7 +178,7 @@ docs ships runnable:
 | nano-claude-code engine | aider | `AGENT_ENGINE=nano-claude-code` (custom: `AGENT_ENGINE_CMD="tool {message}"`) |
 | Qdrant vector store (>5–10M vectors) | pgvector | `make qdrant` + `VECTOR_BACKEND=qdrant` (`pip install -r requirements-vector.txt`) |
 | Chroma local-tier retrieval (retained v3.0 option) | pgvector | `VECTOR_BACKEND=chroma` |
-| bge-m3 embeddings (quality > speed) | fastembed bge-small-en-v1.5 (384) | apply `db/migrations/001_bge_m3_embeddings.sql`, set `EMBEDDING_MODEL=BAAI/bge-m3 EMBEDDING_DIM=1024` (served by fastembed from the ONNX export), then **mandatory** `scripts/seed_knowledge.py --reembed` |
+| bge-m3 embeddings (quality > speed) | fastembed bge-small-en-v1.5 (384) | apply `db/migrations/optional/001_bge_m3_embeddings.sql` by hand (`make migrate` never runs it), set `EMBEDDING_MODEL=BAAI/bge-m3 EMBEDDING_DIM=1024` (served by fastembed from the ONNX export), then **mandatory** `scripts/seed_knowledge.py --reembed` |
 | sentence-transformers embeddings (torch) | fastembed (ONNX, no torch) | `make sync EXTRAS="embeddings-torch"` + `EMBEDDING_BACKEND=sentence-transformers` (default model all-MiniLM-L6-v2, 384), then **mandatory** `scripts/seed_knowledge.py --reembed` |
 | LangGraph orchestration (durable graphs, HIL) | bespoke loop | `make graph` (`HIL=1` pauses before work; `requirements-orchestration.txt`) |
 | CrewAI declarative crews | bespoke roles | `make crew TITLE="..."` |
@@ -236,7 +236,8 @@ Developer and operator targets added in v4.1.1:
 | `make torch-cpu-lock` | re-lock the torch extras to CPU-only wheels (needs download.pytorch.org) |
 | `make verify-integration` | every check that needs a container runtime, GPU or the running spine — run it on the runtime host |
 
-Upgrading from v4.1: `make migrate` (migrations 006–009), re-run
+Upgrading from v4.1: `make migrate` (applies 002–009, all idempotent; new
+in v4.1.1 are 006–009; it never applies the optional bge-m3 switch), re-run
 `make bootstrap`, then `python scripts/seed_knowledge.py --reembed` (the
 default embedder changed; a v4.1 `.env` that pins
 `EMBEDDING_MODEL=all-MiniLM-L6-v2` keeps the same vectors and needs no

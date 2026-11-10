@@ -10,7 +10,10 @@ from __future__ import annotations
 
 import os
 
-HEADROOM_STATS_URL = os.environ.get("HEADROOM_STATS_URL", "http://localhost:8787")
+# Default: the proxy named by HEADROOM_URL (its /v1 stripped), else the host-run port.
+HEADROOM_STATS_URL = os.environ.get("HEADROOM_STATS_URL") or os.environ.get(
+    "HEADROOM_URL", "http://localhost:8787"
+).rstrip("/").removesuffix("/v1")
 
 GAUGES = {
     "swarm_tasks_done_24h_ratio": "share of tasks in the window done within 24h (SLA >= 0.7)",

@@ -93,7 +93,12 @@ async function main() {
       } else {
         res.writeHead(404).end();
       }
-    }).listen(METRICS_PORT);
+    })
+      // a busy port (a second relay on this host) must not stop publishing
+      .on("error", (err) =>
+        console.error(`relay: /metrics disabled on :${METRICS_PORT} (${err.message})`),
+      )
+      .listen(METRICS_PORT);
   }
 
   while (!stopping) {

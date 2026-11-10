@@ -24,7 +24,8 @@ MODEL="${LITE_SMOKE_MODEL:-maxwell1500/ornith-9b:Q4_K_M}"
 
 make --no-print-directory up-lite || exit 1
 make --no-print-directory bootstrap || exit 1
-jq -n --arg t "$LITE_SMOKE_FORGEJO_TOKEN" '{data: {token: $t}}' \
+export LITE_SMOKE_FORGEJO_TOKEN # jq reads it from the environment, never from argv
+jq -n '{data: {token: env.LITE_SMOKE_FORGEJO_TOKEN}}' \
   | curl -sf -X POST "${OPENBAO_ADDR:-http://localhost:8200}/v1/secret/data/swarm/forgejo" \
       -H "X-Vault-Token: ${OPENBAO_TOKEN:-dev-root}" -d @- >/dev/null || exit 1
 make --no-print-directory ollama || exit 1

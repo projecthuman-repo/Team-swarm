@@ -215,13 +215,22 @@ def markdown_report(default: dict, candidate: dict) -> str:
     return "\n".join(lines)
 
 
+def write_report(report: str) -> str:
+    """Print the report and keep it as eval/last_report.md (the committed evidence)."""
+    print(report)
+    out = os.path.join(os.path.dirname(GOLDEN_DIR), "last_report.md")
+    with open(out, "w") as f:
+        f.write(report + "\n")
+    return out
+
+
 async def main_async(args: argparse.Namespace) -> int:
     if args.report:
         with open(args.report[0]) as f:
             default = json.load(f)
         with open(args.report[1]) as f:
             candidate = json.load(f)
-        print(markdown_report(default, candidate))
+        write_report(markdown_report(default, candidate))
         if args.require_not_worse and candidate["green_rate"] < default["green_rate"]:
             print(
                 f"FAIL: first-pass green rate {candidate['green_rate']:.0%} "
@@ -250,11 +259,7 @@ async def main_async(args: argparse.Namespace) -> int:
     log.info("running %d golden tasks x 2 configs", len(pack))
     default = await run_config("default", {}, pack)
     candidate = await run_config(",".join(args.candidate) or "candidate", overrides, pack)
-    report = markdown_report(default, candidate)
-    print(report)
-    out = os.path.join(os.path.dirname(GOLDEN_DIR), "last_report.md")
-    with open(out, "w") as f:
-        f.write(report + "\n")
+    write_report(markdown_report(default, candidate))
     for label, summary in (("default", default), ("candidate", candidate)):
         with open(os.path.join(os.path.dirname(GOLDEN_DIR), f"{label}.json"), "w") as f:
             json.dump(summary, f, indent=2)

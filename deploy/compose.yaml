@@ -50,6 +50,8 @@ x-agent-base: &agent-base
     # L3.2: spans + logs to Jaeger when the observability profile runs.
     # Unset -> Jaeger; set it empty to disable, or point it at OpenObserve.
     OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT-http://jaeger:4318}
+    # /metrics reads the Headroom proxy's /stats (swarm_headroom_savings_ratio)
+    HEADROOM_STATS_URL: ${HEADROOM_STATS_URL-http://headroom:8787}
   read_only: true
   # L1.6: size-capped tmpfs; task workdirs live in /tmp (SANDBOX_WORKDIR)
   tmpfs: ["/tmp:size=${SANDBOX_TMPFS_SIZE:-4g}", "/home/swarm:size=1g"] # writable HOME for git/aider state only
@@ -311,7 +313,8 @@ services:
     image: persesdev/perses:v0.55.1
     profiles: [observability]
     volumes:
-      - ./observability/perses/config.yaml:/etc/perses/config/config.yaml:ro
+      # the image starts with --config=/etc/perses/config.yaml
+      - ./observability/perses/config.yaml:/etc/perses/config.yaml:ro
       - ./observability/perses/resources.json:/etc/perses/provisioning/resources.json:ro
       - ./observability/perses-sla.json:/etc/perses/provisioning/perses-sla.json:ro
     networks: [swarm-internal]

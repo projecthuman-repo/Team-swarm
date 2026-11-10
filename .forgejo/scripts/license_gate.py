@@ -14,8 +14,18 @@ Zones (conventions/licensing.md):
     license_gate.py --zone A
 
 Each path is scanned by syft (`dir:` for directories, `file:` for files),
-one scan per path, and the packages merged. A path that does not exist, or
-a scan that fails, fails the gate (exit 2) — nothing passes unscanned.
+one scan per path, and the packages merged. A path that does not exist, a
+scan that fails, or a scan that finds no package at all fails the gate
+(exit 2) — nothing passes unscanned.
+
+Zone C is fail-closed on *missing* licenses too (Phase-3 review fix): a
+package for which no scanned path yields a license blocks, unless it is
+the swarm's own code or has a reviewed row in the "License overrides"
+table of conventions/licensing.md. Every package in uv.lock must appear in
+the scan. uv.lock carries no license data, so syft is run with
+SYFT_PYTHON_SEARCH_REMOTE_LICENSES=true and asks pypi.org — Zone C
+therefore needs pypi.org reachable (it is on the CI allow-list); offline,
+it fails rather than passes.
 """
 
 from __future__ import annotations
@@ -26,6 +36,7 @@ import os
 import re
 import subprocess
 import sys
+import tomllib
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 LICENSING_MD = os.path.join(ROOT, "conventions", "licensing.md")
@@ -74,35 +85,79 @@ def normalize(expr: str) -> list[str]:
     return [part.strip() for part in expr.split("|") if part.strip()]
 
 
-def _license(p: dict) -> str:
-    return p.get("licenseConcluded") or p.get("licenseDeclared") or "NOASSERTION"
+NO_LICENSE = {"", "NOASSERTION", "NONE"}
+NO_LICENSE_FOUND = "no license found (add a reviewed row to 'License overrides')"
 
 
-def check(sbom: dict, zone: str = "C") -> list[tuple[str, str]]:
-    bad = []
+def licenses(p: dict) -> list[str]:
+    """Every license expression syft recorded for a package.
+
+    syft writes licenses read from package metadata to licenseDeclared and
+    leaves licenseConcluded as the literal string NOASSERTION, so both
+    fields count — reading "concluded or declared" skipped every package.
+    """
+    found = []
+    for key in ("licenseConcluded", "licenseDeclared"):
+        value = (p.get(key) or "").strip()
+        if value not in NO_LICENSE and value not in found:
+            found.append(value)
+    return found
+
+
+def canonical(name: str) -> str:
+    """PEP 503 name normalisation, so lock, scan and override names compare."""
+    return re.sub(r"[-_.]+", "-", name or "").lower()
+
+
+def _is_root(p: dict) -> bool:
+    # syft adds one package per scanned source (SPDXRef-DocumentRoot-…).
+    return str(p.get("SPDXID", "")).startswith("SPDXRef-DocumentRoot")
+
+
+def _violates(lic: str, zone: str) -> bool:
+    if zone == "B":
+        return any(DENIED_B.search(part) for part in normalize(lic))
+    if any(d.lower() in lic.lower() for d in DENIED):
+        return True
+    return not all(part in ALLOWED for part in normalize(lic))
+
+
+def check(
+    sbom: dict,
+    zone: str = "C",
+    overrides: dict[str, str] | None = None,
+    first_party: frozenset[str] | set[str] = frozenset(),
+) -> list[tuple[str, str]]:
+    """Violations as (package, license). Packages are grouped by name and
+    version across the scanned paths; a license found by any path counts."""
+    groups: dict[tuple, dict] = {}
     for p in sbom.get("packages", []):
-        lic = _license(p)
-        if lic == "NOASSERTION":
-            continue  # syft SPDX root doc entries; deps carry real ids
-        if zone == "B":
-            if any(DENIED_B.search(part) for part in normalize(lic)):
-                bad.append((p.get("name", "?"), lic))
-            continue
-        if any(d.lower() in lic.lower() for d in DENIED):
-            bad.append((p.get("name", "?"), lic))
-            continue
-        if not all(part in ALLOWED for part in normalize(lic)):
-            bad.append((p.get("name", "?"), lic))
+        key = (p.get("name", "?"), p.get("versionInfo"))
+        group = groups.setdefault(key, {"licenses": [], "root": False})
+        group["licenses"] += [lic for lic in licenses(p) if lic not in group["licenses"]]
+        group["root"] = group["root"] or _is_root(p)
+    bad = []
+    for (name, _version), group in groups.items():
+        found = group["licenses"]
+        if not found:
+            if zone == "B" or group["root"] or canonical(name) in first_party:
+                continue  # B is a denylist; roots and the swarm's own code carry none
+            reviewed = (overrides or {}).get(canonical(name))
+            if reviewed is None:
+                bad.append((name, NO_LICENSE_FOUND))
+                continue
+            found = [reviewed]  # an override never replaces a license that was found
+        bad += [(name, lic) for lic in found if _violates(lic, zone)]
     return bad
 
 
-def services_table(path: str = LICENSING_MD) -> list[dict]:
-    """Rows of the '## Services (Zone A)' table in conventions/licensing.md."""
+def _table(section: str, path: str) -> list[dict]:
+    """Rows of the markdown table under `## <section>` in licensing.md."""
     rows, header, inside = [], None, False
     with open(path) as f:
         for line in f:
             if line.startswith("## "):
-                inside = line.strip() == "## Services (Zone A)"
+                inside = line.strip() == f"## {section}"
                 continue
             if not inside or not line.startswith("|"):
                 continue
@@ -112,6 +167,40 @@ def services_table(path: str = LICENSING_MD) -> list[dict]:
             elif not set(line.strip()) <= set("|-: "):
                 rows.append(dict(zip(header, cells, strict=False)))
     return rows
+
+
+def services_table(path: str = LICENSING_MD) -> list[dict]:
+    """Rows of the '## Services (Zone A)' table in conventions/licensing.md."""
+    return _table("Services (Zone A)", path)
+
+
+def license_overrides(path: str = LICENSING_MD) -> dict[str, str]:
+    """Reviewed licenses for packages whose metadata declares none."""
+    return {canonical(r["package"]): r["license"] for r in _table("License overrides", path)}
+
+
+def first_party(root: str = ROOT) -> set[str]:
+    """Names of the swarm's own packages (they appear in their own lockfiles)."""
+    with open(os.path.join(root, "pyproject.toml"), "rb") as f:
+        names = {tomllib.load(f)["project"]["name"]}
+    with open(os.path.join(root, "relay", "package.json")) as f:
+        names.add(json.load(f)["name"])
+    return {canonical(n) for n in names}
+
+
+def locked_python(root: str = ROOT) -> set[str]:
+    """Canonical names of every registry package in uv.lock."""
+    with open(os.path.join(root, "uv.lock"), "rb") as f:
+        packages = tomllib.load(f)["package"]
+    return {canonical(p["name"]) for p in packages if "registry" in p.get("source", {})}
+
+
+def unscanned(sbom: dict, paths: list[str], root: str = ROOT) -> list[str]:
+    """uv.lock packages the scan did not report (only when uv.lock was a path)."""
+    if "uv.lock" not in paths:
+        return []
+    seen = {canonical(p.get("name", "")) for p in sbom.get("packages", [])}
+    return sorted(locked_python(root) - seen)
 
 
 def source_for(path: str) -> str:
@@ -125,15 +214,19 @@ def source_for(path: str) -> str:
     raise FileNotFoundError(path)
 
 
+# uv.lock has no license fields; let syft ask PyPI for them (python.search-remote-licenses).
+SYFT_ENV = {"SYFT_PYTHON_SEARCH_REMOTE_LICENSES": "true", **os.environ}
+
+
 def scan(paths: list[str]) -> dict:
     """One syft scan per path, packages merged and de-duplicated."""
     merged, seen = [], set()
     for path in paths:
         out = subprocess.check_output(
-            ["syft", "packages", "-o", "spdx-json", source_for(path)], cwd=ROOT
+            ["syft", "packages", "-o", "spdx-json", source_for(path)], cwd=ROOT, env=SYFT_ENV
         )
         for p in json.loads(out).get("packages", []):
-            key = (p.get("name"), p.get("versionInfo"), _license(p))
+            key = (p.get("name"), p.get("versionInfo"), tuple(licenses(p)), _is_root(p))
             if key not in seen:
                 seen.add(key)
                 merged.append(p)
@@ -158,7 +251,12 @@ def main(argv: list[str] | None = None) -> int:
     except (FileNotFoundError, subprocess.CalledProcessError, OSError) as err:
         print(f"LICENSE GATE FAILED (fail-closed): could not scan {err}")
         return 2
-    bad = check(sbom, args.zone)
+    if not sbom["packages"]:
+        print("LICENSE GATE FAILED (fail-closed): the scan found no package at all")
+        return 2
+    bad = check(sbom, args.zone, license_overrides(), first_party())
+    if args.zone == "C":
+        bad += [(name, "locked in uv.lock but not in the scan") for name in unscanned(sbom, paths)]
     if bad:
         print(f"LICENSE GATE FAILED (zone {args.zone}, fail-closed):")
         for name, lic in bad:

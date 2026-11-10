@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 """The license gate is fail-closed: unknown licenses block, permissive
 compounds pass, every denied family blocks."""
 
@@ -89,20 +90,134 @@ def test_every_compose_image_has_a_zone_a_row():
 def test_paths_scan_per_path_and_fail_closed(monkeypatch):
     calls = []
 
-    def fake_syft(cmd, cwd):
+    def fake_syft(cmd, cwd, env):
         calls.append(cmd[-1])
-        lic = "GPL-3.0-only" if cmd[-1].endswith("uv.lock") else "MIT"
-        pkg = {"name": "dep", "versionInfo": "1", "licenseConcluded": lic}
+        assert env["SYFT_PYTHON_SEARCH_REMOTE_LICENSES"] == "true"  # uv.lock has no licenses
+        lic = "GPL-3.0-only" if cmd[-1].endswith("requirements.txt") else "MIT"
+        pkg = {"name": "dep", "versionInfo": "1", **syft_fields(lic)}
         return json.dumps({"packages": [pkg, pkg]}).encode()
 
     monkeypatch.setattr(gate.subprocess, "check_output", fake_syft)
     assert gate.main(["--zone", "C", "--paths", "agent", "pyproject.toml"]) == 0
     assert calls[0].startswith("dir:") and calls[1].startswith("file:")
-    assert gate.main(["--zone", "C", "--paths", "uv.lock"]) == 1
-    assert gate.main(["--zone", "B", "--paths", "uv.lock"]) == 0
+    assert gate.main(["--zone", "C", "--paths", "requirements.txt"]) == 1
+    assert gate.main(["--zone", "B", "--paths", "requirements.txt"]) == 0
     assert gate.main(["--zone", "C", "--paths", "no/such/path"]) == 2
     assert gate.scan(["agent", "agent"])["packages"] == [
-        {"name": "dep", "versionInfo": "1", "licenseConcluded": "MIT"}]  # fmt: skip
+        {"name": "dep", "versionInfo": "1", **syft_fields("MIT")}]  # fmt: skip
     assert gate.DEFAULT_PATHS["B"] == ["dir:."]
     for path in gate.DEFAULT_PATHS["C"]:
         assert os.path.exists(os.path.join(gate.ROOT, path)), path
+
+
+# --- Phase-3 review: the gate must judge what syft really emits -------------
+
+
+def syft_fields(declared):
+    """syft's shape: metadata licenses are *declared*; concluded stays NOASSERTION."""
+    return {"licenseConcluded": "NOASSERTION", "licenseDeclared": declared}
+
+
+def syft_sbom(*packages):
+    return {
+        "packages": [{"name": n, "versionInfo": "1", **syft_fields(lic)} for n, lic in packages]
+    }
+
+
+def test_declared_license_is_judged_when_concluded_is_noassertion():
+    s = syft_sbom(
+        ("a", "AGPL-3.0-only"), ("g", "GPL-3.0-or-later"), ("p", "LicenseRef-Proprietary")
+    )
+    assert {name for name, _ in gate.check(s, "C")} == {"a", "g", "p"}
+    assert gate.check(s, "B") == [("a", "AGPL-3.0-only")]
+    assert gate.check(syft_sbom(("ok", "MIT"), ("ok2", "Apache-2.0 AND BSD-2-Clause")), "C") == []
+
+
+def test_both_fields_are_judged():
+    pkg = {"name": "x", "licenseConcluded": "MIT", "licenseDeclared": "AGPL-3.0-only"}
+    assert gate.check({"packages": [pkg]}, "C") == [("x", "AGPL-3.0-only")]
+    assert gate.check({"packages": [pkg]}, "B") == [("x", "AGPL-3.0-only")]
+
+
+def test_zone_c_fails_closed_on_a_package_without_any_license():
+    s = syft_sbom(("mystery", "NOASSERTION"), ("none", "NONE"))
+    assert gate.check(s, "C") == [
+        ("mystery", gate.NO_LICENSE_FOUND), ("none", gate.NO_LICENSE_FOUND)]  # fmt: skip
+    assert gate.check(s, "B") == []  # B is a denylist
+    assert gate.check({"packages": [{"name": "bare"}]}, "C") == [("bare", gate.NO_LICENSE_FOUND)]
+
+
+def test_overrides_fill_a_missing_license_but_never_replace_a_found_one():
+    s = syft_sbom(("Py_Rust.Stemmers", "NOASSERTION"), ("sneaky", "AGPL-3.0-only"))
+    over = {"py-rust-stemmers": "MIT", "sneaky": "MIT"}
+    assert gate.check(s, "C", over) == [("sneaky", "AGPL-3.0-only")]
+    # an override is judged by the same allowlist
+    assert gate.check(syft_sbom(("m", "NOASSERTION")), "C", {"m": "GPL-3.0-only"}) == [
+        ("m", "GPL-3.0-only")]  # fmt: skip
+
+
+def test_scan_roots_and_first_party_need_no_license():
+    root = {
+        "name": "agent",
+        "SPDXID": "SPDXRef-DocumentRoot-Directory-agent",
+        **syft_fields("NOASSERTION"),
+    }
+    own = {"name": "overnight-agent-swarm", "versionInfo": "4.1.1", **syft_fields("NOASSERTION")}
+    assert gate.check({"packages": [root, own]}, "C", {}, gate.first_party()) == []
+    assert gate.check({"packages": [own]}, "C") == [
+        ("overnight-agent-swarm", gate.NO_LICENSE_FOUND)
+    ]
+    assert gate.first_party() == {"overnight-agent-swarm", "swarm-outbox-relay"}
+
+
+def test_a_license_from_any_scanned_path_counts_for_the_package():
+    lock_entry = {"name": "dep", "versionInfo": "1", **syft_fields("NOASSERTION")}
+    installed = {"name": "dep", "versionInfo": "1", **syft_fields("MIT")}
+    assert gate.check({"packages": [lock_entry, installed]}, "C") == []
+    other_version = {"name": "dep", "versionInfo": "2", **syft_fields("NOASSERTION")}
+    assert gate.check({"packages": [installed, other_version]}, "C") == [
+        ("dep", gate.NO_LICENSE_FOUND)
+    ]
+
+
+def test_override_table_is_reviewed_and_permissive():
+    over = gate.license_overrides()
+    assert over["py-rust-stemmers"] == "MIT"
+    assert not gate.check(syft_sbom(*[(n, lic) for n, lic in over.items()]), "C")
+    assert not any(
+        "nvidia" in name or "cuda" in name for name in over
+    )  # proprietary: never overridden
+
+
+def _run_main(monkeypatch, packages, argv):
+    out = json.dumps({"packages": packages}).encode()
+    monkeypatch.setattr(gate.subprocess, "check_output", lambda cmd, cwd, env: out)
+    return gate.main(argv)
+
+
+def test_main_fails_when_the_scan_finds_nothing(monkeypatch, capsys):
+    assert _run_main(monkeypatch, [], ["--zone", "C", "--paths", "agent"]) == 2
+    assert _run_main(monkeypatch, [], ["--zone", "B"]) == 2
+    assert "no package at all" in capsys.readouterr().out
+
+
+def test_main_zone_c_blocks_syft_shaped_agpl_and_unlicensed(monkeypatch, capsys):
+    pk = syft_sbom(("a", "AGPL-3.0-only"))["packages"]
+    assert _run_main(monkeypatch, pk, ["--zone", "C", "--paths", "agent"]) == 1
+    assert _run_main(monkeypatch, pk, ["--zone", "B"]) == 1
+    unknown = syft_sbom(("mystery", "NOASSERTION"))["packages"]
+    assert _run_main(monkeypatch, unknown, ["--zone", "C", "--paths", "agent"]) == 1
+    assert "no license found" in capsys.readouterr().out
+
+
+def test_every_locked_python_package_must_be_in_the_scan(monkeypatch, capsys):
+    locked = sorted(gate.locked_python())
+    assert len(locked) > 100 and "aider-chat" in locked and "overnight-agent-swarm" not in locked
+    full = syft_sbom(*[(name, "MIT") for name in locked])["packages"]
+    assert _run_main(monkeypatch, full, ["--zone", "C", "--paths", "uv.lock"]) == 0
+    # syft cataloguing nothing from uv.lock must not read as "all permissive"
+    assert _run_main(monkeypatch, full[:1], ["--zone", "C", "--paths", "uv.lock"]) == 1
+    assert "locked in uv.lock but not in the scan" in capsys.readouterr().out
+    # names compare canonically (PEP 503)
+    renamed = [dict(p, name=p["name"].replace("-", "_").upper()) for p in full]
+    assert _run_main(monkeypatch, renamed, ["--zone", "C", "--paths", "uv.lock"]) == 0

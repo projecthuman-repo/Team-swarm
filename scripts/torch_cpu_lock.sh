@@ -3,20 +3,21 @@
 # reach download.pytorch.org): enable the torch-cpu-source block in
 # pyproject.toml, re-lock, and prove the torch extras no longer pull CUDA.
 # Idempotent. Commit the resulting pyproject.toml, uv.lock and
-# requirements-routing.txt. On any failure (e.g. download.pytorch.org
-# unreachable) pyproject.toml and uv.lock are restored, so a failed run
-# leaves the tree as it found it.
+# requirements*.txt. On any failure (download.pytorch.org unreachable, or
+# CUDA wheels still resolved after the re-lock) pyproject.toml, uv.lock and
+# every requirements*.txt are restored, so a failed run leaves the tree as
+# it found it.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export UV_PYTHON="${UV_PYTHON:-3.12}"
 
 BACKUP="$(mktemp -d)"
-cp pyproject.toml uv.lock "$BACKUP/"
+cp pyproject.toml uv.lock requirements*.txt "$BACKUP/"
 restore() {
   status=$?
   if [ "$status" -ne 0 ]; then
-    cp "$BACKUP/pyproject.toml" "$BACKUP/uv.lock" .
-    echo "torch-cpu-lock failed: pyproject.toml and uv.lock restored" >&2
+    cp "$BACKUP"/* .
+    echo "torch-cpu-lock failed: pyproject.toml, uv.lock and requirements*.txt restored" >&2
   fi
   exit "$status"
 }

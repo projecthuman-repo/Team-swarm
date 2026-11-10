@@ -16,7 +16,7 @@ emit() { # $1 = target file, $2 = provenance line; body on stdin
   { echo "$HEADER"; echo "# $2"; cat; } > "$1.tmp" && mv "$1.tmp" "$1"
 }
 
-AGENT=(--no-dev --group agent) # the requirements.txt selection
+AGENT=(--no-dev --group agent --group gate) # the requirements.txt selection (agent image)
 
 # Add-on files are installed ON TOP of requirements.txt, so they must come
 # from the same resolution fork: export the agent selection plus the add-on
@@ -28,7 +28,7 @@ addon() {
   local names
   names="$(mktemp)"
   "${EXPORT[@]}" "${AGENT[@]}" | sed -E 's/[=<>!~ ;].*//' | tr 'A-Z' 'a-z' > "$names"
-  "${EXPORT[@]}" --group agent "$@" \
+  "${EXPORT[@]}" --group agent --group gate "$@" \
     | awk 'NR==FNR { seen[$0] = 1; next }
            { n = tolower($0); sub(/[=<>!~ ;].*/, "", n); if (!(n in seen)) print }' "$names" -
   rm -f "$names"
@@ -36,7 +36,7 @@ addon() {
 only_extra() { addon --no-dev --extra "$1"; }
 
 "${EXPORT[@]}" "${AGENT[@]}" \
-  | emit requirements.txt "uv export --no-dev --group agent (agent image: base + aider)"
+  | emit requirements.txt "uv export --no-dev --group agent --group gate (agent image: base + aider + gate tools)"
 addon --group dev \
   | emit requirements-dev.txt "group 'dev' — add-on to requirements.txt (same resolution)"
 "${EXPORT[@]}" --only-group ingest \

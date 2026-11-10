@@ -30,7 +30,7 @@ whose status is not `DONE` / `DONE-DEFERRED-INTEGRATION`.
 | L1.1 | uv is the source of truth | DONE-DEFERRED-INTEGRATION | `uv lock` resolves 344 pkgs; `uv sync --frozen --group agent --group dev` installs; `uv lock --check` passes; a second `make lock` changes nothing (checksums); `uv sync --group agent --group ingest` → `error: Groups agent and ingest are incompatible`; agent closure has 0 torch (`uv export --no-dev --group agent`, D-014); ruff + 73 tests pass in the synced env. **Deferred:** `make torch-cpu-lock` (needs download.pytorch.org — D-011). |
 | L1.2 | Locked CI with cache | DONE | `make ci-local` passed end to end in-session: locked sync + `uv lock --check`, generated files match a fresh `make lock`, ruff, pytest (73, coverage 28.5% ≥ 20%), bandit medium+, diff-size, headroom gate in an isolated venv (PASS), license gate DEFERRED (no syft — in `verify-integration`). `proto-compat` job unchanged. Found two pre-existing gate defects on the way (bandit B310 → fixed in the Phase-0 fix commit; diff-size crash → D-013). |
 | L1.3 | pre-commit for developer machines | DONE | `pre-commit run --all-files`: pass 1 reformatted 29 files (all 28 changed `.py` files AST-identical to before — formatting only) and added a final newline to `.forgejo/fixtures/tool_output.json`; pass 2 exit 0 on every hook. 73 tests pass; headroom gate PASS and its negative test still fails. `make hooks` installed `.git/hooks/pre-commit`; `make ci-local` (with the new pre-commit step) passes. |
-| L1.4 | `.dockerignore` and image split | DONE-DEFERRED-INTEGRATION | `npm run build` produced `dist/relay.js` (720 KB) + `dist/relay_cdc.js` (848 KB); both load with **no node_modules** and fail only at the NATS connect. Builder stages simulated locally with the exact uv flags + strip: agent venv 507 MB apparent, imports agent/ingest modules and runs `aider 0.86.2`; ingest venv 236 MB with the four skipped packages, imports ingest with only the copied files. `tests/test_containerfiles.py` (6) checks keywords, COPY sources vs `.dockerignore`, `--from` stages, relay CMD vs esbuild outputs. **Deferred:** `./scripts/image_sizes.sh` in `verify-integration`. **Forecast:** agent ≈ 670 MB (≤ 700 ✓); ingest venv alone 236 MB → image likely OVER 300 MB (D-017); relay ≈ distroless base + 1.6 MB. |
+| L1.4 | `.dockerignore` and image split | DONE-DEFERRED-INTEGRATION | `npm run build` produced `dist/relay.js` (720 KB) + `dist/relay_cdc.js` (848 KB); both load with **no node_modules** and fail only at the NATS connect. Builder stages simulated locally with the exact uv flags + strip: agent venv 507 MB apparent, imports agent/ingest modules and runs `aider 0.86.2`; ingest venv 236 MB with the four skipped packages, imports ingest with only the copied files. `tests/test_containerfiles.py` (6) checks keywords, COPY sources vs `.dockerignore`, `--from` stages, relay CMD vs esbuild outputs. **Deferred:** `./scripts/image_sizes.sh` in `verify-integration`. **Forecast:** agent ≈ 785 MB — OVER the 700 MB target (first estimate ≈ 670, corrected to ≈ 755 in D-028, +28 MB for the gate tools in D-033); ingest venv alone 236 MB → image likely OVER 300 MB (D-017); relay ≈ distroless base + 1.6 MB. |
 | L1.5 | Lite spine and disk hygiene | DONE-DEFERRED-INTEGRATION | `deploy/compose.lite.yaml` parses and each of its four services is identical to its `deploy/compose.yaml` definition (networks + volumes too) — `tests/test_compose_lite.py` (4). `bootstrap.sh --dry-run` exits 0 in lite mode (no apicurio/seaweedfs → "would SKIP Protobuf schema registration") and in full mode, with fake runtimes. `make -n` shows `up-lite`/`down-lite`/`ollama`/`clean`/`disk-usage`; `forgejo` now names its service (D-020). README "Lite path" block. **Deferred:** `./scripts/lite_smoke.sh` in `verify-integration` (boot lite, bootstrap, ollama+forgejo+relay+agent, inject one task, assert `done`). |
 | L1.6 | Sandbox workspace policy | DONE | `tests/test_sandbox_workspace.py` (6): an aged fake `task-*` orphan (mtime 1801 s > 1800) is removed while a fresh one, a non-task dir and a symlinked `task-link` target survive; defaults come from `SANDBOX_WORKDIR`/`TASK_TIMEOUT_S`; a heartbeat keeps a live dir; `agent_worker.main` reaps before connecting; compose tmpfs `/tmp:size=${SANDBOX_TMPFS_SIZE:-4g}` + `/home/swarm:size=1g`; k8s emptyDir `tmp` 4Gi / `home` 1Gi in every agent Deployment. 89 tests pass. |
 | L2.1 | Two-stage quality gate | DONE | `tests/test_quality_loop.py` (+5, real git repos + real ruff/pytest through a recording `_run` spy): a syntax error yields a stage-1 red whose output is the `ruff check app.py` run only, the repair prompt carries it, and the recorded command list has **no pytest**; a green change runs `ruff check test_app.py` then `ruff check .` + `pytest -q`, both timings ints; no `.py` change skips stage 1; `verify_cmd` runs in stage 2. `tests/test_gate_timing.py` (3): `handle_task` writes `gate_stage1_ms/gate_stage2_ms`; migration + schema carry the columns; SLA line. **Real Postgres 16 + pgvector 0.6 in-session:** `db/schema.sql` + migrations 002–006 apply cleanly and `scripts/sla_report.py` printed `gate median s1 / s2 : 1.5s / 40.0s` over synthetic rows. 97 tests pass. |
@@ -73,6 +73,30 @@ against HEAD) — now against the task's base commit; stage 1 ignored ruff exclu
 failures degrade to text-only); an unparsable file lost its codex row; `make qualify` reported false
 dual-write losses after outbox pruning. 5 refuted. The review ran while L3.1–L3.2 were built, so
 the fix commit and the `lean-phase-2` tag land after them.
+
+## Phase-3 review (adversarial, 27 agents: 4 finder dimensions, 1 skeptic per finding)
+
+Range `9327ba1..5d0de86` — Phase 3 plus the Phase-1/2 fix commits no reviewer had seen. 23
+findings, all 23 confirmed, 14 distinct defects, fixed in `lean(L3.x): fix phase-3 review findings`
+(DECISIONS D-033). The two that matter most:
+
+- **The license gate did not judge Python licenses.** It read `licenseConcluded` first (syft leaves
+  it `NOASSERTION` and puts the license in `licenseDeclared`), and Zone C scanned lockfiles that
+  carry no license data, then skipped packages with none. Now both fields are judged, a package
+  with no license blocks in Zone C, every `uv.lock` package must appear in the scan, and syft looks
+  licenses up on pypi.org. **Consequence: the first real Zone C run is expected to be red** —
+  `conventions/licensing.md` lists what an audit of the 352 locked packages found (pillow MIT-CMU
+  and regex CNRI-Python in the agent image; 16 proprietary NVIDIA wheels from the torch extras).
+  The allowlist was not widened; that is an owner decision (OWNER_STOP §5).
+- **The agent image had no ruff or pytest**, so in containers the quality gate skipped every check.
+  They are now installed (group `gate`); the image forecast rises to ≈ 785 MB.
+
+Also fixed: Perses config mounted where the image never reads it; `--reembed` nulling every
+embedding when the model cannot load; `make migrate` applying the optional bge-m3 switch; the
+diff-size gate not counting hand-written files beside generated ones; `verify-integration` never
+writing `eval/last_report.md`; the relay dying on a busy metrics port; the Headroom savings gauge
+unreachable from containers; `torch_cpu_lock.sh` restoring only two of the files it rewrites; the
+bot token on jq's command line; two wrong records. 28 new or changed tests fail on `5d0de86`.
 
 ## Deferred commands by phase
 

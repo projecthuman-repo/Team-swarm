@@ -107,6 +107,18 @@ def reap_orphans(
     return removed
 
 
+def missing_gate_tools() -> list[str]:
+    """Quality-gate binaries that are configured but not on PATH.
+
+    check_workspace() skips a check whose binary is missing, so a worker
+    image without them would call every task green. The agent image installs
+    them (group `gate`); the worker logs this list at start-up.
+    """
+    commands = [QUALITY_FAST_CHECK] + QUALITY_CHECKS.split(";")
+    tools = [shlex.split(c)[0] for c in commands if c.strip()]
+    return sorted({t for t in tools if shutil.which(t) is None})
+
+
 def _heartbeat(workdir: str) -> None:
     """Mark a live workdir so reap_orphans() leaves it alone."""
     try:

@@ -263,6 +263,11 @@ async def index_repo(pool: asyncpg.Pool, repo_path: str) -> dict[str, int]:
 
 
 async def reembed(pool: asyncpg.Pool) -> int:
+    if embed("probe") is None:  # lessons.py degrades to text-only; a re-embed must not
+        raise SystemExit(
+            "re-embed refused: the embedding model is unavailable (see the log above); "
+            "existing embeddings were left untouched"
+        )
     rows = await pool.fetch("SELECT lesson_id, text FROM lessons")
     for r in rows:
         await pool.execute(

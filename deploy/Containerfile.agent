@@ -2,8 +2,8 @@
 # Runs with: read-only rootfs, cap-drop ALL, internal-only network,
 # no .ssh, no host mounts (Hard Rules 1 & 6).
 #
-# Stage 1 resolves the locked `agent` group (base + aider-chat) into
-# /opt/venv with uv; stage 2 is python:3.12-slim + git + that venv.
+# Stage 1 resolves the locked `agent` and `gate` groups (base + aider-chat
+# + the ruff/pytest the quality gate runs) into /opt/venv with uv; stage 2 is python:3.12-slim + git + that venv.
 
 FROM python:3.12-slim AS builder
 COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /bin/uv
@@ -13,7 +13,7 @@ ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
     UV_PYTHON_DOWNLOADS=never
 WORKDIR /src
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --no-install-project --group agent \
+RUN uv sync --frozen --no-dev --no-install-project --group agent --group gate \
  && find /opt/venv -depth -type d \( -name tests -o -name test \) -exec rm -rf {} + \
  && find /opt/venv -name '*.pyc' -delete
 

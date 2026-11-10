@@ -49,7 +49,7 @@ non-zero if any step fails. The steps, in order:
 | L0.1 footprint | wheel table + image sizes + `system df` + SLA latency lines | container runtime |
 | L0.2/L0.4/L1.4 image sizes | agent ≤ 700 MB, ingest ≤ 300 MB, relay ≤ 160 MB | container runtime |
 | L1.1 `make torch-cpu-lock` | torch extras resolve to CPU-only wheels | download.pytorch.org |
-| L1.2/L3.1 license gate zone C, zone B | real syft scans | syft |
+| L1.2/L3.1 license gate zone C, zone B | real syft scans; zone C is fail-closed on missing licenses and asks pypi.org for the `uv.lock` packages | syft, pypi.org |
 | L1.5 lite smoke | lite spine boots, bootstrap, one task reaches `done` | Ollama model, Forgejo with a `swarm/sandbox-repo` the bot can push `feature/*` to, `LITE_SMOKE_FORGEJO_TOKEN` |
 | L2.2+ real-Postgres tests | hybrid retrieval, codex index, retention, SLA queries on the spine's pgvector image (`REQUIRE_POSTGRES=1`) | spine up |
 | L2.3 `embed("hello")` | fastembed downloads bge-small and returns a 384-vector | huggingface.co (or a pre-seeded cache) |
@@ -66,16 +66,29 @@ git add pyproject.toml uv.lock requirements*.txt   # only if torch-cpu-lock succ
 git commit -m "lean(integration): record verify-integration results"
 ```
 
-Expect two honest failures unless you decide otherwise (step 5): the agent
-image is forecast at ≈ 755 MB against the 700 MB target and the ingest
-image above 300 MB.
+Expect three honest failures unless you decide otherwise (step 5):
+
+- **License gate zone C.** Until the Phase-3 review the gate never judged a
+  Python license (DECISIONS D-033). It does now, and the first real run is
+  expected to block: pillow (MIT-CMU) and regex (Apache-2.0 AND CNRI-Python)
+  in the agent image, the cffi / numpy / torch variants in the lock, and 16
+  proprietary NVIDIA CUDA wheels that the torch extras pull into `uv.lock`.
+  `conventions/licensing.md` ("What the first real Zone C run will show")
+  has the full audit. syft may also report packages with free-text licenses
+  it cannot map; each needs a reviewed row in "License overrides".
+- **Agent image size:** forecast ≈ 785 MB against the 700 MB target.
+- **Ingest image size:** forecast above 300 MB.
+
+The same zone C result will show in the `gates` job on Forgejo, which
+blocks auto-merge into `integration` until you settle it.
 
 ## 4. CI runner and branch protection
 
 - **Egress allow-list for the Forgejo Actions runner** (the `gates` and
   `proto-compat` jobs and the image builds):
   `ghcr.io` (astral-sh/uv), `gcr.io` (distroless), `registry.npmjs.org`,
-  `pypi.org`, `files.pythonhosted.org`, `download.pytorch.org`,
+  `pypi.org` (packages, and the license lookups of gate zone C),
+  `files.pythonhosted.org`, `download.pytorch.org`,
   `github.com` (pre-commit hook repositories and the syft release, D-016),
   `raw.githubusercontent.com` (the syft installer the `gates` job fetches),
   and your container registry mirror for `python:3.12-*` / `node:22-slim`.
@@ -90,7 +103,9 @@ image above 300 MB.
 | decision | where | current state |
 |---|---|---|
 | Diff-size gate is **reported, not enforced**, for PRs into `main` (enforced on `integration`, the agent path) | D-013 | veto by setting `DIFF_SIZE_ENFORCE=1` in the workflow |
-| Agent image target 700 MB vs forecast ≈ 755 MB — raise the target, or prune tree-sitter grammars / scipy in a follow-up | D-028 | target kept, so the check fails honestly |
+| **License allowlist.** Add `MIT-CMU`, `MIT-0`, `CNRI-Python`, `Zlib` (and, for the torch extras, `Apache-2.0 WITH LLVM-exception`; Boost `BSL-1.0` also needs the Zone C substring denylist entry `BSL` narrowed) to `ALLOWED` in `.forgejo/scripts/license_gate.py`, or replace the dependencies. All are permissive, none is on Hard Rule 9's list | D-033 | not widened — zone C blocks pillow and regex (agent image) until you decide |
+| **NVIDIA CUDA wheels in `uv.lock`** (proprietary; from the `embeddings-torch` and `routing` extras, in no image) — run `make torch-cpu-lock` (step 3 does) and commit the result, or drop the extras | D-033, D-011 | zone C blocks them, correctly |
+| Agent image target 700 MB vs forecast ≈ 785 MB (ruff + pytest for the quality gate added 28 MB) — raise the target, or prune tree-sitter grammars / scipy in a follow-up | D-028, D-033 | target kept, so the check fails honestly |
 | Ingest image target 300 MB vs a 236 MB venv before the base image | D-017 | target kept |
 | Spine services publish host ports while attached only to an `internal: true` network — Docker may not publish them | D-029(g) | unchanged from v4.0; the lite smoke shows whether it bites on your runtime |
 | One database indexes one repository (`codex-index` rows are keyed by relative path) | D-025(c) | as specified |
@@ -108,13 +123,29 @@ image above 300 MB.
 ## 7. Upgrading an existing v4.1 deployment
 
 ```bash
-make migrate                                   # 006 gate timing, 007 lessons FTS + hybrid search,
-                                               # 008 codex source/sha, 009 task tokens
+make migrate                                   # 002–009; new: 006 gate timing, 007 lessons FTS + hybrid
+                                               # search, 008 codex source/sha, 009 task tokens
 make bootstrap                                 # idempotent; keeps stored secrets
 python scripts/seed_knowledge.py --reembed     # default embedder changed (not needed if your .env
                                                # pins EMBEDDING_MODEL=all-MiniLM-L6-v2 — same vectors)
 make index-repo REPO=<path>                    # rebuild the signature index (now multi-language)
 ```
+
+**Check the embedding column first.** Before this PR, `make migrate` also
+applied the optional bge-m3 switch (`001_bge_m3_embeddings.sql`): it resized
+`lessons.embedding` to 1024 dimensions and cleared it, on every run. If
+`\d lessons` shows `vector(1024)` and you do not run bge-m3
+(`EMBEDDING_DIM=1024`), switch back before the `--reembed` above:
+
+```sql
+DROP INDEX IF EXISTS lessons_embedding_idx;
+ALTER TABLE lessons ALTER COLUMN embedding TYPE vector(384) USING NULL;
+CREATE INDEX lessons_embedding_idx ON lessons USING hnsw (embedding vector_cosine_ops);
+```
+
+`make migrate` no longer touches that column; the switch now lives in
+`db/migrations/optional/` and is applied by hand. `--reembed` refuses to run
+when the embedding model cannot be loaded, instead of clearing the vectors.
 
 Hosts without egress that install the `embeddings` extra must pre-seed the
 fastembed model cache (`FASTEMBED_CACHE_PATH`); without the model, lessons

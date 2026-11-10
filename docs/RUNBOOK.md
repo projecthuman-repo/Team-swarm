@@ -45,7 +45,12 @@ and idempotently by `make bootstrap`.
 `vector(384)` and the hnsw index.
 
 **Migrations (v4.1.1).** Existing databases run `make migrate`; fresh
-installs get everything from `db/schema.sql`. All are idempotent.
+installs get everything from `db/schema.sql`. All are idempotent, and the
+target stops at the first error. It applies only the files directly in
+`db/migrations/` (002–009). The bge-m3 switch,
+`db/migrations/optional/001_bge_m3_embeddings.sql`, resizes
+`lessons.embedding` to 1024 dimensions and clears every embedding, so it
+is applied by hand and never by `make migrate`.
 
 | migration | adds |
 |---|---|
@@ -187,19 +192,29 @@ Required checks on the protected branches: `gates` and `proto-compat`.
 **License zones.** The gate runs twice (`conventions/licensing.md`):
 `--zone C` — everything that ships (`agent ingest relay skills scripts`,
 `pyproject.toml`, `uv.lock`, `relay/package-lock.json`): permissive
-allowlist, fail-closed, a missing path or failed scan is exit 2;
+allowlist, fail-closed. A missing path, a failed scan or a scan that finds
+nothing is exit 2. A package with no license at all blocks too, unless it
+has a reviewed row in the "License overrides" table, and every package in
+`uv.lock` must appear in the scan. `uv.lock` carries no license data, so
+the gate has syft look licenses up on pypi.org
+(`SYFT_PYTHON_SEARCH_REMOTE_LICENSES=true`): Zone C needs pypi.org and
+fails without it.
 `--zone B` — the whole repo: AGPL/SSPL/BUSL/Commons Clause denylist.
 `--zone A` prints the network-services table (Forgejo GPL-3.0-or-later,
 OpenObserve and Grafana AGPL-3.0, …) and exits 0. `make gate` runs all
-three.
+three. `conventions/licensing.md` lists what the first real Zone C run is
+expected to block.
 
 **Diff size.** Measured against `integration` when it exists, else `main`;
 enforced on the auto-merge path (`integration`), reported for PRs into
-`main`; `uv.lock`, `requirements*.txt` and `agent/gen/` are excluded
-because CI proves they are generated.
+`main`; `uv.lock`, the requirements files `make lock` writes and the protoc
+outputs under `agent/gen/` are excluded by exact name because CI proves
+they are generated — any other file beside them is counted.
 
-**Verify:** add an AGPL dep on a test branch → zone C and zone B both exit
-1, merge blocked; add a GPL-3.0 dep → zone C exits 1, zone B passes.
+**Verify:** add an AGPL dep on a test branch (`uv add`, so it is in
+`uv.lock`) → zone C and zone B both exit 1, merge blocked; add a GPL-3.0
+dep → zone C exits 1, zone B passes; run zone C with pypi.org blocked → it
+exits 1 ("no license found"), never 0.
 
 ## 11. Observability
 

@@ -34,6 +34,10 @@ ccompat = ["confluent-kafka[protobuf]>=2.6"]
 
 [dependency-groups]
 agent = ["aider-chat>=0.86"]
+# What the agent's quality gate runs inside the workspace (QUALITY_FAST_CHECK,
+# QUALITY_CHECKS). Installed in the agent image with the agent group; without
+# them every check was skipped as "not installed" (Phase-3 review).
+gate = ["ruff>=0.7", "pytest>=8.0"]
 # The ingest image installs with `--only-group ingest`, so the group carries
 # everything ingest imports, not just headroom-ai (DECISIONS D-010).
 ingest = [
