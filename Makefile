@@ -257,6 +257,6 @@ verify-integration: ## run every deferred integration check (runtime host)
 	@$(VI) "L3.2 observability: gauges scraped, task span in Jaeger, Perses dashboard" ./scripts/observability_smoke.sh
 	@$(VI) "L3.2 percli lint of the Perses dashboard (needs percli)" percli lint -f deploy/observability/perses-sla.json
 	@$(VI) "R7 v4.2 Codex lane image builds and `codex --version` runs in it" $(RUNTIME) build -f deploy/Containerfile.codex -t swarm-codex:dev .
-	@$(VI) "R7 v4.2 Codex offline-egress audit (needs the codex CLI and a local model)" ./scripts/codex_egress_audit.sh
+	@$(VI) "R7 v4.2 Codex offline-egress audit (the lane image on the internal network; needs the spine's Ollama with a model)" ./scripts/codex_egress_audit.sh
 	@$(VI) "R7 v4.2 Strix quick scan from the locked security group (needs Docker + the model gateway)" ./scripts/strix_quick_scan.sh
 	@./scripts/vi_summary.sh
