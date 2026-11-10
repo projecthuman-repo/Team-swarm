@@ -189,22 +189,30 @@ runs with `uv run --no-sync`. The Headroom gate runs in its own venv
 commands on a developer machine; `make hooks` adds the pre-commit subset.
 Required checks on the protected branches: `gates` and `proto-compat`.
 
-**License zones.** The gate runs twice (`conventions/licensing.md`):
-`--zone C` — everything that ships (`agent ingest relay skills scripts`,
-`pyproject.toml`, `uv.lock`, `relay/package-lock.json`): permissive
-allowlist, fail-closed. A missing path, a failed scan or a scan that finds
-nothing (or nothing from a lockfile) is exit 2. A package with no SPDX
-license — none at all, or only free text syft reports as `LicenseRef-…` —
-blocks too, unless it has a reviewed row in the "License overrides" table,
-and every package in `uv.lock` must appear in the scan. `uv.lock` carries no license data, so
-the gate has syft look licenses up on pypi.org
-(`SYFT_PYTHON_SEARCH_REMOTE_LICENSES=true`): Zone C needs pypi.org and
-fails without it.
-`--zone B` — the whole repo: AGPL/SSPL/BUSL/Commons Clause denylist.
-`--zone A` prints the network-services table (Forgejo GPL-3.0-or-later,
-OpenObserve and Grafana AGPL-3.0, …) and exits 0. `make gate` runs all
-three. `conventions/licensing.md` lists what the first real Zone C run is
-expected to block.
+**License zones.** The gate runs twice (`conventions/licensing.md`).
+`--zone C` — what is distributed, permissive allowlist, fail-closed:
+- *Python.* For every package in `uv.lock` the gate reads the publisher's
+  metadata on pypi.org for the locked version (cached in
+  `.cache/license-gate/`): the SPDX `license_expression`, else an SPDX id in
+  `license`, else the trove classifiers. The closures of the agent, ingest
+  and headroom images (`uv export`, by name and version) are judged by the
+  allowlist; lock entries in no image by the Zone B denylist.
+  `--python-only` runs just this, without syft — `make ci-local` does.
+- *Everything else.* syft scans `agent ingest relay skills scripts` and
+  `relay/package-lock.json`.
+- A package with no declared license blocks unless it has a reviewed row in
+  "License overrides". A row cannot launder: publisher text or classifiers
+  naming a copyleft or proprietary family block whatever the row says. The
+  only way past that is a version-pinned row in "Bundled-runtime
+  acknowledgements" (numpy, scipy: the GCC runtime libraries in the wheel).
+- A failed metadata fetch, a failed `uv export`, a missing path, a failed
+  scan or a scan that finds nothing is exit 2. The gate needs pypi.org or a
+  warm cache.
+
+`--zone B` — the whole repo and every lock entry: AGPL/SSPL/BUSL/Commons
+Clause denylist. `--zone A` prints the network-services table (Forgejo
+GPL-3.0-or-later, OpenObserve and Grafana AGPL-3.0, …) and exits 0.
+`make gate` runs all three.
 
 **Diff size.** Measured against `integration` when it exists, else `main`;
 enforced on the auto-merge path (`integration`), reported for PRs into
@@ -212,10 +220,12 @@ enforced on the auto-merge path (`integration`), reported for PRs into
 outputs under `agent/gen/` are excluded by exact name because CI proves
 they are generated — any other file beside them is counted.
 
-**Verify:** add an AGPL dep on a test branch (`uv add`, so it is in
-`uv.lock`) → zone C and zone B both exit 1, merge blocked; add a GPL-3.0
-dep → zone C exits 1, zone B passes; run zone C with pypi.org blocked → it
-exits 1 ("no license found"), never 0.
+**Verify:** add an AGPL dep to the `agent` group on a test branch (`uv add`,
+so it is in `uv.lock`) → zone C and zone B both exit 1, merge blocked; add
+a GPL-3.0 dep → zone C exits 1, zone B passes; add the same GPL-3.0 dep to
+an opt-in extra instead → both pass (it ships in no image); run
+`--zone C --python-only` with pypi.org blocked and an empty cache → exit 2,
+never 0.
 
 ## 11. Observability
 

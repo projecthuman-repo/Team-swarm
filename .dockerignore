@@ -13,3 +13,4 @@ docs/
 tests/
 deploy/headroom-assets/
 relay/dist/
+.cache

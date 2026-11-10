@@ -172,3 +172,15 @@ where it went) or `generated` (the file stays, with a header saying so).
 | `deploy/observability/prometheus.yml` job `headroom` | generated (new) | R1 — agents and relay jobs unchanged |
 | `scripts/image_sizes.sh` headroom target; `scripts/headroom_image_smoke.sh`; `verify-integration` step | generated (new) | R1 |
 | `tests/test_headroom_proxy.py`; headroom case in `tests/test_containerfiles.py` | generated (new) | R1 |
+| License gate: Python verdicts | extended | R2 — from publisher metadata on pypi.org (was syft's PyPI lookup); allowlist, denylists and `check()` for syft output kept |
+| License gate: Zone C scope | extended | R2 — image closures by name and version get the allowlist; lock entries in no image get the Zone B denylist |
+| License gate: `--python-only`, metadata cache, refusal families, bundled-runtime acknowledgements | generated (new) | R2 |
+| License gate: Zone C syft paths | extended | R2 — `uv.lock` and `pyproject.toml` leave the syft list (judged from metadata); code directories and the npm lock stay; `--paths` still overrides |
+| License gate: uv.lock inventory check (`unscanned`) | extended | R2 — superseded: every lock entry is judged directly, so none can be missing from a scan |
+| Allowlist | extended | R2 — + `MIT-CMU`, `CNRI-Python`, `MIT-0`, `Zlib`; Zone C `BSL` substring → the Zone B pattern (Boost no longer a denied family) |
+| `conventions/licensing.md` License overrides | extended | R2 — regenerated: the 6 rows still consulted, with evidence; the other 81 are superseded by reading the publisher's classifiers directly (history in git, D-036) |
+| `conventions/licensing.md` Bundled-runtime acknowledgements; "What the Zone C gate shows" | generated (new) | R2 — replaces the forecast section with the real Python result |
+| `packaging>=24.2` in the dev group; `.cache/` in `.gitignore` and `.dockerignore` | generated (new) | R2 |
+| CI and `ci-local` license steps | extended | R2 — `--python-only` for zones C and B always runs in `ci-local`; CI caches the metadata |
+| `tests/test_license_gate_python.py`, `tests/fixtures/license_gate/` (12 recorded PyPI records) | generated (new) | R2 |
+| `tests/test_license_gate.py` | extended | R2 — syft-side cases kept; laundering, Boost and allowlist cases added; the inventory test replaced by the metadata tests |

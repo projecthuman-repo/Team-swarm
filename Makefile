@@ -198,8 +198,8 @@ verify-integration: ## run every deferred integration check (runtime host)
 	@$(VI) "L0.2/L0.4/L1.4/R1 images build within size targets" ./scripts/image_sizes.sh
 	@$(VI) "R1 Headroom proxy image starts: /health 200" ./scripts/headroom_image_smoke.sh
 	@$(VI) "L1.1 CPU-only torch for the torch extras" $(MAKE) --no-print-directory torch-cpu-lock
-	@$(VI) "L1.2/L3.1 license gate zone C (syft, fail-closed)" uv run --no-sync python .forgejo/scripts/license_gate.py --zone C
-	@$(VI) "L3.1 license gate zone B (syft, denylist)" uv run --no-sync python .forgejo/scripts/license_gate.py --zone B
+	@$(VI) "L1.2/L3.1/R2 license gate zone C (publisher metadata + syft over code and the npm lock, fail-closed)" uv run --no-sync python .forgejo/scripts/license_gate.py --zone C
+	@$(VI) "L3.1/R2 license gate zone B (publisher metadata + syft over the repository, denylist)" uv run --no-sync python .forgejo/scripts/license_gate.py --zone B
 	@$(VI) "L1.5 lite spine: boot, bootstrap, one task reaches done" ./scripts/lite_smoke.sh
 	@$(VI) "L2.2+ real-Postgres tests (hybrid retrieval SQL) on the spine" env REQUIRE_POSTGRES=1 uv run --no-sync pytest -q
 	@$(VI) "L2.3 fastembed embeds: embed('hello') is a 384-vector" uv run --frozen --group agent --extra embeddings python -c "from agent.lessons import embed; v = embed('hello'); assert v is not None and len(v) == 384, v; print('384-dim ok')"

@@ -93,9 +93,18 @@ jobs:
         # Runs in the locked headroom environment synced above.
         run: /tmp/headroom-env/bin/python .forgejo/scripts/headroom_gate.py
 
-      # Three zones (conventions/licensing.md, L3.1): C = shipped code and
-      # image contents, permissive-only, fail-closed; B = everything linked
-      # anywhere in the repo, AGPL/SSPL/BUSL/Commons-Clause denylist.
+      # Three zones (conventions/licensing.md, L3.1, review R2): C = what
+      # ships, permissive-only, fail-closed — Python image closures judged
+      # from the publisher's pypi.org metadata, code directories and the
+      # npm lock scanned by syft; B = everything linked anywhere in the
+      # repo, AGPL/SSPL/BUSL/Commons-Clause denylist.
+      - name: cache publisher license metadata
+        uses: actions/cache@v4
+        with:
+          path: .cache/license-gate
+          key: license-gate-${{ hashFiles('uv.lock') }}
+          restore-keys: license-gate-
+
       - name: license gate zone C (image contents, fail-closed)
         run: uv run --no-sync python .forgejo/scripts/license_gate.py --zone C
 

@@ -582,3 +582,50 @@ the add-on consistency test lists it with the other standalone files.
 (h) A second deferred check was added beyond the build: the built image
 must answer `/health` (`scripts/headroom_image_smoke.sh`), since "builds
 but cannot start" was the defect.
+
+**D-036 · License gate on publisher metadata (R2).** This replaces the
+syft-lookup design of D-033/D-034 for Python; their fail-closed rules
+stay. (a) *Source.* The gate reads pypi.org's JSON for the locked version
+of every registry package (355), cached in `.cache/license-gate/`
+(git-ignored; a CI cache step keys it on `uv.lock`). Declaration order:
+`license_expression`; else `license` when ≤ 200 characters and
+`packaging.licenses` accepts it as SPDX; else the classifier map. Any
+fetch failure is exit 2. (b) *Scope.* The allowlist applies to the three
+image closures from `uv export`, by name and version; the other 166 lock
+entries are in no image and get the Zone B denylist over declaration and
+classifiers. `uv.lock` and `pyproject.toml` left the Zone C syft paths;
+syft keeps the code directories, the npm lock and Zone B. The uv.lock
+inventory check of D-033 is gone with them — every lock entry now gets a
+verdict by construction. (c) *No laundering.* Without an SPDX
+`license_expression`, publisher text or classifiers naming GPL, LGPL,
+AGPL, EPL, CDDL, EUPL, SSPL, proprietary, non-commercial or Creative
+Commons block whatever the row says; the same for syft's `LicenseRef-…`.
+Confirmed on the old gate: `LicenseRef-GNU-GPL-v3`, `-LGPL`,
+`-Eclipse-Public-License-2.0` and `-Proprietary` all passed with an `MIT`
+row. (d) *Acknowledgements waive the refusal for the whole package
+version, not family by family.* numpy's and scipy's license texts
+reproduce the full GPL-3.0 text, which itself names the Affero GPL,
+"proprietary" and "noncommercial"; a family-by-family waiver could never
+pass them. The row is still pinned to a version, must name the library
+and may carry only the two GCC-runtime licenses; anything else is exit 2.
+(e) *Allowlist.* `MIT-CMU` and `CNRI-Python` as instructed. **Also
+`MIT-0` and `Zlib`, decided here:** the headroom image's closure came
+into scope with this task and carries cffi 2.1.1 (MIT-0) and numpy 2.5.4
+(`BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0`). Both are
+OSI-approved permissive licenses (MIT-0 is MIT without the attribution
+clause); pinning older versions to dodge the label would only bring back
+numpy 1.x with its bundled GCC runtime. The owner can veto by removing
+the two ids — the gate then blocks the headroom image (OWNER_STOP).
+Zone C's substring `"BSL"` became the Zone B pattern, so Boost `BSL-1.0`
+is left to the allowlist (where it is not listed, so it still blocks in
+C); `Elastic-2.0` stays denied in C. (f) *Override table: 87 → 6 rows.*
+Only packages in an image with no readable declaration consult a row:
+fsspec, multidict, protobuf, tiktoken, transformers and the new
+sqlite-vec (dual MIT / Apache-2.0, both license files checked upstream).
+The other 81 rows quoted the publisher's classifier or license field —
+exactly what the gate now reads itself — or belonged to packages in no
+image. (g) `--paths` selects syft paths and runs only the syft part;
+with `--python-only` it is an error, so no combination skips the lock
+silently. (h) Result on the real lock: exit 0; agent 43 / 35 / 39 / 3,
+ingest 33 / 20 / 13 / 3 (as the independent review measured), headroom
+46 / 24 / 17 / 5. `packaging>=24.2` joined the dev group (locked 26.0).

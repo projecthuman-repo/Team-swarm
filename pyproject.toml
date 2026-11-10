@@ -59,6 +59,7 @@ dev = [
   "bandit>=1.7",
   "grpcio-tools>=1.66",
   "pre-commit>=4.0", # MIT; `make hooks`, CI step
+  "packaging>=24.2", # Apache-2.0 OR BSD-2-Clause; SPDX parsing in the license gate (R2)
 ]
 
 [tool.uv]

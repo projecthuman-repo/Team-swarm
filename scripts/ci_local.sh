@@ -49,12 +49,17 @@ bash .forgejo/scripts/diff_size_gate.sh
 step "headroom gate (the locked headroom environment)"
 "$HEADROOM_PROXY_ENV/bin/python" .forgejo/scripts/headroom_gate.py
 
-step "license gate zones C (fail-closed) and B (denylist)"
+step "license gate: Python lock from publisher metadata (zone C allowlist on what ships, zone B denylist)"
+# Needs pypi.org or a warm .cache/license-gate/; offline it fails (exit 2).
+uv run --no-sync python .forgejo/scripts/license_gate.py --zone C --python-only
+uv run --no-sync python .forgejo/scripts/license_gate.py --zone B --python-only
+
+step "license gate: code directories, npm lock and repository (syft)"
 if command -v syft >/dev/null 2>&1; then
   uv run --no-sync python .forgejo/scripts/license_gate.py --zone C
   uv run --no-sync python .forgejo/scripts/license_gate.py --zone B
 else
-  echo "DEFERRED: syft not installed here — the gate runs in CI and in make verify-integration"
+  echo "DEFERRED: syft not installed here — the syft part runs in CI and in make verify-integration"
 fi
 
 echo

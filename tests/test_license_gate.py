@@ -182,10 +182,9 @@ def test_a_license_from_any_scanned_path_counts_for_the_package():
 
 def test_override_table_is_reviewed_and_permissive():
     over = gate.license_overrides()
-    assert over["py-rust-stemmers"] == "MIT" and over["jinja2"] == "BSD-3-Clause"
+    assert over["protobuf"] == "BSD-3-Clause" and over["sqlite-vec"] == "MIT OR Apache-2.0"
     assert not gate.check(syft_sbom(*[(n, "NOASSERTION") for n in over]), "C", over)
-    # proprietary wheels are never overridden (nvidia-ml-py is NVIDIA's BSD binding)
-    assert [n for n in over if "nvidia" in n or "cuda" in n] == ["nvidia-ml-py"]
+    assert not [n for n in over if "nvidia" in n or "cuda" in n]  # proprietary: never a row
 
 
 def test_free_text_license_needs_an_override_row_like_a_missing_one():
@@ -215,6 +214,27 @@ def test_override_cannot_launder_a_denied_or_real_license():
     assert gate.check({"packages": [mixed]}, "C", {"d": "MIT"}) == [("d", "LicenseRef-Custom")]
 
 
+def test_free_text_naming_a_copyleft_or_proprietary_family_ignores_the_row():
+    # review R2: before, only AGPL/SSPL/BUSL/Elastic text was refused
+    for text in ("LicenseRef-GNU-GPL-v3", "LicenseRef-LGPL", "LicenseRef-Proprietary",
+                 "LicenseRef-Eclipse-Public-License-2.0", "LicenseRef-CDDL-1.0",
+                 "LicenseRef-Creative-Commons-Attribution-NonCommercial"):  # fmt: skip
+        assert gate.check(syft_sbom(("pkg", text)), "C", {"pkg": "MIT"}) == [("pkg", text)], text
+    assert gate.check(syft_sbom(("ok", "LicenseRef-MIT-License")), "C", {"ok": "MIT"}) == []
+
+
+def test_allowlist_additions_and_boost():
+    ok = sbom(("pillow", "MIT-CMU"), ("regex", "Apache-2.0 AND CNRI-Python"), ("cffi", "MIT-0"))
+    assert gate.check(ok, "C") == []
+    # Boost is not a denied family: Zone B passes it, Zone C leaves it to the allowlist
+    boost = sbom(("boost", "BSL-1.0"))
+    assert gate.check(boost, "B") == []
+    assert not gate.DENIED_C.search("BSL-1.0")
+    assert gate.check(boost, "C") == [("boost", "BSL-1.0")]  # not on the allowlist
+    for lic in ("BSL", "BUSL-1.1", "LicenseRef-Commons-Clause"):
+        assert gate.check(sbom(("x", lic)), "C") and gate.check(sbom(("x", lic)), "B"), lic
+
+
 ROOT_ENTRY = {
     "name": "x",
     "SPDXID": "SPDXRef-DocumentRoot-Directory-x",
@@ -223,8 +243,11 @@ ROOT_ENTRY = {
 
 
 def _run_main(monkeypatch, packages, argv):
+    """main() with a fake syft; the Python verdicts (PyPI) are stubbed out here
+    and tested in tests/test_license_gate_python.py."""
     out = json.dumps({"packages": packages}).encode()
     monkeypatch.setattr(gate.subprocess, "check_output", lambda cmd, cwd, env: out)
+    monkeypatch.setattr(gate, "python_verdicts", lambda zone: [])
     return gate.main(argv)
 
 
@@ -257,16 +280,3 @@ def test_main_zone_c_blocks_syft_shaped_agpl_and_unlicensed(monkeypatch, capsys)
     unknown = syft_sbom(("mystery", "NOASSERTION"))["packages"]
     assert _run_main(monkeypatch, unknown, ["--zone", "C", "--paths", "agent"]) == 1
     assert "no license found" in capsys.readouterr().out
-
-
-def test_every_locked_python_package_must_be_in_the_scan(monkeypatch, capsys):
-    locked = sorted(gate.locked_python())
-    assert len(locked) > 100 and "aider-chat" in locked and "overnight-agent-swarm" not in locked
-    full = syft_sbom(*[(name, "MIT") for name in locked])["packages"]
-    assert _run_main(monkeypatch, full, ["--zone", "C", "--paths", "uv.lock"]) == 0
-    # syft cataloguing nothing from uv.lock must not read as "all permissive"
-    assert _run_main(monkeypatch, full[:1], ["--zone", "C", "--paths", "uv.lock"]) == 1
-    assert "locked in uv.lock but not in the scan" in capsys.readouterr().out
-    # names compare canonically (PEP 503)
-    renamed = [dict(p, name=p["name"].replace("-", "_").upper()) for p in full]
-    assert _run_main(monkeypatch, renamed, ["--zone", "C", "--paths", "uv.lock"]) == 0
