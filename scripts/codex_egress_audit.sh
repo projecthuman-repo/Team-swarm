@@ -22,8 +22,10 @@
 #      the callouts in the output, but the host itself is not sealed.
 #
 # Verified against Codex rust-v0.167.0 (the pinned CLI): the config keys are
-# `check_for_update_on_startup` and `[analytics] enabled`; the local model
-# endpoint is CODEX_OSS_BASE_URL (default http://localhost:11434/v1).
+# `check_for_update_on_startup`, `[analytics] enabled`, `[feedback] enabled`,
+# `[otel] metrics_exporter` and `[features] plugins`; the local model
+# endpoint is CODEX_OSS_BASE_URL (default http://localhost:11434/v1); the
+# model is named with -m (CODEX_MODEL).
 #
 # Usage:  ./scripts/codex_egress_audit.sh [ollama_host]
 set -uo pipefail
@@ -51,11 +53,21 @@ fi
 mkdir -p "$CODEX_HOME_DIR"
 chmod 0777 "$CODEX_HOME_DIR" # the lane image runs as uid 10001 and writes its state here
 cat > "$CODEX_HOME_DIR/config.toml" <<'EOF'
-# Offline profile for the sealed agent container (T7.1).
+# Offline profile for the sealed agent container (T7.1) — the same keys the
+# lane image bakes in (deploy/codex/config.toml).
 check_for_update_on_startup = false
 
 [analytics]
 enabled = false
+
+[feedback]
+enabled = false
+
+[otel]
+metrics_exporter = "none"
+
+[features]
+plugins = false
 EOF
 export CODEX_HOME="$CODEX_HOME_DIR"
 
@@ -64,6 +76,12 @@ echo "==> CODEX_HOME=$CODEX_HOME (self-update/analytics disabled)"
 # Run Codex on a trivial task. If it tries to reach anything but the local
 # model — sign-in, telemetry, update check — the run says so or fails.
 TASK='print the current working directory and exit'
+# The swarm's model, by the tag Ollama lists it under (`make models`). Without
+# -m Codex uses its own default, gpt-oss:20b, and asks Ollama to pull it.
+MODEL="${CODEX_MODEL:-maxwell1500/ornith-9b:Q4_K_M}"
+# The engine's default flags (agent/sandbox.py CODEX_EXEC_FLAGS).
+FLAGS=(--oss --local-provider ollama -m "$MODEL" --sandbox danger-full-access
+       --skip-git-repo-check --color never)
 if [ "$in_image" = 1 ]; then
   echo "==> auditing: $IMAGE on network $NETWORK (internal: no route out), model at ollama:11434"
   set +e
@@ -71,14 +89,14 @@ if [ "$in_image" = 1 ]; then
     -e CODEX_HOME=/codex-home -v "$CODEX_HOME_DIR:/codex-home" \
     -e CODEX_OSS_BASE_URL=http://ollama:11434/v1 \
     "$IMAGE" \
-    codex exec --oss --local-provider ollama --skip-git-repo-check "$TASK" 2>&1)"
+    codex exec "${FLAGS[@]}" "$TASK" 2>&1 </dev/null)"
   RC=$?
   set -e
 else
   echo "==> auditing: the host's codex against $OLLAMA_HOST (the host is NOT sealed)"
   set +e
   OUT="$(CODEX_OSS_BASE_URL="${OLLAMA_HOST%/}/v1" \
-    codex exec --oss --local-provider ollama --skip-git-repo-check "$TASK" 2>&1)"
+    codex exec "${FLAGS[@]}" "$TASK" 2>&1 </dev/null)"
   RC=$?
   set -e
 fi
@@ -87,14 +105,15 @@ echo "----- codex output (tail) -----"
 echo "$OUT" | tail -15
 echo "-------------------------------"
 
-if echo "$OUT" | grep -qiE 'auth|login|telemetry|api\.openai\.com|update available|sign in'; then
+if echo "$OUT" | grep -qiE 'auth|login|telemetry|api\.openai\.com|chatgpt\.com|github\.com|update available|sign in'; then
   echo "AUDIT RESULT: FAIL — Codex attempted an external callout."
   echo "Route Codex to the codex-engine lane (T7.3); do NOT seal it."
   exit 1
 fi
 if [ "$RC" -ne 0 ]; then
-  echo "AUDIT RESULT: INCONCLUSIVE — run failed (rc=$RC), likely no local model."
-  echo "Pull a model (make models) and re-run before deciding placement."
+  echo "AUDIT RESULT: INCONCLUSIVE — run failed (rc=$RC)."
+  echo "Check that Ollama (>= 0.13.4, Codex's minimum) lists the model as '$MODEL'"
+  echo "(make models pulls it; CODEX_MODEL names another) and re-run before deciding placement."
   exit 3
 fi
 if [ "$in_image" = 1 ]; then

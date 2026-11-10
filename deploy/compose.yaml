@@ -372,7 +372,13 @@ services:
       <<: *agent-env
       AGENT_ROLE: backend
       AGENT_ENGINE: codex
+      # On the tmpfs below; the worker creates it before the first run (a set
+      # CODEX_HOME that does not exist is exit 1). The offline profile is
+      # baked into the image at /etc/codex/config.toml (deploy/codex/).
       CODEX_HOME: /home/swarm/.codex
+      # Codex's built-in `ollama` provider talks to localhost unless told
+      # otherwise; OLLAMA_API_BASE is not a variable it reads.
+      CODEX_OSS_BASE_URL: http://ollama:11434/v1
     read_only: true
     tmpfs: ["/tmp:size=${SANDBOX_TMPFS_SIZE:-4g}", "/home/swarm:size=1g"] # as the sealed agents (L1.6)
     cap_drop: [ALL]

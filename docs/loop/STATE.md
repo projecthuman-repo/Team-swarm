@@ -226,9 +226,17 @@ confirmed findings are 11 distinct defects. Each fix has a test.
 | 10 | The documented Tier B model pull ran in a pod the default-deny policy blocks (1) | `deploy/k8s/embeddings-model-pull.yaml`, a temporary HTTPS-egress policy for that pod alone, applied and deleted around the pull | `test_the_tier_b_embedding_model_pull_has_a_procedure_that_works_under_default_deny` |
 | 11 | Stale statements: four in `conventions/licensing.md`, the R4 test count (15, is 14) and "4.2.0 everywhere" in STATE (2) | corrected; `pyproject.toml` description and the Perses dashboard title now say v4.2.0 | `test_licensing_md_describes_the_gate_as_it_is`, `test_version_labels_follow_the_release` |
 
-The Codex engine and review defects (9 findings: no model flag, read-only
-sandbox, `CODEX_HOME`, `CODEX_OSS_BASE_URL`, `--oss` without a provider, a
-real `--json` stream mapped to PASS) are fixed in the next commit.
+The Codex lanes (9 confirmed findings, 5 defects), fixed against the
+pinned CLI's source (`openai/codex`, tag `rust-v0.167.0`), which three
+research agents read and three skeptics re-checked (D-046):
+
+| # | defect | fix | test |
+|---|---|---|---|
+| 12 | `codex exec --oss` without `-m` runs Codex's own `gpt-oss:20b` and asks Ollama to pull it; "runs Ornith" was false for the engine, the audit and `shadow-eval-engines` | the default flags carry `-m <CODEX_MODEL>` (the swarm's model as Ollama lists it); the audit uses the same flags | `test_codex_engine_defaults_select_the_swarms_model_and_can_edit` |
+| 13 | No sandbox flag meant read-only (no edits), and Codex's sandbox — bubblewrap with user namespaces — cannot start in the hardened containers at all | `--sandbox danger-full-access`: the container is the sandbox, as for aider | same test |
+| 14 | `codex-engine` could not start Codex: `CODEX_HOME` on a fresh tmpfs never existed (exit 1), and nothing told Codex where Ollama is | the worker creates `CODEX_HOME` before the first run; the service sets `CODEX_OSS_BASE_URL`; the offline profile is baked into the image as `/etc/codex/config.toml` and now also turns off the plugins sync, feedback and metrics export | `test_codex_lane_can_start_codex`, `test_codex_lane_image_carries_the_offline_profile`, `test_engine_subprocesses_do_not_inherit_stdin` |
+| 15 | `make codex-review` always ended in ERROR (`--oss` names no provider) and could never be right: `codex exec review --base` prints the review as rendered text only, so the parser mapped any real stream — a P0 finding, a failed turn — to PASS | the review runs `codex exec … --output-schema` with the diff in the prompt and validates the event stream and the JSON document strictly; the legacy parser returns ERROR for anything that is not a finding list | 25 cases in `test_codex_review_*` and `test_legacy_findings_parser_no_longer_passes_what_is_not_a_finding_list` |
+| 16 | (found while fixing 8) the Codex platform package also bundles LGPL binaries — bubblewrap and a GStreamer voice runtime — inside an image the gate treats as permissive-only | the build removes both and fails if any is left | `test_codex_image_ships_only_the_locked_npm_payload_and_the_gate_scans_it` |
 
 Rejected, with the skeptic's reason: the Zone B denylist ignoring a short
 free-text `license` field (it is what the R2 text specifies, and the full

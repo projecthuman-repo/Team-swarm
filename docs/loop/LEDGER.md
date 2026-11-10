@@ -270,3 +270,12 @@ where it went) or `generated` (the file stays, with a header saying so).
 | `deploy/k8s/embeddings-model-pull.yaml` | generated (new) | R8 (review) — temporary egress policy for the one-time model pull |
 | `verify-integration` step label (Codex image) | kept | R8 (review) — reworded, no backticks; same command |
 | `pyproject.toml` description, Perses dashboard title | extended | R8 (review) — v4.2.0 |
+| v4.2 — `CODEX_EXEC_FLAGS` default | extended | R8 (review) — `--oss --local-provider ollama -m <CODEX_MODEL> --sandbox danger-full-access --skip-git-repo-check --color never` (was: no model, no sandbox flag). The variable still replaces the whole string |
+| `CODEX_MODEL`, `CODEX_OSS_BASE_URL`, `CODEX_REVIEW_BLOCK_PRIORITY`, `CODEX_REVIEW_MAX_DIFF_CHARS` | generated (new) | R8 (review) — `.env.example` |
+| v4.2 — `CODEX_REVIEW_FLAGS` default | extended | R8 (review) — `--oss --local-provider ollama` (was `--oss`, which the CLI rejects) |
+| v4.2 — `agent/codex_review.py`, `make codex-review` | extended | R8 (review) — `codex exec --output-schema` with the diff in the prompt, strict validation; `parse_findings` kept for v4.2-shaped documents and no longer passes anything else |
+| v4.2 — `CODEX_HOME` in the `codex-engine` service | kept | R8 (review) — the worker creates it; the offline profile is `deploy/codex/config.toml`, baked in as `/etc/codex/config.toml` |
+| `deploy/codex/config.toml` | generated (new) | R8 (review) |
+| v4.2 — `scripts/codex_egress_audit.sh` | extended | R8 (review) — the engine's flags, the model by name, the extended offline profile |
+| `deploy/Containerfile.codex` | extended | R8 (review) — bundled bubblewrap and voice runtime removed from the platform package |
+| `agent/sandbox.py` `_run` | extended | R8 (review) — subprocesses get `/dev/null` as stdin |

@@ -972,3 +972,65 @@ not apply it. The embeddings pod is a model server, not an agent.
 free-text gap stays as specified: Zone B's Python verdict reads the
 declaration and the classifiers, and the full Zone B run has syft over the
 lock as well.
+
+**D-046 · The Codex lanes, corrected against the pinned CLI (R8).** Facts
+below were read from `openai/codex` at tag `rust-v0.167.0` by research
+agents and re-derived by skeptics; nothing was executed (there is no
+`codex` binary here), so the egress audit and the image build remain the
+proof, both in `verify-integration`.
+(a) *Model.* With `--oss` and no `-m`, exec forces the provider default
+`gpt-oss:20b` and asks Ollama to pull it (`exec/src/lib.rs`,
+`ollama/src/lib.rs`). The default flags now carry `-m`, from `CODEX_MODEL`
+or the engine model without aider's `ollama/` prefix. The name must equal
+the tag Ollama lists. `--oss --local-provider ollama` is kept rather than
+`-c model_provider=ollama`: it is upstream's documented local path, and its
+start-up check fails fast when Ollama is unreachable or older than 0.13.4.
+(b) *Sandbox.* The default is read-only, and every filesystem-restricted
+mode runs commands through bubblewrap with `--unshare-user`; there is no
+fallback. The swarm's containers (`cap_drop: ALL`, `no-new-privileges`)
+do not allow that, so with Codex's sandbox on, every command fails. The
+default is `--sandbox danger-full-access`: the container is the sandbox,
+which is the situation upstream's help names for it and the one aider has
+always run in. Exec's approval policy is `never`; it cannot block.
+`--full-auto` does not exist at this version.
+(c) *CODEX_HOME.* A set `CODEX_HOME` must exist (`utils/home-dir`); exec
+exits 1 otherwise and nothing creates it. The worker creates it
+(`prepare_engine`). The offline profile moved from "whatever is in
+CODEX_HOME" to the image's `/etc/codex/config.toml`, the system layer
+(`config/src/loader/mod.rs`), because the lane's home is a tmpfs.
+(d) *Offline profile.* `check_for_update_on_startup` affects only the TUI.
+What exec does on its own: a Statsig metrics export unless
+`[analytics] enabled = false` / `[otel] metrics_exporter = "none"`, and a
+`git ls-remote` of the curated plugins repository unless
+`[features] plugins = false`. v4.2's profile closed the first; the second
+is new. The source audit was not exhaustive — `make codex-audit` decides.
+(e) *stdin.* `codex exec "<prompt>"` appends piped stdin to the prompt.
+`sandbox._run` now gives every subprocess `/dev/null`.
+(f) *Review.* `codex exec review --base` has no machine-readable result:
+neither exec event processor handles the review-exit event, the review
+reaches the `--json` stream as one `agent_message` of rendered text, and
+`--output-schema` is ignored for it. A clean review and a reviewer whose
+output failed to parse look the same. So the lane runs plain `codex exec`
+with `--output-schema`, `-s read-only`, and the diff in the prompt, and
+PASS needs: exit 0, no `error` or `turn.failed` event, a final
+`turn.completed`, and a document with `overall_correctness == "patch is
+correct"` and no finding at or above `CODEX_REVIEW_BLOCK_PRIORITY`. The
+diff is in the prompt because of (b): in a hardened container the reviewer
+cannot run `git diff`, and one that saw nothing could still say "correct".
+A diff larger than `CODEX_REVIEW_MAX_DIFF_CHARS` is an ERROR, not a partial
+review. Whether Ollama honours the schema is unknown; the document is
+validated here either way, and a reply that is not the document is ERROR.
+(g) *Two tests rewritten, and why:* `test_codex_review_nonzero_exit_is_an_error`
+pinned `codex exec --oss --json review --base <branch>` and a stdout
+(`{"findings": []}`) that no Codex version prints. It is split into a
+non-zero-exit test and one that pins the corrected invocation.
+`parse_findings` keeps reading the documents its v4.2 tests feed it.
+(h) *Image contents.* Upstream's packaging at this tag puts more than the
+CLI into the Linux platform package: ripgrep (Unlicense OR MIT), a bundled
+bubblewrap (LGPL-2.0-or-later) and, in the primary bundle, a GStreamer/GLib
+runtime for voice input (LGPL-2.1). The package declares Apache-2.0, so no
+lock-based scan shows this. The lane uses neither bubblewrap ((b)) nor
+voice; the build removes both and the runtime stage fails when a file of
+that kind is left. The tarball could not be listed here (binary download
+declined), so this rests on the packaging scripts and the registry's file
+count (45 files where the base layout has 7).

@@ -4,6 +4,7 @@ the doom-loop repetition detector. All pure logic / mocks — no live GPU,
 Docker, or CLI, and no importing absent optional deps at collection."""
 
 import importlib.util
+import json
 import os
 
 import pytest
@@ -46,6 +47,88 @@ def test_codex_engine_cmd(monkeypatch):
     assert cmd[0] == "codex" and cmd[1] == "exec"
     assert "--oss" in cmd and "--local-provider" in cmd and "ollama" in cmd
     assert cmd[-1] == "do the thing"
+
+
+def test_codex_engine_defaults_select_the_swarms_model_and_can_edit(monkeypatch):
+    # review of R7, against the pinned CLI (rust-v0.167.0): `--oss` without -m
+    # runs Codex's own gpt-oss:20b (and asks Ollama to pull it); no --sandbox
+    # means read-only; and Codex's sandbox cannot start in the hardened container
+    monkeypatch.setattr(sandbox, "ENGINE", "codex")
+    monkeypatch.setattr(sandbox, "ENGINE_CMD", "")
+    cmd = sandbox.engine_cmd("do the thing")
+    assert cmd[cmd.index("-m") + 1] == "maxwell1500/ornith-9b:Q4_K_M"  # as Ollama lists it
+    assert sandbox.MODEL == "ollama/maxwell1500/ornith-9b:Q4_K_M"  # aider's spelling of the same
+    assert cmd[cmd.index("--sandbox") + 1] == "danger-full-access"
+    assert cmd[cmd.index("--local-provider") + 1] == "ollama"
+    assert "--skip-git-repo-check" in cmd and cmd[cmd.index("--color") + 1] == "never"
+    assert "--full-auto" not in cmd  # does not exist at this version
+    monkeypatch.setenv("CODEX_MODEL", "ornith-35b:q4")
+    assert sandbox.codex_model() == "ornith-35b:q4"
+    # the same flags in the egress audit, the docs and the example env
+    audit = _text("scripts", "codex_egress_audit.sh")
+    assert 'MODEL="${CODEX_MODEL:-maxwell1500/ornith-9b:Q4_K_M}"' in audit
+    assert 'FLAGS=(--oss --local-provider ollama -m "$MODEL" --sandbox danger-full-access' in audit
+    assert audit.count('codex exec "${FLAGS[@]}" "$TASK"') == 2
+    assert "Pull a model (make models) and re-run" not in audit  # could not fix a wrong model
+    default = "--oss --local-provider ollama -m maxwell1500/ornith-9b:Q4_K_M --sandbox danger-full-access --skip-git-repo-check --color never"  # noqa: E501
+    assert f"#CODEX_EXEC_FLAGS={default}" in _text(".env.example")
+    assert default.replace(" -m maxwell1500/ornith-9b:Q4_K_M", "") in " ".join(
+        sandbox.CODEX_EXEC_FLAGS.replace("-m maxwell1500/ornith-9b:Q4_K_M ", "").split()
+    )
+
+
+def test_codex_token_meter_reads_what_exec_prints():
+    # exec's human output at shutdown: "tokens used" then the number, on stderr
+    out = "codex\nDone.\ntokens used\n12,345\n"
+    assert sandbox._parse_codex_tokens(out) == 12345
+    assert sandbox._parse_codex_tokens("no usage reported") == 0
+
+
+def test_codex_lane_can_start_codex(tmp_path, monkeypatch):
+    # a set CODEX_HOME must exist or `codex exec` exits 1; the lane's is a fresh tmpfs
+    home = tmp_path / "home" / ".codex"
+    monkeypatch.setenv("CODEX_HOME", str(home))
+    monkeypatch.setattr(sandbox, "ENGINE", "aider")
+    sandbox.prepare_engine()
+    assert not home.exists()  # nothing changes for the other engines
+    monkeypatch.setattr(sandbox, "ENGINE", "codex")
+    sandbox.prepare_engine()
+    sandbox.prepare_engine()  # idempotent
+    assert home.is_dir()
+    assert (
+        "    prepare_engine()\n"
+        in _text("agent", "sandbox.py").split("async def run_sandboxed_aider")[1].split("try:")[0]
+    )
+    service = yaml.safe_load(_text("deploy", "compose.yaml"))["services"]["codex-engine"]
+    env = service["environment"]
+    # Codex's `ollama` provider talks to localhost unless this is set
+    assert env["CODEX_OSS_BASE_URL"] == "http://ollama:11434/v1"
+    assert env["CODEX_HOME"] == "/home/swarm/.codex"
+    assert any(t.startswith("/home/swarm:") for t in service["tmpfs"])  # writable, not /tmp
+    assert not env["CODEX_HOME"].startswith("/tmp")  # Codex refuses helpers under the temp dir
+
+
+def test_codex_lane_image_carries_the_offline_profile():
+    profile = tomllib.loads(_text("deploy", "codex", "config.toml"))
+    assert profile == {
+        "check_for_update_on_startup": False,
+        "analytics": {"enabled": False},
+        "feedback": {"enabled": False},
+        "otel": {"metrics_exporter": "none"},
+        "features": {"plugins": False},  # else start-up runs git ls-remote on github.com
+    }
+    image = _text("deploy", "Containerfile.codex")
+    assert "COPY deploy/codex/config.toml /etc/codex/config.toml" in image  # the system layer
+    # the egress audit checks the same profile
+    audit = _text("scripts", "codex_egress_audit.sh")
+    written = audit.split("cat > \"$CODEX_HOME_DIR/config.toml\" <<'EOF'\n")[1].split("\nEOF")[0]
+    assert tomllib.loads(written) == profile
+
+
+async def test_engine_subprocesses_do_not_inherit_stdin(tmp_path):
+    # `codex exec "<prompt>"` appends piped stdin to the prompt and waits for EOF
+    code, out = await sandbox._run(["cat"], str(tmp_path), dict(os.environ), 10)
+    assert (code, out) == (0, "")
 
 
 def test_codex_flags_are_overridable(monkeypatch):
@@ -110,26 +193,214 @@ def test_codex_review_garbage_is_an_error_not_a_pass():
     assert parse_findings("[]")[0]["verdict"] == "PASS"  # an explicit empty list is clean
 
 
-def test_codex_review_nonzero_exit_is_an_error(monkeypatch):
+def _stream(*events):
+    return "\n".join(json.dumps(e) for e in events) + "\n"
+
+
+def _message(text):
+    item = {"id": "item_1", "type": "agent_message", "text": text}
+    return {"type": "item.completed", "item": item}
+
+
+# `codex exec --json` event shapes, from exec_events.rs at rust-v0.167.0
+STARTED = [{"type": "thread.started", "thread_id": "0199a213"}, {"type": "turn.started"}]
+USAGE = {"input_tokens": 12034, "cached_input_tokens": 0, "cache_write_input_tokens": 0,
+         "output_tokens": 211, "reasoning_output_tokens": 96}  # fmt: skip
+COMPLETED = {"type": "turn.completed", "usage": USAGE}
+CLEAN_DOC = json.dumps({"findings": [], "overall_correctness": "patch is correct",
+                        "overall_explanation": "No blocking issues."})  # fmt: skip
+
+
+def _doc(priority, correctness="patch is correct"):
+    finding = {"title": "Off-by-one in page offset", "body": "skips page 1", "priority": priority,
+               "file": "app/pager.py", "line": 42}  # fmt: skip
+    return json.dumps({"findings": [finding], "overall_correctness": correctness,
+                       "overall_explanation": "x"})  # fmt: skip
+
+
+@pytest.fixture
+def codex(monkeypatch):
+    """A fake `codex` process: set .stdout / .returncode, read .calls."""
+    import subprocess
+    import types
+
+    from agent import codex_review
+
+    fake = types.SimpleNamespace(stdout="", returncode=0, calls=[])
+    fake.diff = "diff --git a/app/pager.py b/app/pager.py\n+offset = page * size\n"
+
+    def run(cmd, **kwargs):
+        if cmd[0] == "git":
+            out = fake.diff if cmd[1] == "diff" else "1a2b3c4\n"
+            return subprocess.CompletedProcess(cmd, 0, stdout=out, stderr="")
+        fake.calls.append((cmd, kwargs))
+        return subprocess.CompletedProcess(cmd, fake.returncode, stdout=fake.stdout, stderr="boom")
+
+    monkeypatch.setattr(codex_review.subprocess, "run", run)
+    monkeypatch.setattr(codex_review, "codex_available", lambda: True)
+    monkeypatch.setattr(codex_review, "CODEX_REVIEW_FLAGS", "--oss --local-provider ollama")
+    monkeypatch.delenv("CODEX_MODEL", raising=False)
+    fake.review = lambda: codex_review.review("integration", "/repo")[0]
+    return fake
+
+
+def test_codex_review_nonzero_exit_is_an_error(codex):
+    codex.stdout, codex.returncode = _stream(*STARTED, _message(CLEAN_DOC), COMPLETED), 2
+    assert codex.review()["verdict"] == "ERROR"
+
+
+def test_codex_review_invocation_matches_the_pinned_cli(codex):
+    # review of R7: `--oss` alone has no provider, no `-m` means Codex's own
+    # gpt-oss:20b, and `exec review --base` cannot say PASS. This test used to
+    # pin `codex exec --oss --json review --base <branch>` with a stdout no
+    # Codex version prints.
+    codex.stdout = _stream(*STARTED, _message(CLEAN_DOC), COMPLETED)
+    assert codex.review() == {"lens": "codex", "verdict": "PASS", "notes": "No blocking issues."}
+    (cmd, kwargs), = codex.calls  # fmt: skip
+    assert cmd[:5] == ["codex", "exec", "--oss", "--local-provider", "ollama"]
+    assert cmd[5:7] == ["-m", "maxwell1500/ornith-9b:Q4_K_M"]  # the swarm's model, no `ollama/`
+    assert cmd[7:12] == ["-s", "read-only", "--skip-git-repo-check", "--ephemeral", "--json"]
+    assert cmd[12] == "--output-schema" and cmd[13].endswith("review.schema.json")
+    assert "review" not in cmd[:14]  # not the `exec review` subcommand
+    # the merge base is resolved here and the diff is IN the prompt: Codex's
+    # read-only sandbox cannot run `git diff` in the hardened containers
+    assert "base commit 1a2b3c4" in cmd[14] and len(cmd) == 15
+    assert "```diff\ndiff --git a/app/pager.py b/app/pager.py\n+offset = page * size" in cmd[14]
+    assert kwargs["cwd"] == "/repo" and kwargs["stdin"] is codex_review_subprocess().DEVNULL
+
+
+def codex_review_subprocess():
+    from agent import codex_review
+
+    return codex_review.subprocess
+
+
+@pytest.mark.parametrize(
+    "document, verdict",
+    [
+        (CLEAN_DOC, "PASS"),
+        (_doc(3), "PASS"),  # a nit does not block
+        (_doc(2), "PASS"),
+        (_doc(1), "BLOCK"),  # P1 and P0 block (CODEX_REVIEW_BLOCK_PRIORITY=1)
+        (_doc(0), "BLOCK"),
+        (_doc(3, "patch is incorrect"), "BLOCK"),  # the overall verdict blocks on its own
+    ],
+)
+def test_codex_review_verdict_comes_from_the_document(codex, document, verdict):
+    codex.stdout = _stream(*STARTED, _message("thinking aloud"), _message(document), COMPLETED)
+    found = codex.review()
+    assert found["verdict"] == verdict and found["lens"] == "codex"
+    if verdict == "BLOCK":
+        assert "Off-by-one in page offset (app/pager.py:42)" in found["notes"]
+
+
+@pytest.mark.parametrize(
+    "stream",
+    [
+        # the model call failed: exit 1 in real life, but the stream alone must be enough
+        _stream(*STARTED, {"type": "error", "message": "unexpected status 503"},
+                {"type": "turn.failed", "error": {"message": "unexpected status 503"}}),
+        _stream(*STARTED, {"type": "error", "message": "stream disconnected"},
+                _message(CLEAN_DOC), COMPLETED),
+        _stream(*STARTED, _message(CLEAN_DOC)),  # never completed
+        _stream(*STARTED, COMPLETED),  # completed without saying anything
+        # prose instead of the document — what `exec review` prints for a clean review
+        _stream(*STARTED, _message("The change is small and no issues were found."), COMPLETED),
+        _stream(*STARTED, _message("Review was interrupted. Please re-run /review and wait "
+                                   "for it to complete."), COMPLETED),
+        # documents that do not say what PASS needs
+        _stream(*STARTED, _message('{"findings": []}'), COMPLETED),
+        _stream(*STARTED, _message('{"findings": [], "overall_correctness": "good"}'), COMPLETED),
+        _stream(*STARTED, _message(_doc(None)), COMPLETED),
+        _stream(*STARTED, _message(_doc("high")), COMPLETED),
+        _stream(*STARTED, _message(_doc(7)), COMPLETED),
+        _stream(*STARTED, _message("null"), COMPLETED),
+        "not json at all\n",
+        "",
+        '{"findings": []}\n',  # a bare document is not an event stream
+    ],
+)  # fmt: skip
+def test_codex_review_is_an_error_whenever_it_cannot_be_judged(codex, stream):
+    codex.stdout = stream
+    assert codex.review()["verdict"] == "ERROR"
+
+
+def test_codex_review_never_judges_a_diff_it_was_not_given_in_full(codex, monkeypatch):
+    from agent import codex_review
+
+    codex.stdout = _stream(*STARTED, _message(CLEAN_DOC), COMPLETED)
+    codex.diff = ""  # nothing to review is not a clean review
+    found = codex.review()
+    assert found["verdict"] == "ERROR" and "nothing to review" in found["notes"]
+    codex.diff = "+x\n" * 100
+    monkeypatch.setattr(codex_review, "MAX_DIFF_CHARS", 50)
+    found = codex.review()
+    assert found["verdict"] == "ERROR" and "larger than the reviewer is given" in found["notes"]
+    assert codex.calls == []  # Codex was never asked
+
+
+def test_codex_review_diff_covers_new_files_and_leaves_the_index_alone(tmp_path):
     import subprocess
 
     from agent import codex_review
 
-    done = subprocess.CompletedProcess(["codex"], 2, stdout='{"findings": []}', stderr="boom")
-    monkeypatch.setattr(codex_review.subprocess, "run", lambda *a, **k: done)
+    env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@example.invalid",
+               GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@example.invalid")  # fmt: skip
+
+    def git(*args):
+        return subprocess.run(["git", *args], cwd=tmp_path, env=env, check=True,
+                              capture_output=True, text=True).stdout  # fmt: skip
+
+    (tmp_path / "app.py").write_text("x = 1\n")
+    git("init", "-q", "-b", "integration")
+    git("add", "-A")
+    git("commit", "-qm", "init")
+    git("checkout", "-qb", "feature/t-1")
+    (tmp_path / "app.py").write_text("x = 2\n")
+    git("commit", "-qam", "committed by the engine")
+    (tmp_path / "new.py").write_text("y = 3\n")  # untracked: an engine that does not commit
+    sha = codex_review.merge_base("integration", str(tmp_path))
+    assert sha == git("rev-parse", "integration").strip()
+    diff = codex_review.diff_against(sha, str(tmp_path))
+    assert "+x = 2" in diff and "+y = 3" in diff
+    assert git("status", "--porcelain") == "?? new.py\n"  # still untracked: index untouched
+
+
+def test_codex_review_an_unresolvable_base_is_an_error(monkeypatch):
+    import subprocess
+
+    from agent import codex_review
+
     monkeypatch.setattr(codex_review, "codex_available", lambda: True)
-    assert codex_review.review("integration")[0]["verdict"] == "ERROR"
-    seen = []
+    monkeypatch.setattr(
+        codex_review.subprocess,
+        "run",
+        lambda cmd, **kw: subprocess.CompletedProcess(cmd, 128, stdout="", stderr="bad revision"),
+    )
+    (found,) = codex_review.review("no-such-branch")
+    assert found["verdict"] == "ERROR" and "cannot resolve the review base" in found["notes"]
 
-    def run_ok(cmd, **kwargs):
-        seen.append(cmd)
-        return subprocess.CompletedProcess(cmd, 0, stdout='{"findings": []}', stderr="")
 
-    monkeypatch.setattr(codex_review.subprocess, "run", run_ok)
-    monkeypatch.setattr(codex_review, "CODEX_REVIEW_FLAGS", "--oss")
-    assert codex_review.review("integration")[0]["verdict"] == "PASS"
-    # the pinned CLI's surface: `codex exec [--oss] --json review --base <branch>`
-    assert seen == [["codex", "exec", "--oss", "--json", "review", "--base", "integration"]]
+def test_legacy_findings_parser_no_longer_passes_what_is_not_a_finding_list():
+    # review of R7: any parseable JSON without a high priority used to be PASS
+    events = _stream(*STARTED, _message("[P0] SQL injection in /login"), COMPLETED)
+    failed = _stream(*STARTED, {"type": "turn.failed", "error": {"message": "model not found"}})
+    for raw in (events, failed, "null", "42", '"oops"', '{"type": "error", "message": "x"}',
+                '{"unexpected": true}', '[{"type": "turn.completed"}]', '[1, 2]'):  # fmt: skip
+        assert parse_findings(raw)[0]["verdict"] == "ERROR", raw
+    # ...and still reads the documents it was written for
+    assert parse_findings('{"findings": []}')[0]["verdict"] == "PASS"
+    assert parse_findings('[{"title": "nit", "priority": "low"}]')[0]["verdict"] == "PASS"
+
+
+def test_codex_review_defaults_are_documented_as_they_are():
+    from agent import codex_review
+
+    assert codex_review.CODEX_REVIEW_FLAGS in ("--oss --local-provider ollama",)
+    env_example = _text(".env.example")
+    assert "#CODEX_REVIEW_FLAGS=--oss --local-provider ollama" in env_example
+    assert "#CODEX_REVIEW_BLOCK_PRIORITY=1" in env_example and "#CODEX_MODEL=" in env_example
+    assert "exec review --base" in _text("docs", "RUNBOOK.md")  # says why it is not used
 
 
 # ---- T7.8 rubric grading ----------------------------------------------
@@ -282,6 +553,13 @@ def test_codex_image_ships_only_the_locked_npm_payload_and_the_gate_scans_it():
     assert "COPY deploy/codex/package.json deploy/codex/package-lock.json ./" in text
     assert "npm ci --omit=dev --ignore-scripts" in text
     assert "COPY --from=codex /opt/codex/node_modules /opt/codex/node_modules" in text
+    # the platform package also carries LGPL binaries beside the Apache-2.0 CLI
+    # (a bundled bubblewrap, a GStreamer runtime for voice): removed, and the
+    # runtime stage fails the build if anything of the kind is left
+    for bundled in ("codex-resources/voice", "codex-resources/bwrap"):
+        assert f"node_modules/@openai/codex-linux-*/vendor/*/{bundled}" in text
+    assert "-name bwrap -o -name 'libgst*' -o -name 'libglib*' -o -name voice" in text
+    assert 'test -z "$(find /opt/codex/node_modules' in text
     lock = json.loads(_text("deploy", "codex", "package-lock.json"))
     manifest = json.loads(_text("deploy", "codex", "package.json"))
     arg = re.search(r"^ARG CODEX_VERSION=(\S+)$", text, re.M).group(1)

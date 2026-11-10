@@ -35,7 +35,16 @@ WORKDIR /opt/codex
 COPY deploy/codex/package.json deploy/codex/package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts \
  && test -f node_modules/@openai/codex/bin/codex.js \
- && test "$(node -p "require('./node_modules/@openai/codex/package.json').version")" = "${CODEX_VERSION}"
+ && test "$(node -p "require('./node_modules/@openai/codex/package.json').version")" = "${CODEX_VERSION}" \
+ && rm -rf node_modules/@openai/codex-linux-*/vendor/*/codex-resources/voice \
+           node_modules/@openai/codex-linux-*/vendor/*/codex-resources/bwrap
+# ^ Two things the platform package carries beside the Apache-2.0 CLI, per
+# upstream's packaging at this tag, that a permissive-only image must not
+# ship and that this lane does not use: a GStreamer/GLib runtime for voice
+# input (LGPL-2.1) and a bundled bubblewrap (LGPL-2.0-or-later) — Codex's own
+# sandbox, which is off here (`--sandbox danger-full-access`; the hardened
+# container cannot create the user namespaces it needs anyway). The runtime
+# stage asserts that neither is left, wherever the package put them.
 
 FROM python:3.12-slim
 RUN apt-get update \
@@ -48,7 +57,11 @@ COPY --from=builder /opt/venv /opt/venv
 COPY --from=codex /usr/local/bin/node /usr/local/bin/node
 COPY --from=codex /opt/codex/node_modules /opt/codex/node_modules
 RUN ln -s /opt/codex/node_modules/@openai/codex/bin/codex.js /usr/local/bin/codex \
- && codex --version
+ && codex --version \
+ && test -z "$(find /opt/codex/node_modules \( -name bwrap -o -name 'libgst*' -o -name 'libglib*' -o -name voice \) -print -quit)"
+# The offline profile, as Codex's system config layer: read from the
+# read-only root whatever CODEX_HOME holds (deploy/codex/config.toml).
+COPY deploy/codex/config.toml /etc/codex/config.toml
 ENV PATH=/opt/venv/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

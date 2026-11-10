@@ -72,18 +72,42 @@ REPRO_TEST_POLICY = os.environ.get("REPRO_TEST_POLICY", "1") == "1"
 ENGINE = os.environ.get("AGENT_ENGINE", "aider")  # aider|nano-claude-code|codex
 ENGINE_CMD = os.environ.get("AGENT_ENGINE_CMD", "")
 
-# Codex CLI engine (v4.2 T7.2) — runs Ornith self-hosted via
-# `codex --oss --local-provider ollama`. Flags are env-overridable so a
-# pinned Codex version's exact surface can be set without a code change.
+
+def codex_model() -> str:
+    """The model `codex exec` is told to use (`-m`): CODEX_MODEL, else the
+    engine model without aider's provider prefix (`ollama/<tag>` -> `<tag>`).
+
+    With `--oss` and no `-m` the pinned CLI forces its own default,
+    `gpt-oss:20b`, and asks Ollama to pull it (review of R7). The name must
+    equal the tag Ollama lists, or Codex asks Ollama to pull it.
+    """
+    return os.environ.get("CODEX_MODEL") or MODEL.removeprefix("ollama/")
+
+
+# Codex CLI engine (v4.2 T7.2) — runs Ornith self-hosted. The whole flag
+# string is env-overridable, so a pinned Codex version's exact surface can be
+# set without a code change. The default, checked against rust-v0.167.0:
+#   --oss --local-provider ollama   the built-in Ollama provider; its URL is
+#                                   CODEX_OSS_BASE_URL (default localhost)
+#   -m <model>                      the swarm's model, never Codex's default
+#   --sandbox danger-full-access    Codex's own sandbox is bubblewrap with user
+#                                   namespaces, which the hardened container
+#                                   does not allow (every command would fail,
+#                                   and the default, read-only, cannot edit).
+#                                   The container is the sandbox — as for aider.
+#   --skip-git-repo-check           the clone is not a "trusted" project
+#   --color never                   plain `tokens used\n<N>` for the meter
 CODEX_EXEC_FLAGS = os.environ.get(
     "CODEX_EXEC_FLAGS",
-    "--oss --local-provider ollama --skip-git-repo-check",
+    f"--oss --local-provider ollama -m {codex_model()} "
+    "--sandbox danger-full-access --skip-git-repo-check --color never",
 )
 
 # aider prints e.g. "Tokens: 4.2k sent, 1.1k received."
 _TOKENS_RE = re.compile(r"Tokens:\s*([\d.]+)(k?)\s*sent,\s*([\d.]+)(k?)\s*received")
-# Codex prints token usage differently, e.g. "tokens used: 5310" or
-# "input: 4200  output: 1100" — parse both shapes (v4.2 T7.2).
+# Codex prints its total on two lines at shutdown — "tokens used" then
+# "12,345" (exec's human output at rust-v0.167.0); _CODEX_TOTAL_RE reads that.
+# The "input: … output: …" form is kept for other versions (v4.2 T7.2).
 _CODEX_TOTAL_RE = re.compile(r"tokens?\s*(?:used|total)\s*[:=]?\s*([\d,]+)", re.I)
 _CODEX_IO_RE = re.compile(r"input[:=]?\s*([\d,]+).*?output[:=]?\s*([\d,]+)", re.I | re.S)
 
@@ -200,6 +224,17 @@ def engine_cmd(message: str) -> list[str]:
     raise PoisonError(f"unknown AGENT_ENGINE {ENGINE!r}")
 
 
+def prepare_engine() -> None:
+    """What an engine needs on disk before its first run.
+
+    Codex: a set CODEX_HOME must already exist — the CLI exits 1 otherwise
+    and nothing creates it; the lane's is on a fresh tmpfs (review of R7).
+    """
+    home = os.environ.get("CODEX_HOME")
+    if ENGINE == "codex" and home:
+        os.makedirs(home, exist_ok=True)
+
+
 def build_message(task) -> str:
     """Task message with the repro-test-first policy (T2.2) applied."""
     message = task.title or f"work task {task.task_id}"
@@ -290,6 +325,8 @@ async def _run(
         *cmd,
         cwd=cwd,
         env=env,
+        # never the worker's stdin: `codex exec` appends piped stdin to its prompt
+        stdin=asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
     )
@@ -451,6 +488,7 @@ async def run_sandboxed_aider(
     env = build_env()
     message = build_message(task)
     result = RunResult(branch=branch)
+    prepare_engine()
 
     try:
         await _run(["git", "clone", "--depth", "1", remote, "repo"], workdir, env, 300)

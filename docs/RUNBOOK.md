@@ -386,9 +386,29 @@ Additive to everything above; `aider` stays default, `bandit` stays on.
   green-rate win within the token threshold — otherwise it stays opt-in.
 - **Codex review lane (T7.4):** `make codex-review BASE=integration` adds a
   second heterogeneous reviewer whose findings feed the verifier
-  `aggregate()`. Optional, and fail-closed: a missing `codex`, a non-zero
-  exit or output with no parseable findings is an ERROR finding, never a
-  PASS.
+  `aggregate()`. It runs `codex exec … -s read-only --json --output-schema`
+  with a review prompt that names the merge base, and reads the JSON
+  document in the final message. `codex exec review --base` is not used: its
+  `--json` stream carries the review only as rendered text, so a clean
+  review cannot be told from one that failed to parse. Optional, and
+  fail-closed: PASS needs a completed turn whose document says "patch is
+  correct" with no finding at or above `CODEX_REVIEW_BLOCK_PRIORITY`
+  (default 1: P0 and P1 block). A missing `codex`, a non-zero exit, a failed
+  turn, an `error` event or a document that cannot be validated is an ERROR
+  finding, never a PASS.
+- **Codex engine (T7.2), what the defaults mean:** `AGENT_ENGINE=codex`
+  runs `codex exec --oss --local-provider ollama -m <CODEX_MODEL>
+  --sandbox danger-full-access --skip-git-repo-check --color never`.
+  `CODEX_MODEL` defaults to the swarm's model as Ollama lists it; without
+  `-m` the CLI uses its own `gpt-oss:20b` and asks Ollama to pull it.
+  `CODEX_OSS_BASE_URL` (set in the `codex-engine` service) is where the
+  `ollama` provider is; Ollama must be 0.13.4 or newer. Codex's own sandbox
+  is bubblewrap with user namespaces, which the hardened containers do not
+  allow, so it is off and the container is the boundary — as it is for
+  aider. The lane image carries the offline profile at
+  `/etc/codex/config.toml` (analytics, feedback, metrics export and the
+  plugins sync off — `deploy/codex/config.toml`); `make codex-audit` checks
+  the same profile on the internal network.
 - **Claude escalation (T7.7):** only with `ROUTE_API_FALLBACK=1` and the
   Claude key leased into OpenBao (`secret/data/swarm/claude`, field
   `api_key`). The escalated patch re-enters the green-build gate before any
