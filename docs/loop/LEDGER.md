@@ -200,3 +200,9 @@ where it went) or `generated` (the file stays, with a header saying so).
 | `scripts/lite_smoke.sh` | extended | R4 — also pulls the embedding model |
 | README, RUNBOOK §2, `.env.example`, `conventions/context.md` | extended | R4 |
 | `tests/test_embedding_api.py` | generated (new) | R4; `tests/test_embeddings.py`, `tests/test_lessons.py` updated for the new default and signature |
+| Published ports in `compose.yaml` and `compose.lite.yaml` | extended | R5 — bound to `${SWARM_BIND_ADDR:-127.0.0.1}`; `SWARM_BIND_ADDR=0.0.0.0` is the previous behaviour |
+| `deploy/compose.hostports.yaml`, `deploy/compose.hostports.lite.yaml`, `scripts/hostports_network.sh` | generated (new) | R5 — opt-in with `HOSTPORTS=1` |
+| `make up`, `make up-lite` (and every `$(COMPOSE)` target) | extended | R5 — include the override when `HOSTPORTS=1`; unchanged otherwise |
+| `scripts/lite_smoke.sh` | extended | R5 — reachability and no-egress assertions; same task-reaches-done check after them |
+| `scripts/lite_smoke_modes.sh`; host mode in `scripts/vi_summary.sh` | generated (new) | R5 — `verify-integration` runs the smoke through it |
+| `tests/test_hostports.py` | generated (new) | R5 |

@@ -336,6 +336,22 @@ lines; the per-phase tables are in `docs/footprint-baseline.md`.
   esbuild bundle on distroless.
 - **Lite path:** `make up-lite` runs four services instead of seven;
   `make ollama` adds inference on demand.
+- **Host ports and isolation (R5):** every published port binds to
+  `SWARM_BIND_ADDR` (default `127.0.0.1`; `0.0.0.0` is the old behaviour).
+  The spine sits on the `internal: true` network, and rootful Podman and
+  Docker do not forward ports for such containers (rootless Podman does,
+  today). Where the host cannot reach `localhost:5432`, start with
+  `make up HOSTPORTS=1` / `make up-lite HOSTPORTS=1`: the port-publishing
+  spine services also join `swarm-host`, a non-internal network created by
+  `scripts/hostports_network.sh` with outbound NAT off (Docker:
+  `enable_ip_masquerade=false`; Podman: `no_default_route=true`). Agents and
+  the relay never join it. Neither option is a firewall — the header of
+  `deploy/compose.hostports.yaml` states the limits — so the lite smoke
+  proves both properties on the actual host: the host reaches 5432, 4222,
+  6379 and 8200, and an outbound connection from the postgres container
+  fails. `make verify-integration` tries the default first, falls back to
+  `HOSTPORTS=1` only when the ports are unreachable, and prints the mode
+  the host needs.
 - **Disk hygiene:** `make disk-usage`, `make clean` (never removes the
   swarm's data volumes), agent `/tmp` capped by `SANDBOX_TMPFS_SIZE`,
   orphaned task workdirs reaped on worker boot, and the morning routine

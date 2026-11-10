@@ -11,6 +11,9 @@ if [ ! -s "$LOG" ]; then
   exit 1
 fi
 column -t -s $'\t' "$LOG" 2>/dev/null || cat "$LOG"
+# R5: which network mode the lite smoke found this host needs
+HOST_MODE_FILE="${HOST_MODE_FILE:-${TMPDIR:-/tmp}/verify-integration.host-mode}"
+[ -s "$HOST_MODE_FILE" ] && cat "$HOST_MODE_FILE"
 failed="$(grep -c '^FAIL' "$LOG")"
 if [ "$failed" -gt 0 ]; then
   echo "verify-integration: $failed step(s) FAILED"

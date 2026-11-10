@@ -162,7 +162,8 @@ def test_compose_observability_services():
     assert svc["perses"]["image"] == "persesdev/perses:v0.55.1"
     for name in ("jaeger", "prometheus", "perses"):
         assert svc[name]["profiles"] == ["observability"]
-    assert {"16686:16686", "4318:4318"} <= set(svc["jaeger"]["ports"])
+    bind = "${SWARM_BIND_ADDR:-127.0.0.1}:"  # R5: every published port is loopback-bound
+    assert {bind + "16686:16686", bind + "4318:4318"} <= set(svc["jaeger"]["ports"])
     assert any("perses-sla.json" in v for v in svc["perses"]["volumes"])
     for v in svc["perses"]["volumes"] + svc["prometheus"]["volumes"]:
         assert os.path.exists(os.path.join(ROOT, "deploy", v.split(":")[0]))

@@ -67,6 +67,11 @@ make relay                # second terminal — the outbox relay is the only Jet
 make inject               # third terminal — one synthetic task
 ```
 
+Published ports bind to `127.0.0.1` (`SWARM_BIND_ADDR`). If your runtime does
+not forward ports of containers on the internal network (rootful Podman,
+Docker) and `localhost:5432` does not answer, use `make up-lite HOSTPORTS=1`
+(and `make up HOSTPORTS=1`); see RUNBOOK, "Host ports and isolation".
+
 `make bootstrap` detects the lite spine and skips Protobuf schema registration
 (the `proto-compat` CI job still guards compatibility). `make down-lite` stops
 it; `make disk-usage` shows container disk use and `make clean` prunes it
@@ -228,6 +233,7 @@ Developer and operator targets added in v4.1.1:
 | `make hooks` | install the pre-commit hooks (ruff, ruff-format, uv-lock, hygiene) |
 | `make ci-local` | every CI gate with the same commands |
 | `make up-lite` / `make down-lite` / `make ollama` | the lite spine and on-demand Ollama |
+| `make up HOSTPORTS=1` / `make up-lite HOSTPORTS=1` | the same, with the port-publishing spine services also on the non-internal `swarm-host` network — for runtimes that do not forward ports of internal-only containers; ports bind to `SWARM_BIND_ADDR` (default `127.0.0.1`) |
 | `make clean` | prune stopped containers, dangling images and volumes (keeps the swarm's data volumes) |
 | `make disk-usage` | container disk usage |
 | `make footprint` | wheel sizes per requirement set (+ image sizes when a runtime is up) |

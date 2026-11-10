@@ -677,3 +677,38 @@ treated as different spaces (different embedder ids), which is the safe
 reading; the shadow-eval in `verify-integration` compares outcomes.
 (j) The Qdrant and Chroma mirrors are not embedder-aware; they hold one
 vector space and are rebuilt by re-embedding, as before.
+
+**D-039 · Host ports and spine isolation (R5).** This settles the
+observation of D-029 (g). (a) *Loopback by default.* All 26 published
+ports bind to `${SWARM_BIND_ADDR:-127.0.0.1}`; `0.0.0.0` restores the old
+behaviour. (b) *No common driver option exists.* Looked up: Docker's
+`com.docker.network.bridge.enable_ip_masquerade=false` (Docker docs);
+Podman has no masquerade switch — the closest documented option is
+`no_default_route=true` (Podman ≥ 4.6, netavark ≥ 1.7). podman-compose
+rejects the Docker key ("unsupported bridge network option"), Docker
+silently ignores the Podman key (NAT stays on), and docker-compose over
+the Podman socket drops both with a warning. So one compose-managed
+network with `driver_opts` fails open on at least one runtime. The
+override therefore uses an **external** network, `swarm-host`, created by
+`scripts/hostports_network.sh` with the right option for the runtime in
+use; without it, `up` stops. (c) *Two override files*, because an
+override may only name services its base file defines: 14 services for
+the full stack, 4 for the lite spine. A test keeps each list equal to the
+internal-only port publishers of its base file. (d) *Not a firewall*, and
+said so in the override's header and the RUNBOOK. Docker: packets still
+leave un-NATed and replies never return; embedded DNS still resolves.
+Podman: only the default route is missing. Hard Rule 1 is about agents,
+and they (and the relay) never join `swarm-host`; for the spine the claim
+is the tested one — an outbound TCP connection from the postgres container
+fails within 5 s. A dual-homed proxy would be the stronger design; not
+built, since nothing here could exercise it. (e) *Proof, not assumption.*
+`lite_smoke.sh` checks reachability (exit 3) and no-egress (exit 4)
+before anything else, after first showing that the probe works inside
+the container, so a missing `bash`/`timeout` cannot pass for isolation.
+`lite_smoke_modes.sh` runs the default mode, retries with `HOSTPORTS=1`
+only on exit 3, and records the mode; `vi_summary.sh` prints it.
+(f) Which mode a host needs depends on the runtime (rootless Podman
+forwards internal-network ports today, a behaviour its maintainers call
+an implementation detail), so no default was changed: `HOSTPORTS=0`.
+(g) Nothing was runtime-tested here — the session has a Docker client
+but no daemon and no Podman; only `docker compose config` ran.

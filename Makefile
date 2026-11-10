@@ -4,6 +4,19 @@
 RUNTIME := $(shell command -v podman || command -v docker)
 COMPOSE := $(RUNTIME) compose -f deploy/compose.yaml
 COMPOSE_LITE := $(RUNTIME) compose -f deploy/compose.lite.yaml
+# HOSTPORTS=1 (review R5): also attach the port-publishing spine services to
+# the non-internal `swarm-host` network — for runtimes that do not forward
+# ports of internal-only containers (rootful Podman, Docker). Agents and the
+# relay never join it. scripts/lite_smoke_modes.sh tells you whether this
+# host needs it. Published ports bind to SWARM_BIND_ADDR (default 127.0.0.1).
+HOSTPORTS ?= 0
+ifeq ($(HOSTPORTS),1)
+COMPOSE += -f deploy/compose.hostports.yaml
+COMPOSE_LITE += -f deploy/compose.hostports.lite.yaml
+HOSTPORTS_NET := ./scripts/hostports_network.sh
+else
+HOSTPORTS_NET := @true
+endif
 
 .PHONY: quickstart up down bootstrap swarm forgejo chat vllm qdrant \
         observability openobserve headroom litellm relay relay-cdc agent \
@@ -15,13 +28,15 @@ COMPOSE_LITE := $(RUNTIME) compose -f deploy/compose.lite.yaml
 
 quickstart: up bootstrap ## start infra and bootstrap everything
 
-up: ## start the Tier A spine (nats, postgres, apicurio, valkey, seaweedfs, openbao, ollama)
+up: ## start the Tier A spine (nats, postgres, apicurio, valkey, seaweedfs, openbao, ollama); HOSTPORTS=1 for host-reachable ports
+	$(HOSTPORTS_NET)
 	$(COMPOSE) up -d
 
 down:
 	$(COMPOSE) down
 
-up-lite: ## lite spine: nats, postgres+pgvector, valkey, openbao (no apicurio/seaweedfs/ollama)
+up-lite: ## lite spine: nats, postgres+pgvector, valkey, openbao (no apicurio/seaweedfs/ollama); HOSTPORTS=1 for host-reachable ports
+	$(HOSTPORTS_NET)
 	$(COMPOSE_LITE) up -d
 
 down-lite: ## stop the lite spine (and the add-ons started on it: ollama, forgejo); keeps volumes
@@ -203,7 +218,7 @@ verify-integration: ## run every deferred integration check (runtime host)
 	@$(VI) "L1.1 CPU-only torch for the torch extras" $(MAKE) --no-print-directory torch-cpu-lock
 	@$(VI) "L1.2/L3.1/R2 license gate zone C (publisher metadata + syft over code and the npm lock, fail-closed)" uv run --no-sync python .forgejo/scripts/license_gate.py --zone C
 	@$(VI) "L3.1/R2 license gate zone B (publisher metadata + syft over the repository, denylist)" uv run --no-sync python .forgejo/scripts/license_gate.py --zone B
-	@$(VI) "L1.5 lite spine: boot, bootstrap, one task reaches done" ./scripts/lite_smoke.sh
+	@$(VI) "L1.5/R5 lite spine: host reaches the ports, spine has no egress (HOSTPORTS=1 only if needed), one task reaches done" ./scripts/lite_smoke_modes.sh
 	@$(VI) "L2.2+ real-Postgres tests (hybrid retrieval SQL) on the spine" env REQUIRE_POSTGRES=1 uv run --no-sync pytest -q
 	@$(VI) "L2.3 fastembed option embeds: embed('hello') is a 384-vector" env EMBEDDING_BACKEND=fastembed EMBEDDING_MODEL=BAAI/bge-small-en-v1.5 uv run --frozen --group agent --extra embeddings python -c "from agent.lessons import embed; v = embed('hello'); assert v is not None and len(v) == 384, v; print('384-dim ok')"
 	@$(VI) "R4 api embedder against the spine's Ollama: embed('hello') is a 384-vector" env EMBEDDING_BACKEND=api EMBEDDING_API_BASE=http://localhost:11434/v1 EMBEDDING_MODEL=$(EMBED_MODEL) uv run --no-sync python -c "from agent.lessons import embed; v = embed('hello'); assert v is not None and len(v) == 384, v; print('384-dim ok')"

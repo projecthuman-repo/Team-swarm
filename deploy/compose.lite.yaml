@@ -26,7 +26,7 @@ services:
     command: ["-js", "-sd", "/data"]
     volumes: ["nats-data:/data"]
     networks: [swarm-internal]
-    ports: ["4222:4222", "8222:8222"]
+    ports: ["${SWARM_BIND_ADDR:-127.0.0.1}:4222:4222", "${SWARM_BIND_ADDR:-127.0.0.1}:8222:8222"]
 
   postgres:
     image: pgvector/pgvector:pg16
@@ -38,7 +38,7 @@ services:
       - pg-data:/var/lib/postgresql/data
       - ../db/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
     networks: [swarm-internal]
-    ports: ["5432:5432"]
+    ports: ["${SWARM_BIND_ADDR:-127.0.0.1}:5432:5432"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d swarm"]
       interval: 5s
@@ -48,7 +48,7 @@ services:
   valkey:
     image: valkey/valkey:9.0
     networks: [swarm-internal]
-    ports: ["6379:6379"]
+    ports: ["${SWARM_BIND_ADDR:-127.0.0.1}:6379:6379"]
 
   openbao:
     image: openbao/openbao:2.5.0
@@ -56,4 +56,4 @@ services:
     environment:
       BAO_ADDR: http://127.0.0.1:8200
     networks: [swarm-internal]
-    ports: ["8200:8200"]
+    ports: ["${SWARM_BIND_ADDR:-127.0.0.1}:8200:8200"]
