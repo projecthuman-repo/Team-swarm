@@ -98,6 +98,26 @@ writing `eval/last_report.md`; the relay dying on a busy metrics port; the Headr
 unreachable from containers; `torch_cpu_lock.sh` restoring only two of the files it rewrites; the
 bot token on jq's command line; two wrong records. 28 new or changed tests fail on `5d0de86`.
 
+### Second round — the fix commit reviewed (2026-11-10)
+
+`003e9cb` was reviewed the same way. Two of the four reviewers finished before the session's
+usage limit stopped the run (the other two and all eight skeptics did not run), so their eight
+findings were checked by hand instead, against the syft source and by reproduction. Five distinct
+defects, all real, fixed in `lean(L3.x): fix the second review round` (DECISIONS D-034):
+
+- An override row could not clear a free-text license: syft reports PyPI's "MIT License" or "BSD"
+  as `LicenseRef-…`, which counted as a found license. The documented remedy did not work.
+- The forecast was far too small. syft's PyPI lookup never reads classifiers, so 121 lock entries
+  (46 of the 120 agent-image pins) would have blocked, not "pillow, regex and a few". The table
+  now has 87 reviewed rows; a simulation with real PyPI metadata leaves 23 entries blocked, all
+  owner decisions.
+- The "scan found nothing" check could not fire on real syft output (it always adds a root entry).
+- `.env.example` still pointed at the moved migration; a LEDGER count was wrong.
+- A root `.env` copied from `.env.example` undid the Headroom stats fix under podman-compose.
+
+No third review round ran: the limit prevents it. The second-round fixes have regression tests
+and `make ci-local` passes, but no independent reviewer has read them.
+
 ## Deferred commands by phase
 
 ### Phase 0 — closed 2026-11-03 (tag `lean-phase-0`)

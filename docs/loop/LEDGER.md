@@ -148,7 +148,7 @@ where it went) or `generated` (the file stays, with a header saying so).
 | `db/migrations/001_bge_m3_embeddings.sql` | moved | Phase-3 review — to `db/migrations/optional/`; content unchanged, applied by hand (README, lessons.py updated) |
 | `make migrate` | extended | Phase-3 review — `ON_ERROR_STOP=1`, stops at the first failing file; applies 002–009 |
 | Dependency group `gate` (ruff, pytest) | generated (new) | Phase-3 review — in the agent image and `requirements.txt`; `dev` keeps its own entries |
-| `requirements.txt`, `requirements-dev.txt`, `uv.lock` | extended | Phase-3 review — regenerated: ruff, pytest and their three dependencies move from the dev add-on into the base file |
+| `requirements.txt`, `requirements-dev.txt`, `uv.lock` | extended | Phase-3 review — regenerated: ruff, pytest and their two dependencies (iniconfig, pluggy) move from the dev add-on into the base file |
 | `sandbox.missing_gate_tools()` + worker start-up error | generated (new) | Phase-3 review — the per-check "skipped: not installed" note is kept |
 | Diff-size gate exclusions | extended | Phase-3 review — the same fourteen generated files, now by exact name instead of two patterns |
 | Perses config mount | moved | Phase-3 review — `/etc/perses/config/config.yaml` → `/etc/perses/config.yaml` (where the image reads it) |
@@ -159,3 +159,8 @@ where it went) or `generated` (the file stays, with a header saying so).
 | `scripts/torch_cpu_lock.sh` restore | extended | Phase-3 review — also restores `requirements*.txt` |
 | `scripts/lite_smoke.sh` token hand-off | extended | Phase-3 review — jq reads the token from the environment |
 | `tests/test_phase3_review.py`; `tests/test_license_gate.py` syft-shaped cases | generated (new) | Phase-3 review |
+| License overrides: when a row applies | extended | Second review round (D-034) — also when syft reports only free text (`LicenseRef-…`); a real SPDX id is still never overridden |
+| License overrides table | extended | Second review round — 7 → 87 rows; the first seven unchanged |
+| License gate: empty-scan check | extended | Second review round — counts non-root packages; a lockfile yielding nothing is exit 2 |
+| `HEADROOM_STATS_URL` in compose | extended | Second review round — fixed value instead of host interpolation; `.env.example` line kept for host-run `make sla` |
+| `.env.example` bge-m3 note | extended | Second review round — points at `db/migrations/optional/` |

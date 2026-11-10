@@ -182,11 +182,44 @@ def test_a_license_from_any_scanned_path_counts_for_the_package():
 
 def test_override_table_is_reviewed_and_permissive():
     over = gate.license_overrides()
-    assert over["py-rust-stemmers"] == "MIT"
-    assert not gate.check(syft_sbom(*[(n, lic) for n, lic in over.items()]), "C")
-    assert not any(
-        "nvidia" in name or "cuda" in name for name in over
-    )  # proprietary: never overridden
+    assert over["py-rust-stemmers"] == "MIT" and over["jinja2"] == "BSD-3-Clause"
+    assert not gate.check(syft_sbom(*[(n, "NOASSERTION") for n in over]), "C", over)
+    # proprietary wheels are never overridden (nvidia-ml-py is NVIDIA's BSD binding)
+    assert [n for n in over if "nvidia" in n or "cuda" in n] == ["nvidia-ml-py"]
+
+
+def test_free_text_license_needs_an_override_row_like_a_missing_one():
+    # syft: PyPI "3-Clause BSD License" -> LicenseRef-3-Clause-BSD-License (not an SPDX id)
+    s = syft_sbom(("protobuf", "LicenseRef-3-Clause-BSD-License"), ("x", "LicenseRef-MIT-License"))
+    assert gate.check(s, "C") == [
+        ("protobuf", "LicenseRef-3-Clause-BSD-License"), ("x", "LicenseRef-MIT-License")]  # fmt: skip
+    assert gate.check(s, "C", {"protobuf": "BSD-3-Clause", "x": "MIT"}) == []
+    assert gate.check(s, "C", {"protobuf": "GPL-3.0-only", "x": "MIT"}) == [
+        ("protobuf", "GPL-3.0-only")]  # fmt: skip
+    assert gate.check(s, "B") == []
+
+
+def test_override_cannot_launder_a_denied_or_real_license():
+    over = {"a": "MIT", "b": "MIT", "c": "MIT"}
+    s = syft_sbom(
+        ("a", "LicenseRef-GNU-AGPL-v3"),  # free text naming a denied family
+        ("b", "GPL-3.0-only"),  # a real SPDX id
+        ("c", "MIT AND LicenseRef-Proprietary-EULA"),  # SPDX id plus unmapped text
+    )
+    assert gate.check(s, "C", over) == [
+        ("a", "LicenseRef-GNU-AGPL-v3"),
+        ("b", "GPL-3.0-only"),
+        ("c", "MIT AND LicenseRef-Proprietary-EULA"),
+    ]
+    mixed = {"name": "d", "licenseConcluded": "MIT", "licenseDeclared": "LicenseRef-Custom"}
+    assert gate.check({"packages": [mixed]}, "C", {"d": "MIT"}) == [("d", "LicenseRef-Custom")]
+
+
+ROOT_ENTRY = {
+    "name": "x",
+    "SPDXID": "SPDXRef-DocumentRoot-Directory-x",
+    **syft_fields("NOASSERTION"),
+}
 
 
 def _run_main(monkeypatch, packages, argv):
@@ -196,9 +229,25 @@ def _run_main(monkeypatch, packages, argv):
 
 
 def test_main_fails_when_the_scan_finds_nothing(monkeypatch, capsys):
-    assert _run_main(monkeypatch, [], ["--zone", "C", "--paths", "agent"]) == 2
-    assert _run_main(monkeypatch, [], ["--zone", "B"]) == 2
-    assert "no package at all" in capsys.readouterr().out
+    # what syft really emits for an empty scan: only its own root entry per source
+    for packages in ([], [ROOT_ENTRY]):
+        assert _run_main(monkeypatch, packages, ["--zone", "C", "--paths", "agent"]) == 2
+        assert _run_main(monkeypatch, packages, ["--zone", "B"]) == 2
+        assert "no package at all" in capsys.readouterr().out
+
+
+def test_main_fails_when_a_lockfile_yields_nothing(monkeypatch, capsys):
+    dep = {"name": "dep", "versionInfo": "1", **syft_fields("MIT")}
+
+    def fake_syft(cmd, cwd, env):
+        empty = cmd[-1].endswith("package-lock.json")
+        return json.dumps({"packages": [ROOT_ENTRY] if empty else [ROOT_ENTRY, dep]}).encode()
+
+    monkeypatch.setattr(gate.subprocess, "check_output", fake_syft)
+    assert gate.main(["--zone", "C", "--paths", "agent", "relay/package-lock.json"]) == 2
+    assert "nothing catalogued from ['relay/package-lock.json']" in capsys.readouterr().out
+    assert gate.main(["--zone", "C", "--paths", "agent", "skills"]) == 0
+    assert "zone C: 1 package(s)" in capsys.readouterr().out  # the root entry is not counted
 
 
 def test_main_zone_c_blocks_syft_shaped_agpl_and_unlicensed(monkeypatch, capsys):

@@ -70,12 +70,17 @@ Expect three honest failures unless you decide otherwise (step 5):
 
 - **License gate zone C.** Until the Phase-3 review the gate never judged a
   Python license (DECISIONS D-033). It does now, and the first real run is
-  expected to block: pillow (MIT-CMU) and regex (Apache-2.0 AND CNRI-Python)
-  in the agent image, the cffi / numpy / torch variants in the lock, and 16
-  proprietary NVIDIA CUDA wheels that the torch extras pull into `uv.lock`.
-  `conventions/licensing.md` ("What the first real Zone C run will show")
-  has the full audit. syft may also report packages with free-text licenses
-  it cannot map; each needs a reviewed row in "License overrides".
+  expected to block 23 of the 352 lock entries: pillow (MIT-CMU) and regex
+  (Apache-2.0 AND CNRI-Python) in the images, the cffi / numpy / torch
+  variants and pypdfium2 in the lock, and 16 proprietary NVIDIA CUDA wheels
+  that the torch extras pull into `uv.lock`. `conventions/licensing.md`
+  ("What the first real Zone C run will show") has the full audit. About a
+  third of the lock publishes no SPDX id on PyPI (free text such as "BSD",
+  or a classifier only, which syft does not read); the "License overrides"
+  table carries 87 reviewed rows for them, derived from each publisher's
+  own PyPI metadata — look the table over. If the real syft run reports a
+  package without an SPDX license that the table does not cover, the gate
+  names it and it needs a row.
 - **Agent image size:** forecast ≈ 785 MB against the 700 MB target.
 - **Ingest image size:** forecast above 300 MB.
 
@@ -103,7 +108,7 @@ blocks auto-merge into `integration` until you settle it.
 | decision | where | current state |
 |---|---|---|
 | Diff-size gate is **reported, not enforced**, for PRs into `main` (enforced on `integration`, the agent path) | D-013 | veto by setting `DIFF_SIZE_ENFORCE=1` in the workflow |
-| **License allowlist.** Add `MIT-CMU`, `MIT-0`, `CNRI-Python`, `Zlib` (and, for the torch extras, `Apache-2.0 WITH LLVM-exception`; Boost `BSL-1.0` also needs the Zone C substring denylist entry `BSL` narrowed) to `ALLOWED` in `.forgejo/scripts/license_gate.py`, or replace the dependencies. All are permissive, none is on Hard Rule 9's list | D-033 | not widened — zone C blocks pillow and regex (agent image) until you decide |
+| **License allowlist.** Add `MIT-CMU`, `MIT-0`, `CNRI-Python`, `Zlib` (and, for the torch extras, `Apache-2.0 WITH LLVM-exception`; Boost `BSL-1.0` also needs the Zone C substring denylist entry `BSL` narrowed) to `ALLOWED` in `.forgejo/scripts/license_gate.py`, or replace the dependencies. All are permissive, none is on Hard Rule 9's list | D-033, D-034 | not widened — zone C blocks pillow and regex (agent and ingest images) until you decide. After `make torch-cpu-lock`, torch (`+cpu`, not on pypi.org) shows "no license found" and stays blocked until you decide on it too |
 | **NVIDIA CUDA wheels in `uv.lock`** (proprietary; from the `embeddings-torch` and `routing` extras, in no image) — run `make torch-cpu-lock` (step 3 does) and commit the result, or drop the extras | D-033, D-011 | zone C blocks them, correctly |
 | Agent image target 700 MB vs forecast ≈ 785 MB (ruff + pytest for the quality gate added 28 MB) — raise the target, or prune tree-sitter grammars / scipy in a follow-up | D-028, D-033 | target kept, so the check fails honestly |
 | Ingest image target 300 MB vs a 236 MB venv before the base image | D-017 | target kept |

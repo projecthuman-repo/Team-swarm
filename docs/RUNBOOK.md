@@ -193,9 +193,10 @@ Required checks on the protected branches: `gates` and `proto-compat`.
 `--zone C` — everything that ships (`agent ingest relay skills scripts`,
 `pyproject.toml`, `uv.lock`, `relay/package-lock.json`): permissive
 allowlist, fail-closed. A missing path, a failed scan or a scan that finds
-nothing is exit 2. A package with no license at all blocks too, unless it
-has a reviewed row in the "License overrides" table, and every package in
-`uv.lock` must appear in the scan. `uv.lock` carries no license data, so
+nothing (or nothing from a lockfile) is exit 2. A package with no SPDX
+license — none at all, or only free text syft reports as `LicenseRef-…` —
+blocks too, unless it has a reviewed row in the "License overrides" table,
+and every package in `uv.lock` must appear in the scan. `uv.lock` carries no license data, so
 the gate has syft look licenses up on pypi.org
 (`SYFT_PYTHON_SEARCH_REMOTE_LICENSES=true`): Zone C needs pypi.org and
 fails without it.

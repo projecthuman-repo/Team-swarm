@@ -21,11 +21,12 @@ no swarm code links against a GPL library from them.
 
 **Zone C is fail-closed in both directions.** A license outside the
 allowlist blocks, and so does a package for which the scan finds *no*
-license — unless it is the swarm's own code or has a row in
+SPDX license — none at all, or only free text that syft reports as
+`LicenseRef-…` — unless it is the swarm's own code or has a row in
 [License overrides](#license-overrides) below. The gate reads both SPDX
 fields syft writes (`licenseDeclared` and `licenseConcluded`), requires
 every package in `uv.lock` to appear in the scan, and fails when a scan
-finds nothing. `uv.lock` carries no license data, so the gate runs syft
+finds nothing or a lockfile yields no package. `uv.lock` carries no license data, so the gate runs syft
 with `SYFT_PYTHON_SEARCH_REMOTE_LICENSES=true` (syft asks pypi.org):
 Zone C needs pypi.org reachable and fails, rather than passes, without it.
 
@@ -94,10 +95,21 @@ that license (Zone B catches that).
 
 ## License overrides
 
-Reviewed licenses for packages whose published metadata declares none. The
-gate uses a row **only** when the scan finds no license for that package;
-a row never replaces a license that was found, and the license in the row
-is judged by the same allowlist. Add a row only with evidence you checked.
+Reviewed licenses for packages whose published metadata gives the gate no
+SPDX id. The gate uses a row **only** when the scan finds no license for
+that package, or only free text that syft reports as `LicenseRef-…`
+("MIT License", "BSD", "Apache 2.0" — syft reads PyPI's `license` and
+`license_expression` fields and never the classifiers). A row never
+replaces a real SPDX id, never clears text that names a denied family, and
+the license in the row is judged by the same allowlist. Add a row only
+with evidence you checked.
+
+The first seven rows were checked against the upstream license file. The
+rest were derived on 2026-11-10 from what each publisher states on PyPI
+(the `license` field and the trove classifier, quoted as evidence) for
+every package in `uv.lock` that needs a row; where the publisher says
+only "BSD", the installed license text decided between the two- and
+three-clause form.
 
 | package | license | evidence |
 |---|---|---|
@@ -108,36 +120,132 @@ is judged by the same allowlist. Add a row only with evidence you checked.
 | crewai-core | MIT | same repository as crewai |
 | cel-python | Apache-2.0 | `LICENSE` in cloud-custodian/cel-python |
 | routellm | Apache-2.0 | `LICENSE` in lm-sys/RouteLLM |
+| aider-chat | Apache-2.0 | classifier "Apache Software License" |
+| aiosignal | Apache-2.0 | PyPI license field "Apache 2.0"; classifier "Apache Software License" |
+| aiosqlite | MIT | classifier "MIT License" |
+| annotated-types | MIT | classifier "MIT License" |
+| ast-grep-cli | MIT | classifier "MIT License" |
+| asttokens | Apache-2.0 | PyPI license field "Apache 2.0" |
+| beautifulsoup4 | MIT | PyPI license field "MIT License"; classifier "MIT License" |
+| blinker | MIT | classifier "MIT License" |
+| chromadb | Apache-2.0 | classifier "Apache Software License" |
+| colorama | BSD-2-Clause OR BSD-3-Clause | classifier "BSD License"; both BSD variants are on the allowlist; which one was not checked |
+| confluent-kafka | Apache-2.0 | classifier "Apache Software License" |
+| datasets | Apache-2.0 | PyPI license field "Apache 2.0"; classifier "Apache Software License" |
+| deprecation | Apache-2.0 | PyPI license field "Apache 2"; classifier "Apache Software License" |
+| diff-match-patch | Apache-2.0 | classifier "Apache Software License" |
+| diskcache | Apache-2.0 | PyPI license field "Apache 2.0"; classifier "Apache Software License" |
+| distro | Apache-2.0 | PyPI license field "Apache License, Version 2.0"; classifier "Apache Software License" |
+| fastuuid | BSD-3-Clause | classifier "BSD License"; installed license text is the three-clause form |
+| flatbuffers | Apache-2.0 | PyPI license field "Apache 2.0"; classifier "Apache Software License" |
+| gitdb | BSD-3-Clause | PyPI license field "BSD License"; classifier "BSD License"; installed license text is the three-clause form |
+| google-re2 | BSD-2-Clause OR BSD-3-Clause | classifier "BSD License"; both BSD variants are on the allowlist; which one was not checked |
+| grep-ast | Apache-2.0 | classifier "Apache Software License" |
+| hf-xet | Apache-2.0 | classifier "Apache Software License" |
+| huggingface-hub | Apache-2.0 | PyPI license field "Apache"; classifier "Apache Software License" |
+| hyperframe | MIT | PyPI license field "The MIT License (MIT) Copyright (c) 2014 …"; classifier "MIT License" |
+| importlib-metadata | Apache-2.0 | classifier "Apache Software License" |
+| importlib-resources | Apache-2.0 | classifier "Apache Software License" |
+| ipython-pygments-lexers | BSD-2-Clause OR BSD-3-Clause | classifier "BSD License"; both BSD variants are on the allowlist; which one was not checked |
+| jinja2 | BSD-3-Clause | classifier "BSD License"; installed license text is the three-clause form |
+| jiter | MIT | classifier "MIT License" |
+| json5 | Apache-2.0 | PyPI license field "Files: Everything except for the benchmar…"; classifier "Apache Software License" |
+| jsonpointer | BSD-3-Clause | PyPI license field "Modified BSD License"; classifier "BSD License" |
+| kubernetes | Apache-2.0 | PyPI license field "Apache License Version 2.0"; classifier "Apache Software License" |
+| lancedb | Apache-2.0 | classifier "Apache Software License" |
+| loguru | MIT | classifier "MIT License" |
+| markdown-it-py | MIT | classifier "MIT License" |
+| mccabe | MIT | PyPI license field "Expat license"; classifier "MIT License" |
+| mdit-py-plugins | MIT | classifier "MIT License" |
+| mdurl | MIT | classifier "MIT License" |
+| mmh3 | MIT | PyPI license field "MIT License Copyright (c) 2011-2026 Hajim…"; classifier "MIT License" |
+| mpmath | BSD-2-Clause OR BSD-3-Clause | PyPI license field "BSD"; classifier "BSD License"; both BSD variants are on the allowlist; which one was not checked |
+| mslex | Apache-2.0 | PyPI license field "Apache Software License 2.0"; classifier "Apache Software License" |
+| multidict | Apache-2.0 | PyPI license field "Apache License 2.0" |
+| networkx | BSD-3-Clause | classifier "BSD License"; installed license text is the three-clause form |
+| nodeenv | BSD-2-Clause | PyPI license field "BSD"; classifier "BSD License"; installed license text is the two-clause form |
+| numpy | BSD-3-Clause | PyPI license field "Copyright (c) 2005-2023, NumPy Developers…"; classifier "BSD License"; installed license text is the three-clause form |
+| nvidia-ml-py | BSD-2-Clause OR BSD-3-Clause | PyPI license field "BSD"; classifier "BSD License"; both BSD variants are on the allowlist; which one was not checked |
+| onnxruntime | MIT | PyPI license field "MIT License"; classifier "MIT License" |
+| oslex | MIT | classifier "MIT License" |
+| overrides | Apache-2.0 | PyPI license field "Apache License, Version 2.0" |
+| pandas | BSD-3-Clause | PyPI license field "BSD 3-Clause License Copyright (c) 2008-2…"; classifier "BSD License" |
+| pathspec | MPL-2.0 | classifier "Mozilla Public License 2.0 (MPL 2.0)" |
+| pdfplumber | MIT | classifier "MIT License" |
+| pendulum | MIT | PyPI license field "MIT License"; classifier "MIT License" |
+| pexpect | ISC | PyPI license field "ISC license"; classifier "ISC License (ISCL)" |
+| prompt-toolkit | BSD-3-Clause | classifier "BSD License"; installed license text is the three-clause form |
+| protobuf | BSD-3-Clause | PyPI license field "3-Clause BSD License" |
+| ptyprocess | ISC | classifier "ISC License (ISCL)" |
+| pyperclip | BSD-3-Clause | PyPI license field "BSD"; classifier "BSD License"; installed license text is the three-clause form |
+| pypika | Apache-2.0 | PyPI license field "Apache License Version 2.0"; classifier "Apache Software License" |
+| python-dateutil | Apache-2.0 OR BSD-3-Clause | PyPI license field "Dual License"; classifier "Apache Software License" + "BSD License" |
+| pyvis | BSD-2-Clause OR BSD-3-Clause | PyPI license field "BSD"; both BSD variants are on the allowlist; which one was not checked |
+| pywin32 | PSF-2.0 | PyPI license field "PSF"; classifier "Python Software Foundation License" |
+| requests-toolbelt | Apache-2.0 | PyPI license field "Apache 2.0"; classifier "Apache Software License" |
+| s3transfer | Apache-2.0 | PyPI license field "Apache License 2.0"; classifier "Apache Software License" |
+| safetensors | Apache-2.0 | classifier "Apache Software License" |
+| scipy | BSD-3-Clause | PyPI license field "Copyright (c) 2001-2002 Enthought, Inc. 2…"; classifier "BSD License"; installed license text is the three-clause form |
+| shellingham | ISC | PyPI license field "ISC License"; classifier "ISC License (ISCL)" |
+| socksio | MIT | classifier "MIT License" |
+| soundfile | BSD-3-Clause | PyPI license field "BSD 3-Clause License"; classifier "BSD License" |
+| sympy | BSD-2-Clause OR BSD-3-Clause | PyPI license field "BSD"; classifier "BSD License"; both BSD variants are on the allowlist; which one was not checked |
+| tiktoken | MIT | PyPI license field "MIT License Copyright (c) 2022 OpenAI, Sh…" |
+| tokenizers | Apache-2.0 | classifier "Apache Software License" |
+| tomli | MIT | classifier "MIT License" |
+| tomli-w | MIT | classifier "MIT License" |
+| traitlets | BSD-3-Clause | PyPI license field "BSD 3-Clause License - Copyright (c) 2001…"; classifier "BSD License" |
+| transformers | Apache-2.0 | PyPI license field "Apache 2.0 License" |
+| tree-sitter | MIT | classifier "MIT License" |
+| uvloop | MIT OR Apache-2.0 | PyPI license field "MIT License"; classifier "Apache Software License" + "MIT License" |
+| valkey | MIT | PyPI license field "MIT License Copyright (c) 2022-2023, Redi…"; classifier "MIT License" |
+| win32-setctime | MIT | PyPI license field "MIT license"; classifier "MIT License" |
 
 ## What the first real Zone C run will show
 
-syft could not run in the session that wrote this gate. Instead, the
-PyPI metadata of all 352 registry packages in `uv.lock` was read on
-2026-11-09 and judged by the allowlist. syft normalises free-text license
-fields itself, so its result can differ; the real run is
-`make verify-integration`.
+syft could not run in the session that wrote this gate. Instead, the PyPI
+metadata of all 352 registry packages in `uv.lock` was read on 2026-11-10
+and pushed through the rule syft applies (read from its source:
+`license_expression`, else `license`, never the classifiers; text that is
+not an SPDX id becomes `LicenseRef-…`) and then through the gate itself.
+syft was not executed, so the real run — `make verify-integration` — can
+still differ in detail.
 
-- **135** packages declare an SPDX expression inside the allowlist.
-- **187** declare only free text or classifiers ("MIT License", "BSD",
-  "Apache Software License", …) — syft's normalisation decides; expect a
-  few to need a row above.
-- **8** lock entries (7 packages) declare nothing and have a reviewed row
-  above.
-- **6** declare an SPDX expression outside the allowlist — **the gate
-  blocks these until the owner decides** (they are permissive, but not on
-  the list in Hard Rule 9):
+What PyPI gives the gate, per lock entry:
+
+| PyPI metadata | entries | gate result |
+|---|---:|---|
+| SPDX expression (`license_expression`) | 143 | judged: 135 pass, 8 block (below) |
+| SPDX id in the `license` field | 96 | judged: all pass |
+| free text in the `license` field ("MIT License", "BSD", …) | 53 | needs a row |
+| classifier only (syft does not read it) | 39 | needs a row |
+| nothing | 21 | needs a row |
+
+Without the override table 121 entries would block (46 of the 120 pins in
+`requirements.txt`). With its 87 rows, **23 entries block**, and these are
+decisions for the owner, not gaps in the table:
+
+- **6 declare an SPDX expression outside the allowlist** (permissive, but
+  not on the list in Hard Rule 9):
 
   | package | declared | where |
   |---|---|---|
   | pillow 12.1.1 / 13.0.0 | MIT-CMU | agent image (aider) |
   | regex 2026.1.15 | Apache-2.0 AND CNRI-Python | agent and ingest images |
   | cffi 2.1.1 | MIT-0 | lock (agent image pins 2.0.0, MIT) |
-  | numpy 2.5.4 | BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0 | lock (agent image pins 1.26.4, BSD free text) |
+  | numpy 2.5.4 | BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0 | lock (agent image pins 1.26.4) |
   | torch 2.15.0 | Apache-2.0 AND Apache-2.0 WITH LLVM-exception AND BSD-2-Clause AND BSD-3-Clause AND BSL-1.0 AND ISC AND MIT AND Zlib | extras `embeddings-torch`, `routing` only |
 
-- **Proprietary — blocked, and they should be:** the 16 NVIDIA CUDA wheels
+- **16 NVIDIA CUDA wheels — proprietary, blocked, and they should be**
   (`nvidia-cublas`, `nvidia-cudnn-cu13`, `nvidia-nvjitlink`, `cuda-toolkit`,
-  …; "NVIDIA Proprietary Software" or no license) that the torch extras
-  pull into `uv.lock`. No image installs them. `make torch-cpu-lock`
+  …; "NVIDIA Proprietary Software" or no license). The torch extras pull
+  them into `uv.lock`; no image installs them. `make torch-cpu-lock`
   (deferred, needs download.pytorch.org) replaces them with the CPU-only
-  torch build and removes them from the lock.
+  torch build. That build is versioned `<version>+cpu`, which pypi.org
+  does not list, so torch itself will then show "no license found" and
+  stay blocked until the owner decides on its license set.
+- **pypdfium2** (extra `orchestration`) declares "BSD-3-Clause,
+  Apache-2.0, dependency licenses" — it bundles PDFium, so no single row
+  was written for it.
+
+So the two images are blocked by two packages: pillow and regex.

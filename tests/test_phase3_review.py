@@ -45,7 +45,8 @@ def test_perses_config_is_mounted_where_the_image_reads_it():
 
 def test_agents_know_where_the_headroom_stats_are():
     env = yaml.safe_load(read("deploy", "compose.yaml"))["services"]["agent-backend"]["environment"]
-    assert env["HEADROOM_STATS_URL"] == "${HEADROOM_STATS_URL-http://headroom:8787}"
+    # not interpolated: .env.example ships the host-side localhost value
+    assert env["HEADROOM_STATS_URL"] == "http://headroom:8787"
     for manifest in ("agent-backend.yaml", "agent-roles.yaml"):
         docs = [d for d in yaml.safe_load_all(read("deploy", "k8s", manifest)) if d]
         deployments = [d for d in docs if d["kind"] == "Deployment"]
@@ -142,6 +143,9 @@ def test_blanket_migrations_never_resize_the_embedding_column():
     assert os.path.exists(
         os.path.join(ROOT, "db", "migrations", "optional", "001_bge_m3_embeddings.sql")
     )
+    for doc in (".env.example", "README.md", os.path.join("agent", "lessons.py")):
+        assert "db/migrations/optional/001_bge_m3_embeddings.sql" in read(doc), doc
+        assert not re.search(r"db/migrations/001", read(doc)), doc
     recipe = read("Makefile").split("\nmigrate:")[1].split("\n\n")[0]
     assert "db/migrations/*.sql" in recipe and "ON_ERROR_STOP=1" in recipe and "|| exit 1" in recipe
 

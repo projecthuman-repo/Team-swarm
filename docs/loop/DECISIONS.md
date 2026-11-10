@@ -509,3 +509,50 @@ smoke put the bot token in jq's argv* — it is read from the environment
 as Apache-2.0 (it is `Apache-2.0 AND BSD-2-Clause`).
 Every fix has a test that fails on 5d0de86 (28 failed there, 189 pass
 now): `tests/test_phase3_review.py`, `tests/test_license_gate.py`.
+
+**D-034 · Second review round (the D-033 fix commit).** `003e9cb` got
+its own adversarial review. The session's usage limit stopped it after two
+of four finders; no skeptic ran, so the eight findings (five distinct)
+were verified by hand — the syft claims against its source
+(`syft/pkg/cataloger/python/license.go`, `spdxutil/helpers/license.go`),
+the rest by reproduction. All five are real. No third round ran.
+(1) *Overrides could not clear free text.* syft's PyPI lookup takes
+`license_expression`, else `license`; a value that is not an SPDX id
+("MIT License", "BSD", "Apache 2.0") is written as `LicenseRef-<text>`.
+D-033's rule "an override applies only when no license was found" made
+such packages unfixable by the remedy OWNER_STOP named. New rule: in
+Zone C a package whose found licenses are *all* free text (every atomic
+part starts with `LicenseRef-`) is treated like one with none — it needs
+a reviewed row. Still fail-closed: a real SPDX id is always judged and
+never overridden; a mixed expression (`MIT AND LicenseRef-X`) is judged,
+so it blocks; free text naming a denied family (AGPL, SSPL, …) blocks
+whatever the row says; the row's license is judged by the allowlist.
+(2) *The D-033 forecast was wrong by a factor of five.* The audit counted
+trove classifiers as declarations, but syft never reads them. Re-run with
+syft's rule over real PyPI metadata and through the gate's own `check()`:
+143 entries give an SPDX expression, 96 an SPDX id in `license`, 53 free
+text, 39 a classifier only, 21 nothing — 121 would block without rows
+(46 of 120 agent-image pins). Decision: write the rows rather than hand
+the owner 90 lookups. 80 rows were derived from each publisher's own
+PyPI `license` field and classifier (quoted as evidence in the table);
+"BSD" was resolved to the two- or three-clause form from the installed
+license text where the package is installed, else recorded as
+`BSD-2-Clause OR BSD-3-Clause` (both are on the allowlist). No row for
+the NVIDIA wheels or for pypdfium2 (bundles PDFium). With the 87 rows the
+simulation leaves 23 entries blocked — the six SPDX expressions outside
+the allowlist, 16 NVIDIA wheels, pypdfium2 — and in the two images only
+pillow and regex. This is a simulation: syft was still not run.
+After `make torch-cpu-lock`, torch is versioned `+cpu`, which pypi.org
+does not list, so it will show "no license found"; recorded for the owner.
+(3) *The zero-package check was dead code on real output* — syft adds a
+`SPDXRef-DocumentRoot-…` package per source. The check now counts
+non-root packages, and a lockfile path (`uv.lock`, `package-lock.json`)
+that yields none is exit 2, which covers an empty npm catalogue without
+a name-matching inventory the session could not validate against syft.
+(4) `.env.example` still said `db/migrations/001`; LEDGER said three
+dependencies moved with ruff and pytest (two: iniconfig, pluggy).
+(5) *`HEADROOM_STATS_URL` was interpolated from the host environment* —
+`.env.example` ships the host-side `http://localhost:8787`, and
+podman-compose 1.1–1.5 reads a root `.env`, which put localhost back
+into the containers. The compose value is now fixed
+(`http://headroom:8787`), as in the k8s manifests.

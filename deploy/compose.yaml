@@ -51,7 +51,8 @@ x-agent-base: &agent-base
     # Unset -> Jaeger; set it empty to disable, or point it at OpenObserve.
     OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT-http://jaeger:4318}
     # /metrics reads the Headroom proxy's /stats (swarm_headroom_savings_ratio)
-    HEADROOM_STATS_URL: ${HEADROOM_STATS_URL-http://headroom:8787}
+    # Fixed, not interpolated: a root .env carries the host-side localhost URL.
+    HEADROOM_STATS_URL: http://headroom:8787
   read_only: true
   # L1.6: size-capped tmpfs; task workdirs live in /tmp (SANDBOX_WORKDIR)
   tmpfs: ["/tmp:size=${SANDBOX_TMPFS_SIZE:-4g}", "/home/swarm:size=1g"] # writable HOME for git/aider state only
