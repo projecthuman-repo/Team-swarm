@@ -249,8 +249,13 @@ land intact).
 
 ### Adversarial review of R9–R11 (same workflow; range `a0ef813..f6fbb00`)
 
-Fixed from the finders' reports, each with a test (the skeptics' verdicts
-and the final count are added at the close-out):
+26 agents. 22 findings, each given to a skeptic told to refute it: 21
+confirmed, 1 rejected. The 21 are 11 distinct defects, fixed below, each
+with a test. The rejected one — `make dlq-replay` of a failed escalation
+stranding the task — cannot be reached, by the skeptic's reading of
+nats-server 2.12: the lane ends a failed escalation with `term()`, which
+removes the message from the work queue and writes no `SWARM_DLQ` entry to
+replay. Row 8 keeps the replay change anyway; it is harmless.
 
 | # | defect | fix | test |
 |---|---|---|---|
