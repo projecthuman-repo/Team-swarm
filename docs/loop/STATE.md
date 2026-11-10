@@ -184,3 +184,20 @@ independently reviewed. Deferred to the runtime host, all inside `make verify-in
 
 Every task row above is DONE or DONE-DEFERRED-INTEGRATION. What only the owner can do is in
 [OWNER_STOP.md](OWNER_STOP.md).
+
+## Review round (R1–R8)
+
+Opened 2026-11-10 on head `cfe17c5` from an independent review of PR #3 (second machine). Resume:
+re-paste the review-round prompt; it continues from the first row that is not `DONE` /
+`DONE-DEFERRED-INTEGRATION`.
+
+| id | task | status | evidence / deferred command |
+|---|---|---|---|
+| R1 | Build the Headroom proxy image from the lock | TODO | |
+| R2 | License gate: publisher metadata, shipped closures, no laundering | TODO | |
+| R3 | The quality gate fails closed | TODO | |
+| R4 | Dense retrieval that works where agents run (`EMBEDDING_BACKEND=api`) | TODO | |
+| R5 | Host reachability and spine isolation | TODO | |
+| R6 | Image targets from evidence | TODO | |
+| R7 | Land v4.2 "Elevation+" on this branch | TODO | |
+| R8 | Close-out | TODO | |
